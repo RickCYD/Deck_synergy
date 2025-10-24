@@ -1,0 +1,15 @@
+# Core Dash dependencies
+dash==2.14.2
+dash-cytoscape==0.3.0
+plotly==5.18.0
+
+# API and web scraping
+requests==2.31.0
+beautifulsoup4==4.12.2
+
+# Data processing
+pandas==2.1.4
+numpy==1.26.2
+
+# Utilities
+python-dotenv==1.0.0

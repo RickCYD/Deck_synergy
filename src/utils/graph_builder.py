@@ -1,0 +1,304 @@
+"""
+Graph Builder Utility
+Converts deck data into Cytoscape graph elements
+"""
+
+from typing import Dict, List
+
+
+def build_graph_elements(deck_data: Dict) -> List[Dict]:
+    """
+    Convert deck data into Cytoscape graph elements (nodes and edges)
+
+    Args:
+        deck_data: Dictionary containing deck information with cards and synergies
+
+    Returns:
+        List of Cytoscape elements (nodes and edges)
+    """
+    elements = []
+
+    # Create nodes for each card
+    cards = deck_data.get('cards', [])
+    for card in cards:
+        node = create_card_node(card)
+        elements.append(node)
+
+    # Create edges for synergies
+    synergies = deck_data.get('synergies', {})
+    for synergy_key, synergy_data in synergies.items():
+        edge = create_synergy_edge(synergy_key, synergy_data)
+        elements.append(edge)
+
+    return elements
+
+
+def create_card_node(card: Dict) -> Dict:
+    """
+    Create a Cytoscape node element from a card
+
+    Args:
+        card: Card dictionary
+
+    Returns:
+        Cytoscape node element
+    """
+    card_name = card.get('name', 'Unknown')
+
+    # Determine node type and color
+    node_type = 'commander' if card.get('is_commander', False) else 'card'
+
+    # Get card colors for visual representation
+    colors = card.get('colors', [])
+    color_code = get_color_code(colors)
+
+    # Create node data
+    node_data = {
+        'id': card_name,
+        'label': card_name,
+        'type': node_type,
+
+        # Card information
+        'card_type': card.get('type_line', 'Unknown'),
+        'mana_cost': card.get('mana_cost', ''),
+        'cmc': card.get('cmc', 0),
+        'colors': colors,
+        'color_identity': card.get('color_identity', []),
+        'oracle_text': card.get('oracle_text', ''),
+        'power': card.get('power'),
+        'toughness': card.get('toughness'),
+        'loyalty': card.get('loyalty'),
+        'rarity': card.get('rarity', ''),
+
+        # Visual properties
+        'color_code': color_code,
+        'image_url': card.get('image_uris', {}).get('normal', ''),
+
+        # Categories from Archidekt
+        'categories': card.get('categories', [])
+    }
+
+    return {
+        'data': node_data,
+        'classes': node_type
+    }
+
+
+def create_synergy_edge(synergy_key: str, synergy_data: Dict) -> Dict:
+    """
+    Create a Cytoscape edge element from synergy data
+
+    Args:
+        synergy_key: Key in format "Card1||Card2"
+        synergy_data: Dictionary containing synergy information
+
+    Returns:
+        Cytoscape edge element
+    """
+    card1, card2 = synergy_key.split('||')
+
+    edge_id = f"{card1}_{card2}".replace(' ', '_').replace(',', '').replace("'", '')
+
+    edge_data = {
+        'id': edge_id,
+        'source': card1,
+        'target': card2,
+        'source_label': card1,
+        'target_label': card2,
+
+        # Synergy weight
+        'weight': synergy_data.get('total_weight', 1.0),
+
+        # Synergy details
+        'synergies': synergy_data.get('synergies', {}),
+        'synergy_count': synergy_data.get('synergy_count', 0),
+
+        # Edge label (optional, shows on hover)
+        'label': f"{synergy_data.get('total_weight', 0):.1f}"
+    }
+
+    return {
+        'data': edge_data,
+        'classes': 'synergy-edge'
+    }
+
+
+def get_color_code(colors: List[str]) -> str:
+    """
+    Get a hex color code based on MTG colors
+
+    Args:
+        colors: List of MTG color codes (W, U, B, R, G)
+
+    Returns:
+        Hex color code
+    """
+    # MTG color mapping
+    color_map = {
+        'W': '#F8F6D8',  # White
+        'U': '#0E68AB',  # Blue
+        'B': '#150B00',  # Black
+        'R': '#D3202A',  # Red
+        'G': '#00733E',  # Green
+    }
+
+    if not colors:
+        return '#BCC3C7'  # Colorless (gray)
+
+    if len(colors) == 1:
+        return color_map.get(colors[0], '#BCC3C7')
+
+    # Multi-color (gold)
+    if len(colors) >= 2:
+        return '#F4E15B'
+
+    return '#BCC3C7'
+
+
+def filter_graph_by_card(elements: List[Dict], card_name: str) -> List[Dict]:
+    """
+    Filter graph elements to show only a specific card and its connections
+
+    Args:
+        elements: List of all graph elements
+        card_name: Name of the card to focus on
+
+    Returns:
+        Filtered list of elements
+    """
+    # Find all connected edges
+    connected_edges = []
+    connected_cards = set([card_name])
+
+    for element in elements:
+        if 'source' in element.get('data', {}):
+            edge_data = element['data']
+            if edge_data['source'] == card_name or edge_data['target'] == card_name:
+                connected_edges.append(element)
+                connected_cards.add(edge_data['source'])
+                connected_cards.add(edge_data['target'])
+
+    # Get nodes for connected cards
+    filtered_nodes = [
+        element for element in elements
+        if 'source' not in element.get('data', {}) and
+        element['data']['id'] in connected_cards
+    ]
+
+    return filtered_nodes + connected_edges
+
+
+def calculate_node_sizes(elements: List[Dict]) -> List[Dict]:
+    """
+    Calculate node sizes based on number of connections
+
+    Args:
+        elements: List of graph elements
+
+    Returns:
+        Updated elements with size information
+    """
+    # Count connections for each node
+    connection_counts = {}
+
+    for element in elements:
+        if 'source' in element.get('data', {}):
+            source = element['data']['source']
+            target = element['data']['target']
+
+            connection_counts[source] = connection_counts.get(source, 0) + 1
+            connection_counts[target] = connection_counts.get(target, 0) + 1
+
+    # Update node sizes
+    for element in elements:
+        if 'source' not in element.get('data', {}):
+            node_id = element['data']['id']
+            connections = connection_counts.get(node_id, 0)
+
+            # Scale size based on connections (min 40, max 100)
+            size = min(40 + (connections * 3), 100)
+            element['data']['size'] = size
+            element['data']['connections'] = connections
+
+    return elements
+
+
+def get_synergy_summary(synergy_data: Dict) -> str:
+    """
+    Create a human-readable summary of synergies
+
+    Args:
+        synergy_data: Synergy data dictionary
+
+    Returns:
+        Formatted summary string
+    """
+    summary_parts = []
+
+    synergies = synergy_data.get('synergies', {})
+    total_weight = synergy_data.get('total_weight', 0)
+
+    summary_parts.append(f"Total Synergy Strength: {total_weight:.2f}")
+
+    for category, synergy_list in synergies.items():
+        category_name = category.replace('_', ' ').title()
+        summary_parts.append(f"\n{category_name} ({len(synergy_list)}):")
+
+        for synergy in synergy_list:
+            summary_parts.append(f"  - {synergy.get('name', 'Unknown')}: {synergy.get('description', '')}")
+
+    return '\n'.join(summary_parts)
+
+
+def export_graph_data(elements: List[Dict], output_file: str):
+    """
+    Export graph data to a JSON file
+
+    Args:
+        elements: List of graph elements
+        output_file: Path to output file
+    """
+    import json
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(elements, f, indent=2)
+
+
+def get_graph_statistics(elements: List[Dict]) -> Dict:
+    """
+    Calculate statistics about the graph
+
+    Args:
+        elements: List of graph elements
+
+    Returns:
+        Dictionary with graph statistics
+    """
+    nodes = [e for e in elements if 'source' not in e.get('data', {})]
+    edges = [e for e in elements if 'source' in e.get('data', {})]
+
+    total_weight = sum(e['data'].get('weight', 0) for e in edges)
+    avg_weight = total_weight / len(edges) if edges else 0
+
+    # Find most connected nodes
+    connection_counts = {}
+    for edge in edges:
+        source = edge['data']['source']
+        target = edge['data']['target']
+        connection_counts[source] = connection_counts.get(source, 0) + 1
+        connection_counts[target] = connection_counts.get(target, 0) + 1
+
+    most_connected = sorted(
+        connection_counts.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )[:5]
+
+    return {
+        'total_nodes': len(nodes),
+        'total_edges': len(edges),
+        'total_synergy_weight': round(total_weight, 2),
+        'average_synergy_weight': round(avg_weight, 2),
+        'most_connected_cards': most_connected,
+        'graph_density': round(len(edges) / (len(nodes) * (len(nodes) - 1) / 2), 3) if len(nodes) > 1 else 0
+    }
