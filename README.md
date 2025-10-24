@@ -8,6 +8,8 @@ A Dash-based web application for visualizing Magic: The Gathering Commander deck
 - **Card Data**: Automatic card information fetching from Scryfall
 - **Synergy Analysis**: Intelligent detection of card synergies across multiple categories
 - **Interactive Visualization**: Click cards to highlight connections, explore synergies
+- **Card Rankings**: View top 10 most important cards based on weighted synergy centrality
+- **Graph Reorganization**: Visualize top cards with automatic graph reorganization and highlighting
 - **Deck Management**: Save and switch between multiple analyzed decks
 
 ## Installation

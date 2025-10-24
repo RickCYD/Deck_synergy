@@ -16,6 +16,10 @@ from src.api.scryfall import fetch_card_details
 from src.models.deck import Deck
 from src.synergy_engine.analyzer import analyze_deck_synergies
 from src.utils.graph_builder import build_graph_elements
+from src.utils.card_rankings import (
+    calculate_weighted_degree_centrality,
+    get_deck_rankings_summary
+)
 
 # Initialize Dash app
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
@@ -81,7 +85,17 @@ app.layout = html.Div([
                     value='cose',
                     style={'marginBottom': '10px'}
                 )
-            ])
+            ], style={'marginBottom': '20px'}),
+
+            # Card Rankings Panel
+            html.Div([
+                html.Label("Top Cards (by Synergy):", style={'fontWeight': 'bold', 'marginBottom': '10px'}),
+                html.Button('View Top Cards in Graph', id='view-top-cards-button', n_clicks=0,
+                           style={'width': '100%', 'padding': '8px', 'backgroundColor': '#2ecc71',
+                                  'color': 'white', 'border': 'none', 'cursor': 'pointer',
+                                  'fontSize': '14px', 'fontWeight': 'bold', 'marginBottom': '10px'}),
+                html.Div(id='card-rankings-panel', style={'maxHeight': '400px', 'overflowY': 'auto'})
+            ], id='rankings-container', style={'display': 'none'})
         ], style={'padding': '20px', 'backgroundColor': '#ffffff', 'borderRadius': '5px',
                   'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
     ], style={'width': '25%', 'float': 'left', 'padding': '20px'}),
@@ -169,7 +183,8 @@ app.layout = html.Div([
 
     # Hidden div to store deck data
     dcc.Store(id='deck-data-store'),
-    dcc.Store(id='selected-node-store')
+    dcc.Store(id='selected-node-store'),
+    dcc.Store(id='current-deck-file-store')
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
 
 
@@ -228,14 +243,15 @@ def load_deck(n_clicks, url, current_data):
 
 # Callback to update graph when deck is selected
 @app.callback(
-    Output('card-graph', 'elements'),
+    [Output('card-graph', 'elements'),
+     Output('current-deck-file-store', 'data')],
     Input('deck-selector', 'value'),
     prevent_initial_call=True
 )
 def update_graph(deck_file):
     """Update graph visualization when a deck is selected"""
     if not deck_file:
-        return []
+        return [], None
 
     try:
         # Load deck data
@@ -244,11 +260,80 @@ def update_graph(deck_file):
 
         # Build graph elements
         elements = build_graph_elements(deck_data)
-        return elements
+        return elements, deck_file
 
     except Exception as e:
         print(f"Error updating graph: {e}")
-        return []
+        return [], None
+
+
+# Callback to update card rankings when deck is selected
+@app.callback(
+    [Output('card-rankings-panel', 'children'),
+     Output('rankings-container', 'style')],
+    Input('deck-selector', 'value'),
+    prevent_initial_call=True
+)
+def update_card_rankings(deck_file):
+    """Calculate and display card rankings when a deck is selected"""
+    if not deck_file:
+        return [], {'display': 'none'}
+
+    try:
+        # Load deck data
+        with open(deck_file, 'r') as f:
+            deck_data = json.load(f)
+
+        # Get rankings
+        rankings_summary = get_deck_rankings_summary(deck_data, top_n=10)
+
+        # Build rankings display
+        rankings_items = []
+        for card_info in rankings_summary['top_cards']:
+            rank_badge_style = {
+                'display': 'inline-block',
+                'width': '25px',
+                'height': '25px',
+                'borderRadius': '50%',
+                'backgroundColor': card_info['color'],
+                'color': 'white',
+                'textAlign': 'center',
+                'lineHeight': '25px',
+                'fontWeight': 'bold',
+                'marginRight': '10px',
+                'fontSize': '12px'
+            }
+
+            card_item_style = {
+                'padding': '10px',
+                'marginBottom': '8px',
+                'backgroundColor': '#f8f9fa',
+                'borderRadius': '5px',
+                'borderLeft': f'4px solid {card_info["color"]}',
+                'cursor': 'pointer',
+                'transition': 'all 0.2s'
+            }
+
+            rankings_items.append(
+                html.Div([
+                    html.Div([
+                        html.Span(str(card_info['rank']), style=rank_badge_style),
+                        html.Strong(card_info['name'], style={'fontSize': '14px'})
+                    ]),
+                    html.Div([
+                        html.Span(f"Synergy: {card_info['total_synergy']} | ",
+                                 style={'fontSize': '11px', 'color': '#7f8c8d'}),
+                        html.Span(f"Connections: {card_info['connections']}",
+                                 style={'fontSize': '11px', 'color': '#7f8c8d'})
+                    ], style={'marginTop': '5px', 'marginLeft': '35px'})
+                ], style=card_item_style, id={'type': 'ranking-card', 'index': card_info['rank']})
+            )
+
+        return rankings_items, {'display': 'block', 'marginTop': '20px'}
+
+    except Exception as e:
+        print(f"Error calculating rankings: {e}")
+        return [html.Div(f"Error: {str(e)}", style={'color': 'red'})], {'display': 'block'}
 
 
 # Callback to update graph layout
@@ -259,6 +344,131 @@ def update_graph(deck_file):
 def update_layout(layout_name):
     """Update graph layout"""
     return {'name': layout_name, 'animate': True}
+
+
+# Callback to reorganize graph to highlight top cards
+@app.callback(
+    [Output('card-graph', 'stylesheet', allow_duplicate=True),
+     Output('card-graph', 'layout', allow_duplicate=True)],
+    Input('view-top-cards-button', 'n_clicks'),
+    [State('current-deck-file-store', 'data'),
+     State('card-graph', 'elements')],
+    prevent_initial_call=True
+)
+def view_top_cards_in_graph(n_clicks, deck_file, elements):
+    """Reorganize graph to highlight and center top 10 cards"""
+    if not deck_file or not elements:
+        return dash.no_update, dash.no_update
+
+    try:
+        # Load deck data
+        with open(deck_file, 'r') as f:
+            deck_data = json.load(f)
+
+        # Get top 10 cards
+        rankings_summary = get_deck_rankings_summary(deck_data, top_n=10)
+        top_card_names = [card['name'] for card in rankings_summary['top_cards']]
+
+        # Create stylesheet with highlighting
+        base_stylesheet = [
+            # Regular nodes (dimmed)
+            {
+                'selector': 'node',
+                'style': {
+                    'label': 'data(label)',
+                    'background-color': '#95a5a6',
+                    'color': '#fff',
+                    'text-valign': 'center',
+                    'text-halign': 'center',
+                    'font-size': '10px',
+                    'width': '40px',
+                    'height': '40px',
+                    'border-width': '2px',
+                    'border-color': '#7f8c8d',
+                    'opacity': 0.3
+                }
+            },
+            # Commander node style (dimmed)
+            {
+                'selector': 'node[type="commander"]',
+                'style': {
+                    'background-color': '#c0392b',
+                    'width': '50px',
+                    'height': '50px',
+                    'font-size': '11px',
+                    'opacity': 0.3
+                }
+            },
+            # Regular edges (dimmed)
+            {
+                'selector': 'edge',
+                'style': {
+                    'width': 1,
+                    'line-color': '#bdc3c7',
+                    'curve-style': 'bezier',
+                    'opacity': 0.1
+                }
+            }
+        ]
+
+        # Highlight top 10 cards
+        for i, card_name in enumerate(top_card_names, 1):
+            # Color gradient from red (rank 1) to orange (rank 10)
+            colors = ['#e74c3c', '#e67e22', '#f39c12', '#f1c40f', '#2ecc71',
+                     '#1abc9c', '#3498db', '#9b59b6', '#34495e', '#95a5a6']
+            color = colors[min(i-1, 9)]
+
+            # Size decreases with rank
+            size = max(100 - (i * 6), 50)
+
+            base_stylesheet.append({
+                'selector': f'node[id="{card_name}"]',
+                'style': {
+                    'background-color': color,
+                    'width': f'{size}px',
+                    'height': f'{size}px',
+                    'font-size': '14px',
+                    'font-weight': 'bold',
+                    'opacity': 1,
+                    'border-width': '4px',
+                    'border-color': '#2c3e50',
+                    'z-index': 1000 - i
+                }
+            })
+
+        # Highlight edges between top cards
+        for element in elements:
+            if 'source' in element.get('data', {}):
+                source = element['data']['source']
+                target = element['data']['target']
+
+                if source in top_card_names and target in top_card_names:
+                    edge_id = element['data']['id']
+                    base_stylesheet.append({
+                        'selector': f'edge[id="{edge_id}"]',
+                        'style': {
+                            'width': 'mapData(weight, 0, 10, 2, 8)',
+                            'line-color': '#2ecc71',
+                            'opacity': 0.8,
+                            'z-index': 999
+                        }
+                    })
+
+        # Use concentric layout to center important cards
+        layout = {
+            'name': 'concentric',
+            'animate': True,
+            'animationDuration': 1000,
+            'concentric': 'function(node) { return 100 - parseInt(node.data("id") === "' + top_card_names[0] + '" ? 100 : 0); }',
+            'levelWidth': 'function(nodes) { return 2; }',
+            'minNodeSpacing': 100
+        }
+
+        return base_stylesheet, layout
+
+    except Exception as e:
+        print(f"Error highlighting top cards: {e}")
+        return dash.no_update, dash.no_update
 
 
 # Callback for node/edge selection and highlighting

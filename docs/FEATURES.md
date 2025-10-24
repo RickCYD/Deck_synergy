@@ -285,6 +285,106 @@ Click on any edge (line) between two cards.
 3. **Hover State (Future):**
    - Could show tooltips with card info
 
+### Feature: Card Importance Rankings
+
+**Description:** Automatically calculates and displays the top 10 most important cards in your deck based on weighted synergy centrality.
+
+**How It Works:**
+
+The application uses **Weighted Degree Centrality** to measure card importance:
+- Sums all synergy weights connected to each card
+- Higher score = more total synergy value
+- Indicates which cards are "engines" or "hub cards" in your deck
+
+**How to Use:**
+
+1. **View Rankings:**
+   - After loading a deck, the "Top Cards (by Synergy)" panel appears
+   - Shows rank, card name, total synergy score, and connection count
+   - Color-coded badges indicate importance level
+
+2. **Visualize in Graph:**
+   - Click the "View Top Cards in Graph" button
+   - Graph reorganizes with concentric layout
+   - Top 10 cards highlighted with gradient colors
+   - Other cards dimmed to 30% opacity
+   - Edges between top cards highlighted in green
+
+**Visual Indicators:**
+
+**Rank Badges:**
+- **Red (#1):** Most important card (highest synergy)
+- **Orange/Yellow (#2-4):** Very high importance
+- **Green/Teal (#5-7):** High importance
+- **Blue/Purple (#8-9):** Medium-high importance
+- **Gray (#10):** Still important, 10th best
+
+**Node Sizes in Graph View:**
+- Rank #1: Largest (100px)
+- Sizes decrease with rank
+- Rank #10: Still prominent (50px)
+- Other cards: Smaller (40px)
+
+**What Rankings Tell You:**
+
+1. **Deck Engines:** Top-ranked cards are your deck's key enablers
+2. **Protection Priorities:** These cards are worth protecting/tutoring
+3. **Mulligan Decisions:** Higher-ranked cards make better keeps
+4. **Cut Candidates:** Cards with very low/zero synergy might be cuts
+5. **Deck Focus:** See which strategies are most interconnected
+
+**Example Interpretation:**
+
+```
+Rank 1: Rhystic Study (Synergy: 45.2, Connections: 38)
+→ This card synergizes with 38 other cards
+→ Total synergy weight of 45.2
+→ Priority tutor target and protection target
+
+Rank 10: Sol Ring (Synergy: 12.3, Connections: 15)
+→ Still important (top 10!)
+→ Enables many cards but doesn't have complex synergies
+→ Utility/ramp piece
+```
+
+**Categories of Importance:**
+
+Based on synergy score relative to the best card:
+- **Essential** (70-100%): Core deck pieces
+- **High** (40-70%): Very important cards
+- **Medium** (20-40%): Good synergy cards
+- **Low** (10-20%): Some synergy
+- **Minimal** (0-10%): Weak synergies or utility cards
+
+**Technical Details:**
+
+**Calculation Method:**
+```
+Card Score = Σ(all synergy weights involving that card)
+```
+
+For example, if Card A has synergies with:
+- Card B: weight 3.5
+- Card C: weight 5.2
+- Card D: weight 2.1
+
+Card A's total score: 3.5 + 5.2 + 2.1 = 10.8
+
+**Why This Metric Matters:**
+
+Unlike simple connection counts, weighted centrality accounts for:
+- **Quality** of synergies (combos weighted 2x)
+- **Strength** of interactions (strong synergies contribute more)
+- **Overall impact** on deck functionality
+
+**Use Cases:**
+
+1. **Deck Building:** Identify which cards to build around
+2. **Gameplay:** Know which cards to search for first
+3. **Protection:** Decide what needs hexproof/protection
+4. **Trading:** Value cards beyond just $ price
+5. **Optimization:** Find weak links to replace
+
 ---
 
 ## 5. Deck Management
