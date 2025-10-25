@@ -587,7 +587,7 @@ def update_card_rankings(deck_file):
                 ], style=card_item_style, id={'type': 'ranking-card', 'index': card_info['rank']})
             )
 
-        return rankings_items, {'display': 'block', 'marginTop': '20px'}
+        return rankings_items
 
     except Exception as e:
         print(f"Error calculating rankings: {e}")
@@ -608,32 +608,31 @@ def update_role_filter_dropdown(role_data, active_filter):
     if not role_data:
         return [], True, None, "No role filter active."
 
-    options = []
+    options: List[Dict[str, Any]] = []
     has_available = False
 
     for category_key, category_def in ROLE_CATEGORIES.items():
         category_summary = role_data.get(category_key, {'roles': {}})
         role_entries = category_summary.get('roles', {})
-        grouped_options = []
+
+        options.append({
+            'label': category_def['label'],
+            'value': f'header::{category_key}',
+            'disabled': True
+        })
 
         for role_def in category_def['roles']:
             role_key = role_def['key']
             role_label = role_def['label']
             cards = role_entries.get(role_key, {}).get('cards', []) or []
             count = len(cards)
-            grouped_options.append({
-                'label': f"{role_label} ({count})",
+            options.append({
+                'label': f"  {role_label} ({count})",
                 'value': f"{category_key}::{role_key}",
                 'disabled': count == 0
             })
             if count > 0:
                 has_available = True
-
-        if grouped_options:
-            options.append({
-                'label': category_def['label'],
-                'options': grouped_options
-            })
 
     active_message = "No role filter active."
     if active_filter:
@@ -675,6 +674,9 @@ def set_active_role_filter(dropdown_value, clear_click, current_filter):
         try:
             category_key, role_key = dropdown_value.split('::', 1)
         except ValueError:
+            return dash.no_update
+
+        if category_key == 'header':
             return dash.no_update
 
         if current_filter and current_filter.get('category') == category_key and current_filter.get('role') == role_key:
