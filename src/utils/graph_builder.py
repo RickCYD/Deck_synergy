@@ -5,6 +5,8 @@ Converts deck data into Cytoscape graph elements
 
 from typing import Dict, List
 
+from src.utils.card_roles import slugify_role
+
 
 def build_graph_elements(deck_data: Dict) -> List[Dict]:
     """
@@ -47,6 +49,11 @@ def create_card_node(card: Dict) -> Dict:
 
     # Determine node type and color
     node_type = 'commander' if card.get('is_commander', False) else 'card'
+    roles = card.get('roles') or {}
+    role_classes = []
+    for category_key, role_keys in roles.items():
+        for role_key in role_keys:
+            role_classes.append(slugify_role(category_key, role_key))
 
     # Get card colors for visual representation
     colors = card.get('colors', [])
@@ -82,12 +89,15 @@ def create_card_node(card: Dict) -> Dict:
         'art_crop_url': card.get('image_uris', {}).get('art_crop', ''),  # Just the artwork
 
         # Categories from Archidekt
-        'categories': card.get('categories', [])
+        'categories': card.get('categories', []),
+        'roles': roles
     }
+
+    classes = ' '.join([node_type] + role_classes) if role_classes else node_type
 
     return {
         'data': node_data,
-        'classes': node_type
+        'classes': classes
     }
 
 

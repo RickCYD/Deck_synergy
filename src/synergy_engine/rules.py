@@ -459,7 +459,11 @@ def detect_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'opponent.*create.*token',
         r'defending player creates.*token',
         r'that player creates.*token',
-        r'create.*token.*under.*opponent.*control'
+        r'create.*token.*under.*opponent.*control',
+        r'its controller creates.*token',
+        r'its controller creates.*treasure',
+        r'controller creates.*token',
+        r'controller creates.*treasure'
     ]
 
     token_payoff = [r'whenever.*token', r'tokens you control', r'for each.*token you control']
@@ -576,8 +580,8 @@ def detect_life_as_resource(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Life as Resource',
             'description': f"{card1['name']} pays life as a cost, {card2['name']} gains life to offset",
             'value': 3.0,
-            'category': 'resource_synergy',
-            'subcategory': 'life_payment'
+            'category': 'mana_synergy',
+            'subcategory': 'cost_reduction'
         }
 
     # Check reverse
@@ -590,8 +594,8 @@ def detect_life_as_resource(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Life as Resource',
             'description': f"{card2['name']} pays life as a cost, {card1['name']} gains life to offset",
             'value': 3.0,
-            'category': 'resource_synergy',
-            'subcategory': 'life_payment'
+            'category': 'mana_synergy',
+            'subcategory': 'cost_reduction'
         }
 
     return None
@@ -637,8 +641,8 @@ def detect_deathtouch_pingers(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Deathtouch Pinger',
             'description': f"{card1['name']} provides deathtouch, {card2['name']} deals damage for removal",
             'value': 2.5,
-            'category': 'combo',
-            'subcategory': 'death_ping'
+            'category': 'role_interaction',
+            'subcategory': 'removal'
         }
 
     # Check reverse
@@ -651,8 +655,8 @@ def detect_deathtouch_pingers(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Deathtouch Pinger',
             'description': f"{card2['name']} provides deathtouch, {card1['name']} deals damage for removal",
             'value': 2.5,
-            'category': 'combo',
-            'subcategory': 'death_ping'
+            'category': 'role_interaction',
+            'subcategory': 'removal'
         }
 
     return None
@@ -708,8 +712,8 @@ def detect_indestructible_board_wipe(card1: Dict, card2: Dict) -> Optional[Dict]
             'name': 'Indestructible + Wipe',
             'description': f"{card1['name']} survives {card2['name']}'s board wipe",
             'value': value,
-            'category': 'combo',
-            'subcategory': 'protection_wipe'
+            'category': 'role_interaction',
+            'subcategory': 'protection'
         }
 
     # Check reverse
@@ -724,8 +728,8 @@ def detect_indestructible_board_wipe(card1: Dict, card2: Dict) -> Optional[Dict]
             'name': 'Indestructible + Wipe',
             'description': f"{card2['name']} survives {card1['name']}'s board wipe",
             'value': value,
-            'category': 'combo',
-            'subcategory': 'protection_wipe'
+            'category': 'role_interaction',
+            'subcategory': 'protection'
         }
 
     return None
@@ -769,8 +773,8 @@ def detect_extra_combat_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Extra Combat',
             'description': f"{card1['name']} grants extra combats, {card2['name']} benefits from attacking",
             'value': 2.5,
-            'category': 'combat_synergy',
-            'subcategory': 'extra_combat'
+            'category': 'combo',
+            'subcategory': 'two_card_combo'
         }
 
     # Check reverse
@@ -783,8 +787,8 @@ def detect_extra_combat_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Extra Combat',
             'description': f"{card2['name']} grants extra combats, {card1['name']} benefits from attacking",
             'value': 2.5,
-            'category': 'combat_synergy',
-            'subcategory': 'extra_combat'
+            'category': 'combo',
+            'subcategory': 'two_card_combo'
         }
 
     return None
@@ -833,7 +837,7 @@ def detect_wheel_and_deal(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card1['name']} forces mass draw/discard, {card2['name']} punishes opponents",
             'value': 3.0,
             'category': 'combo',
-            'subcategory': 'wheel_punisher'
+            'subcategory': 'two_card_combo'
         }
 
     # Check reverse
@@ -847,7 +851,7 @@ def detect_wheel_and_deal(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card2['name']} forces mass draw/discard, {card1['name']} punishes opponents",
             'value': 3.0,
             'category': 'combo',
-            'subcategory': 'wheel_punisher'
+            'subcategory': 'two_card_combo'
         }
 
     return None
@@ -902,7 +906,7 @@ def detect_tap_untap_engines(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card1['name']} untaps {card2['name']} for repeated value",
             'value': 2.5,
             'category': 'combo',
-            'subcategory': 'untap_engine'
+            'subcategory': 'two_card_combo'
         }
 
     # Check reverse
@@ -916,7 +920,7 @@ def detect_tap_untap_engines(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card2['name']} untaps {card1['name']} for repeated value",
             'value': 2.5,
             'category': 'combo',
-            'subcategory': 'untap_engine'
+            'subcategory': 'two_card_combo'
         }
 
     return None
@@ -959,7 +963,7 @@ def detect_cheat_big_spells(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Cheat Big Spells',
             'description': f"{card1['name']} cheats {card2['name']} (CMC {card2_cmc}) into play",
             'value': min(value, 4.0),  # Cap at 4.0
-            'category': 'combo',
+            'category': 'mana_synergy',
             'subcategory': 'cost_reduction'
         }
 
@@ -973,7 +977,7 @@ def detect_cheat_big_spells(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Cheat Big Spells',
             'description': f"{card2['name']} cheats {card1['name']} (CMC {card1_cmc}) into play",
             'value': min(value, 4.0),
-            'category': 'combo',
+            'category': 'mana_synergy',
             'subcategory': 'cost_reduction'
         }
 
@@ -1028,8 +1032,8 @@ def detect_topdeck_manipulation(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Topdeck Manipulation',
             'description': f"{card1['name']} sets up top of library for {card2['name']}",
             'value': 2.0,
-            'category': 'role_interaction',
-            'subcategory': 'topdeck_matters'
+            'category': 'card_advantage',
+            'subcategory': 'scry_synergy'
         }
 
     # Check reverse
@@ -1043,8 +1047,8 @@ def detect_topdeck_manipulation(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Topdeck Manipulation',
             'description': f"{card2['name']} sets up top of library for {card1['name']}",
             'value': 2.0,
-            'category': 'role_interaction',
-            'subcategory': 'topdeck_matters'
+            'category': 'card_advantage',
+            'subcategory': 'scry_synergy'
         }
 
     return None
@@ -1081,8 +1085,8 @@ def detect_threaten_and_sac(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Threaten & Sacrifice',
             'description': f"{card1['name']} steals creatures, {card2['name']} sacrifices/blinks them permanently",
             'value': 4.0,
-            'category': 'combo',
-            'subcategory': 'threaten_sac'
+            'category': 'role_interaction',
+            'subcategory': 'sacrifice'
         }
 
     # Check reverse
@@ -1095,8 +1099,8 @@ def detect_threaten_and_sac(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Threaten & Sacrifice',
             'description': f"{card2['name']} steals creatures, {card1['name']} sacrifices/blinks them permanently",
             'value': 4.0,
-            'category': 'combo',
-            'subcategory': 'threaten_sac'
+            'category': 'role_interaction',
+            'subcategory': 'sacrifice'
         }
 
     return None
@@ -1142,8 +1146,8 @@ def detect_token_anthems(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Token Anthem',
             'description': f"{card1['name']} creates tokens, {card2['name']} pumps them for lethal",
             'value': 5.0,
-            'category': 'combat_synergy',
-            'subcategory': 'go_wide'
+            'category': 'benefits',
+            'subcategory': 'anthem_effect'
         }
 
     # Check reverse
@@ -1156,8 +1160,8 @@ def detect_token_anthems(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Token Anthem',
             'description': f"{card2['name']} creates tokens, {card1['name']} pumps them for lethal",
             'value': 5.0,
-            'category': 'combat_synergy',
-            'subcategory': 'go_wide'
+            'category': 'benefits',
+            'subcategory': 'anthem_effect'
         }
 
     return None
@@ -1198,7 +1202,7 @@ def detect_convoke_improvise(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Convoke Engine',
             'description': f"{card1['name']} uses convoke, {card2['name']} provides creatures to tap",
             'value': 3.0,
-            'category': 'resource_synergy',
+            'category': 'mana_synergy',
             'subcategory': 'cost_reduction'
         }
 
@@ -1207,7 +1211,7 @@ def detect_convoke_improvise(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Improvise Engine',
             'description': f"{card1['name']} uses improvise, {card2['name']} provides artifacts to tap",
             'value': 3.0,
-            'category': 'resource_synergy',
+            'category': 'mana_synergy',
             'subcategory': 'cost_reduction'
         }
 
@@ -1222,7 +1226,7 @@ def detect_convoke_improvise(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Convoke Engine',
             'description': f"{card2['name']} uses convoke, {card1['name']} provides creatures to tap",
             'value': 3.0,
-            'category': 'resource_synergy',
+            'category': 'mana_synergy',
             'subcategory': 'cost_reduction'
         }
 
@@ -1231,7 +1235,7 @@ def detect_convoke_improvise(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Improvise Engine',
             'description': f"{card2['name']} uses improvise, {card1['name']} provides artifacts to tap",
             'value': 3.0,
-            'category': 'resource_synergy',
+            'category': 'mana_synergy',
             'subcategory': 'cost_reduction'
         }
 
@@ -1278,7 +1282,7 @@ def detect_fling_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card1['name']} flings {card2['name']} ({card2_power} power) for lethal damage",
             'value': 4.0,
             'category': 'combo',
-            'subcategory': 'fling'
+            'subcategory': 'two_card_combo'
         }
 
     # Check reverse
@@ -1290,7 +1294,7 @@ def detect_fling_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card2['name']} flings {card1['name']} ({card1_power} power) for lethal damage",
             'value': 4.0,
             'category': 'combo',
-            'subcategory': 'fling'
+            'subcategory': 'two_card_combo'
         }
 
     return None
@@ -1348,8 +1352,8 @@ def detect_double_strike_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Double Strike',
             'description': f"{card1['name']} {multiplier} {card2['name']}'s {card2_power} power",
             'value': 4.0,
-            'category': 'combat_synergy',
-            'subcategory': 'damage_multiplier'
+            'category': 'benefits',
+            'subcategory': 'keyword_grant'
         }
 
     # Check reverse
@@ -1363,8 +1367,8 @@ def detect_double_strike_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Double Strike',
             'description': f"{card2['name']} {multiplier} {card1['name']}'s {card1_power} power",
             'value': 4.0,
-            'category': 'combat_synergy',
-            'subcategory': 'damage_multiplier'
+            'category': 'benefits',
+            'subcategory': 'keyword_grant'
         }
 
     return None
@@ -1415,8 +1419,8 @@ def detect_spellslinger_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Spellslinger Engine',
             'description': f"{card1['name']} triggers on spells, {card2['name']} (CMC {card2_cmc}) fuels it",
             'value': 5.0,
-            'category': 'combo',
-            'subcategory': 'spellslinger'
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
         }
 
     # Check reverse
@@ -1432,8 +1436,8 @@ def detect_spellslinger_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Spellslinger Engine',
             'description': f"{card2['name']} triggers on spells, {card1['name']} (CMC {card1_cmc}) fuels it",
             'value': 5.0,
-            'category': 'combo',
-            'subcategory': 'spellslinger'
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
         }
 
     return None
@@ -1480,8 +1484,8 @@ def detect_artifact_token_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Artifact Token Engine',
             'description': f"{card1['name']} creates artifact tokens, {card2['name']} triggers when they {trigger_type}",
             'value': 4.0,
-            'category': 'role_interaction',
-            'subcategory': 'artifact_tokens'
+            'category': 'type_synergy',
+            'subcategory': 'artifact_matters'
         }
 
     # Check reverse
@@ -1495,8 +1499,8 @@ def detect_artifact_token_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Artifact Token Engine',
             'description': f"{card2['name']} creates artifact tokens, {card1['name']} triggers when they {trigger_type}",
             'value': 4.0,
-            'category': 'role_interaction',
-            'subcategory': 'artifact_tokens'
+            'category': 'type_synergy',
+            'subcategory': 'artifact_matters'
         }
 
     return None
@@ -1545,8 +1549,8 @@ def detect_token_doublers(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Token Doubler',
             'description': f"{card1['name']} doubles {card2['name']}'s token production",
             'value': 4.0,
-            'category': 'combo',
-            'subcategory': 'token_multiplier'
+            'category': 'role_interaction',
+            'subcategory': 'token_generation'
         }
 
     # Check reverse
@@ -1559,8 +1563,8 @@ def detect_token_doublers(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Token Doubler',
             'description': f"{card2['name']} doubles {card1['name']}'s token production",
             'value': 4.0,
-            'category': 'combo',
-            'subcategory': 'token_multiplier'
+            'category': 'role_interaction',
+            'subcategory': 'token_generation'
         }
 
     return None
@@ -1604,8 +1608,8 @@ def detect_discard_madness_flashback(card1: Dict, card2: Dict) -> Optional[Dict]
             'name': 'Discard Synergy',
             'description': f"{card1['name']} discards {card2['name']} ({mechanic}) for value",
             'value': 3.0,
-            'category': 'role_interaction',
-            'subcategory': 'discard_matters'
+            'category': 'card_advantage',
+            'subcategory': 'recursion_loop'
         }
 
     # Check reverse
@@ -1622,8 +1626,8 @@ def detect_discard_madness_flashback(card1: Dict, card2: Dict) -> Optional[Dict]
             'name': 'Discard Synergy',
             'description': f"{card2['name']} discards {card1['name']} ({mechanic}) for value",
             'value': 3.0,
-            'category': 'role_interaction',
-            'subcategory': 'discard_matters'
+            'category': 'card_advantage',
+            'subcategory': 'recursion_loop'
         }
 
     return None
@@ -1663,7 +1667,7 @@ def detect_enchantress_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card1['name']} draws when you cast {card2['name']} (enchantment)",
             'value': 4.0,
             'category': 'card_advantage',
-            'subcategory': 'enchantress'
+            'subcategory': 'draw_engine'
         }
 
     # Check reverse
@@ -1677,7 +1681,7 @@ def detect_enchantress_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card2['name']} draws when you cast {card1['name']} (enchantment)",
             'value': 4.0,
             'category': 'card_advantage',
-            'subcategory': 'enchantress'
+            'subcategory': 'draw_engine'
         }
 
     return None
@@ -1737,8 +1741,8 @@ def detect_voltron_evasion(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Voltron Package',
             'description': f"{card1['name']} boosts power, {card2['name']} grants evasion",
             'value': 3.5,
-            'category': 'combat_synergy',
-            'subcategory': 'voltron'
+            'category': 'benefits',
+            'subcategory': 'keyword_grant'
         }
 
     # Check reverse
@@ -1755,8 +1759,8 @@ def detect_voltron_evasion(card1: Dict, card2: Dict) -> Optional[Dict]:
             'name': 'Voltron Package',
             'description': f"{card2['name']} boosts power, {card1['name']} grants evasion",
             'value': 3.5,
-            'category': 'combat_synergy',
-            'subcategory': 'voltron'
+            'category': 'benefits',
+            'subcategory': 'keyword_grant'
         }
 
     return None
