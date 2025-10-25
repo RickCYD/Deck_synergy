@@ -77,10 +77,7 @@ def get_base_stylesheet() -> List[Dict[str, Any]]:
             'selector': 'node[is_multicolor]',
             'style': {
                 'border-width': '3px',
-                'border-color': 'data(border_color)',
-                'outline-width': '3px',
-                'outline-color': 'data(secondary_border)',
-                'outline-opacity': 1
+                'border-color': 'data(border_color)'
             }
         },
         {
@@ -101,9 +98,7 @@ def get_base_stylesheet() -> List[Dict[str, Any]]:
         {
             'selector': 'node[type="commander"][is_multicolor]',
             'style': {
-                'border-width': '4px',
-                'outline-width': '4px',
-                'outline-color': 'data(secondary_border)'
+                'border-width': '4px'
             }
         },
         {
@@ -340,10 +335,7 @@ app.layout = html.Div([
                         'selector': 'node[is_multicolor]',
                         'style': {
                             'border-width': '3px',
-                            'border-color': 'data(border_color)',
-                            'outline-width': '3px',
-                            'outline-color': 'data(secondary_border)',
-                            'outline-opacity': 1
+                            'border-color': 'data(border_color)'
                         }
                     },
                     {
@@ -364,9 +356,7 @@ app.layout = html.Div([
                     {
                         'selector': 'node[type="commander"][is_multicolor]',
                         'style': {
-                            'border-width': '4px',
-                            'outline-width': '4px',
-                            'outline-color': 'data(secondary_border)'
+                            'border-width': '4px'
                         }
                     },
                     {
