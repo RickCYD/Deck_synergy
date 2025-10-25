@@ -9,7 +9,7 @@ import dash_cytoscape as cyto
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 # Import custom modules
 from src.api.archidekt import fetch_deck_from_archidekt
@@ -183,142 +183,159 @@ def apply_role_filter_styles(
 
 # Define the app layout
 app.layout = html.Div([
-    # Header
-    html.Div([
-        html.H1("MTG Commander Deck Synergy Visualizer",
-                style={'textAlign': 'center', 'color': '#2c3e50', 'marginBottom': '10px'}),
-        html.P("Visualize card synergies in your Commander deck as an interactive graph",
-               style={'textAlign': 'center', 'color': '#7f8c8d', 'marginBottom': '20px'})
-    ], style={'padding': '20px', 'backgroundColor': '#ecf0f1'}),
-
-    # Control Panel
     html.Div([
         html.Div([
-            # Deck URL Input
+            html.Label("Archidekt Deck URL:", style={'fontWeight': 'bold', 'marginBottom': '6px'}),
             html.Div([
-                html.Label("Archidekt Deck URL:", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
                 dcc.Input(
                     id='deck-url-input',
                     type='text',
                     placeholder='https://archidekt.com/decks/...',
-                    style={'width': '100%', 'padding': '10px', 'marginBottom': '10px'}
+                    style={'flex': '1', 'minWidth': '220px', 'padding': '10px'}
                 ),
-                html.Button('Load Deck', id='load-deck-button', n_clicks=0,
-                           style={'width': '100%', 'padding': '10px', 'backgroundColor': '#3498db',
-                                  'color': 'white', 'border': 'none', 'cursor': 'pointer',
-                                  'fontSize': '16px', 'fontWeight': 'bold'})
-            ], style={'marginBottom': '20px'}),
-
-            # Deck Selector
-            html.Div([
-                html.Label("Select Deck:", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
-                dcc.Dropdown(
-                    id='deck-selector',
-                    options=initial_deck_options,
-                    placeholder='Select a loaded deck...',
-                    style={'marginBottom': '10px'}
+                html.Button(
+                    'Load Deck',
+                    id='load-deck-button',
+                    n_clicks=0,
+                    style={
+                        'padding': '10px 16px',
+                        'backgroundColor': '#3498db',
+                        'color': 'white',
+                        'border': 'none',
+                        'fontSize': '15px',
+                        'fontWeight': 'bold',
+                        'cursor': 'pointer',
+                        'borderRadius': '4px'
+                    }
                 )
-            ], style={'marginBottom': '20px'}),
+            ], style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '8px'}),
+            html.Div(id='status-message', style={'marginTop': '6px', 'color': '#7f8c8d'})
+        ], style={'flex': '1 1 320px', 'minWidth': '260px'}),
 
-            # Status Messages
-            html.Div(id='status-message', style={'padding': '10px', 'marginBottom': '10px'}),
-
-            # Graph Layout Selector
-            html.Div([
-                html.Label("Graph Layout:", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
-                dcc.Dropdown(
-                    id='layout-selector',
-                    options=[
-                        {'label': 'Cose (Force-directed)', 'value': 'cose'},
-                        {'label': 'Circle', 'value': 'circle'},
-                        {'label': 'Concentric', 'value': 'concentric'},
-                        {'label': 'Grid', 'value': 'grid'},
-                        {'label': 'Breadthfirst', 'value': 'breadthfirst'}
-                    ],
-                    value='cose',
-                    style={'marginBottom': '10px'}
-                )
-            ], style={'marginBottom': '20px'}),
-
-            # Card Rankings Panel
-            html.Div([
-                html.Label("Top Cards (by Synergy):", style={'fontWeight': 'bold', 'marginBottom': '10px'}),
-                html.Button('View Top Cards in Graph', id='view-top-cards-button', n_clicks=0,
-                           style={'width': '100%', 'padding': '8px', 'backgroundColor': '#2ecc71',
-                                  'color': 'white', 'border': 'none', 'cursor': 'pointer',
-                                  'fontSize': '14px', 'fontWeight': 'bold', 'marginBottom': '10px'}),
-                html.Div(id='card-rankings-panel', style={'maxHeight': '400px', 'overflowY': 'auto'})
-            ], id='rankings-container', style={'display': 'none'})
-        ], style={'padding': '20px', 'backgroundColor': '#ffffff', 'borderRadius': '5px',
-                  'boxShadow': '0 2px 4px rgba(0,0,0,0.1)', 'marginBottom': '20px'}),
-
-        # Role Filter Panel
         html.Div([
-            html.Label("Role Filters:", style={'fontWeight': 'bold', 'marginBottom': '10px'}),
-            html.Div(
-                id='role-filter-container',
-                style={'maxHeight': '260px', 'overflowY': 'auto', 'marginBottom': '10px'}
+            html.Label("Select Deck:", style={'fontWeight': 'bold', 'marginBottom': '6px'}),
+            dcc.Dropdown(
+                id='deck-selector',
+                options=initial_deck_options,
+                placeholder='Select a loaded deck...',
+                style={'width': '100%'}
+            )
+        ], style={'flex': '1 1 220px', 'minWidth': '220px'}),
+
+        html.Div([
+            html.Label("Role Filter:", style={'fontWeight': 'bold', 'marginBottom': '6px'}),
+            dcc.Dropdown(
+                id='role-filter-dropdown',
+                placeholder='Filter by role...',
+                clearable=False,
+                style={'width': '100%'}
             ),
             html.Button(
                 'Clear Role Filter',
                 id='clear-role-filter-button',
                 n_clicks=0,
                 style={
-                    'width': '100%',
+                    'marginTop': '6px',
                     'padding': '8px',
                     'backgroundColor': '#bdc3c7',
                     'color': '#2c3e50',
                     'border': 'none',
                     'cursor': 'pointer',
                     'fontSize': '14px',
-                    'fontWeight': 'bold'
+                    'fontWeight': 'bold',
+                    'borderRadius': '4px',
+                    'width': '100%'
                 }
             ),
             html.Div(
                 id='active-role-filter-display',
-                style={'marginTop': '10px', 'color': '#7f8c8d', 'fontStyle': 'italic'}
+                style={'marginTop': '6px', 'color': '#7f8c8d', 'fontStyle': 'italic'}
             )
-        ], style={'padding': '20px', 'backgroundColor': '#ffffff', 'borderRadius': '5px',
-                  'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
-    ], style={'width': '25%', 'float': 'left', 'padding': '20px'}),
+        ], style={'flex': '1 1 260px', 'minWidth': '240px'}),
 
-    # Main Content Area
-    html.Div([
-        # Graph Visualization
         html.Div([
+            dcc.Dropdown(
+                id='layout-selector',
+                options=[
+                    {'label': 'Cose (Force-directed)', 'value': 'cose'},
+                    {'label': 'Circle', 'value': 'circle'},
+                    {'label': 'Concentric', 'value': 'concentric'},
+                    {'label': 'Grid', 'value': 'grid'},
+                    {'label': 'Breadthfirst', 'value': 'breadthfirst'}
+                ],
+                value='cose'
+            )
+        ], style={'display': 'none'})
+    ], style={
+        'display': 'flex',
+        'flexWrap': 'wrap',
+        'gap': '16px',
+        'alignItems': 'flex-end',
+        'backgroundColor': '#ffffff',
+        'padding': '18px 24px',
+        'boxShadow': '0 2px 4px rgba(0,0,0,0.08)',
+        'position': 'sticky',
+        'top': 0,
+        'zIndex': 100
+    }),
+
+    html.Div([
+        html.Div([
+            html.Div([
+                html.H1("MTG Commander Deck Synergy Visualizer",
+                        style={'color': '#2c3e50', 'marginBottom': '6px'}),
+                html.P("Visualize card synergies in your Commander deck as an interactive graph",
+                       style={'color': '#7f8c8d', 'marginBottom': '12px'})
+            ], style={'marginBottom': '10px'}),
+            html.Button(
+                'View Top Cards in Graph',
+                id='view-top-cards-button',
+                n_clicks=0,
+                style={
+                    'padding': '8px 12px',
+                    'backgroundColor': '#2ecc71',
+                    'color': 'white',
+                    'border': 'none',
+                    'cursor': 'pointer',
+                    'fontSize': '14px',
+                    'fontWeight': 'bold',
+                    'borderRadius': '4px',
+                    'alignSelf': 'flex-start',
+                    'marginBottom': '12px'
+                }
+            ),
+            html.Div(id='card-rankings-panel', style={'maxHeight': '160px', 'overflowY': 'auto', 'marginBottom': '16px'}),
             cyto.Cytoscape(
                 id='card-graph',
                 layout={'name': 'cose'},
-                style={'width': '100%', 'height': '600px'},
+                style={'width': '100%', 'height': '650px'},
                 elements=[],
                 stylesheet=[
-                    # Node styles - Perfect square nodes with card art and color-coded borders
                     {
                         'selector': 'node',
                         'style': {
                             'label': 'data(label)',
                             'shape': 'rectangle',
-                            'background-color': 'data(color_code)',  # Fallback color
-                            'background-image': 'data(art_crop_url)',  # Just the artwork, not full card
+                            'background-color': 'data(color_code)',
+                            'background-image': 'data(art_crop_url)',
                             'background-fit': 'cover',
                             'background-clip': 'node',
                             'color': '#fff',
-                            'text-valign': 'bottom',  # Position label at bottom
+                            'text-valign': 'bottom',
                             'text-halign': 'center',
                             'text-background-color': '#000',
                             'text-background-opacity': 0.7,
                             'text-background-padding': '3px',
                             'font-size': '10px',
-                            'width': '90px',  # Perfect square
-                            'height': '90px',  # Same as width
+                            'width': '90px',
+                            'height': '90px',
                             'border-width': '4px',
-                            'border-color': 'data(border_color)',  # MTG color border
+                            'border-color': 'data(border_color)',
                             'border-style': 'solid',
                             'text-outline-width': '1px',
                             'text-outline-color': '#000'
                         }
                     },
-                    # Multi-color cards - split border effect using outline
                     {
                         'selector': 'node[is_multicolor]',
                         'style': {
@@ -329,23 +346,21 @@ app.layout = html.Div([
                             'outline-opacity': 1
                         }
                     },
-                    # Commander node style - Larger perfect square with thick border
                     {
                         'selector': 'node[type="commander"]',
                         'style': {
                             'background-color': 'data(color_code)',
-                            'background-image': 'data(art_crop_url)',  # Just the artwork
+                            'background-image': 'data(art_crop_url)',
                             'background-fit': 'cover',
                             'background-clip': 'node',
-                            'width': '110px',  # Perfect square
-                            'height': '110px',  # Same as width
+                            'width': '110px',
+                            'height': '110px',
                             'font-size': '12px',
                             'font-weight': 'bold',
                             'border-width': '5px',
                             'border-color': 'data(border_color)'
                         }
                     },
-                    # Commander multi-color - split border
                     {
                         'selector': 'node[type="commander"][is_multicolor]',
                         'style': {
@@ -354,7 +369,6 @@ app.layout = html.Div([
                             'outline-color': 'data(secondary_border)'
                         }
                     },
-                    # Edge styles
                     {
                         'selector': 'edge',
                         'style': {
@@ -364,7 +378,6 @@ app.layout = html.Div([
                             'opacity': 0.6
                         }
                     },
-                    # Selected node style
                     {
                         'selector': 'node:selected',
                         'style': {
@@ -372,7 +385,6 @@ app.layout = html.Div([
                             'border-color': '#f39c12'
                         }
                     },
-                    # Highlighted elements
                     {
                         'selector': '.highlighted',
                         'style': {
@@ -380,7 +392,6 @@ app.layout = html.Div([
                             'z-index': 999
                         }
                     },
-                    # Dimmed elements
                     {
                         'selector': '.dimmed',
                         'style': {
@@ -389,16 +400,34 @@ app.layout = html.Div([
                     }
                 ]
             )
-        ], style={'backgroundColor': '#ffffff', 'borderRadius': '5px',
-                  'boxShadow': '0 2px 4px rgba(0,0,0,0.1)', 'marginBottom': '20px'}),
+        ], style={
+            'flex': '2 1 65%',
+            'backgroundColor': '#ffffff',
+            'borderRadius': '6px',
+            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+            'padding': '20px',
+            'minWidth': '320px'
+        }),
 
-        # Information Panel
-        html.Div(id='info-panel',
-                style={'padding': '20px', 'backgroundColor': '#ffffff', 'borderRadius': '5px',
-                       'boxShadow': '0 2px 4px rgba(0,0,0,0.1)', 'minHeight': '200px'})
-    ], style={'width': '70%', 'float': 'right', 'padding': '20px'}),
+        html.Div(
+            id='info-panel',
+            style={
+                'flex': '1 1 30%',
+                'minWidth': '260px',
+                'backgroundColor': '#ffffff',
+                'borderRadius': '6px',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                'padding': '20px',
+                'minHeight': '650px'
+            }
+        )
+    ], style={
+        'display': 'flex',
+        'flexWrap': 'wrap',
+        'gap': '20px',
+        'padding': '20px'
+    }),
 
-    # Hidden div to store deck data
     dcc.Store(id='deck-data-store'),
     dcc.Store(id='selected-node-store'),
     dcc.Store(id='current-deck-file-store'),
@@ -499,15 +528,14 @@ def update_graph(deck_file):
 
 # Callback to update card rankings when deck is selected
 @app.callback(
-    [Output('card-rankings-panel', 'children'),
-     Output('rankings-container', 'style')],
+    Output('card-rankings-panel', 'children'),
     Input('deck-selector', 'value'),
     prevent_initial_call=True
 )
 def update_card_rankings(deck_file):
-    """Calculate and display card rankings when a deck is selected"""
+    """Calculate and display card rankings when a deck is selected."""
     if not deck_file:
-        return [], {'display': 'none'}
+        return []
 
     try:
         # Load deck data
@@ -563,88 +591,49 @@ def update_card_rankings(deck_file):
 
     except Exception as e:
         print(f"Error calculating rankings: {e}")
-        return [html.Div(f"Error: {str(e)}", style={'color': 'red'})], {'display': 'block'}
+        return [html.Div(f"Error: {str(e)}", style={'color': 'red'})]
 
 
 @app.callback(
-    [Output('role-filter-container', 'children'),
+    [Output('role-filter-dropdown', 'options'),
+     Output('role-filter-dropdown', 'disabled'),
+     Output('role-filter-dropdown', 'value'),
      Output('active-role-filter-display', 'children')],
     [Input('role-filter-data', 'data'),
-     Input('active-role-filter', 'data')]
+     Input('active-role-filter', 'data')],
+    prevent_initial_call=False
 )
-def render_role_filters(role_data, active_filter):
-    """Render the role filter menu and active filter message."""
+def update_role_filter_dropdown(role_data, active_filter):
+    """Populate the role filter dropdown and show the current selection."""
     if not role_data:
-        return (
-            [html.Div("Load a deck to view available role filters.", style={'color': '#7f8c8d'})],
-            "No role filter active."
-        )
+        return [], True, None, "No role filter active."
 
-    filter_sections = []
+    options = []
+    has_available = False
+
     for category_key, category_def in ROLE_CATEGORIES.items():
         category_summary = role_data.get(category_key, {'roles': {}})
-        category_roles = category_summary.get('roles', {})
+        role_entries = category_summary.get('roles', {})
+        grouped_options = []
 
-        category_card_set: Set[str] = set()
-        role_buttons = []
         for role_def in category_def['roles']:
             role_key = role_def['key']
             role_label = role_def['label']
-            role_entry = category_roles.get(role_key, {'cards': []})
-            cards = role_entry.get('cards', []) or []
+            cards = role_entries.get(role_key, {}).get('cards', []) or []
             count = len(cards)
-            category_card_set.update(cards)
+            grouped_options.append({
+                'label': f"{role_label} ({count})",
+                'value': f"{category_key}::{role_key}",
+                'disabled': count == 0
+            })
+            if count > 0:
+                has_available = True
 
-            is_active = (
-                active_filter
-                and active_filter.get('category') == category_key
-                and active_filter.get('role') == role_key
-            )
-
-            button_style = {
-                'width': '100%',
-                'textAlign': 'left',
-                'padding': '6px 10px',
-                'marginBottom': '4px',
-                'backgroundColor': '#3498db' if is_active else '#ecf0f1',
-                'color': '#ffffff' if is_active else '#2c3e50',
-                'border': 'none',
-                'borderRadius': '4px',
-                'cursor': 'pointer',
-                'fontSize': '13px',
-                'fontWeight': 'bold'
-            }
-
-            if count == 0:
-                button_style.update({
-                    'backgroundColor': '#f0f3f4',
-                    'color': '#95a5a6',
-                    'cursor': 'not-allowed'
-                })
-
-            button_id = {'type': 'role-filter-button', 'category': category_key, 'role': role_key}
-            button_label = f"{role_label} ({count})"
-            role_buttons.append(
-                html.Button(
-                    button_label,
-                    id=button_id,
-                    n_clicks=0,
-                    disabled=count == 0,
-                    style=button_style,
-                    title=', '.join(cards[:10]) if count else "No cards for this role"
-                )
-            )
-
-        summary_label = category_def['label']
-        if category_card_set:
-            summary_label = f"{summary_label} ({len(category_card_set)})"
-
-        filter_sections.append(
-            html.Details([
-                html.Summary(summary_label),
-                html.Div(role_buttons, style={'marginTop': '6px'})
-            ], open=True)
-        )
+        if grouped_options:
+            options.append({
+                'label': category_def['label'],
+                'options': grouped_options
+            })
 
     active_message = "No role filter active."
     if active_filter:
@@ -652,33 +641,28 @@ def render_role_filters(role_data, active_filter):
         role_key = active_filter.get('role')
         if category_key and role_key:
             category_def = ROLE_CATEGORIES.get(category_key)
-            category_label = category_def['label'] if category_def else category_key.title()
+            category_label = category_def['label'] if category_def else category_key.replace('_', ' ').title()
             role_label = role_key.replace('_', ' ').title()
-            count = 0
-            category_summary = role_data.get(category_key, {'roles': {}})
-            role_entry = category_summary.get('roles', {}).get(role_key)
-            if role_entry:
-                count = len(role_entry.get('cards', []))
-                role_label = next(
-                    (role['label'] for role in category_def['roles'] if role['key'] == role_key),
-                    role_label
-                )
+            if category_def:
+                for role_def in category_def['roles']:
+                    if role_def['key'] == role_key:
+                        role_label = role_def['label']
+                        break
+            count = len(role_data.get(category_key, {}).get('roles', {}).get(role_key, {}).get('cards', [])) if role_data else 0
             active_message = f"Active Filter: {category_label} → {role_label} ({count} cards)"
 
-    return filter_sections, active_message
+    return options, not has_available, None, active_message
 
 
 @app.callback(
-    Output('active-role-filter', 'data'),
-    [
-        Input({'type': 'role-filter-button', 'category': ALL, 'role': ALL}, 'n_clicks'),
-        Input('clear-role-filter-button', 'n_clicks')
-    ],
+    Output('active-role-filter', 'data', allow_duplicate=True),
+    [Input('role-filter-dropdown', 'value'),
+     Input('clear-role-filter-button', 'n_clicks')],
     State('active-role-filter', 'data'),
     prevent_initial_call=True
 )
-def set_active_role_filter(role_button_clicks, clear_click, current_filter):
-    """Update the active role filter based on button interactions."""
+def set_active_role_filter(dropdown_value, clear_click, current_filter):
+    """Update the active role filter when a dropdown value changes or clear is pressed."""
     ctx = callback_context
     if not ctx.triggered:
         return dash.no_update
@@ -687,22 +671,18 @@ def set_active_role_filter(role_button_clicks, clear_click, current_filter):
     if trigger == 'clear-role-filter-button.n_clicks':
         return None
 
-    trigger_id_str = trigger.split('.')[0]
-    try:
-        trigger_id = json.loads(trigger_id_str)
-    except json.JSONDecodeError:
-        return dash.no_update
+    if dropdown_value:
+        try:
+            category_key, role_key = dropdown_value.split('::', 1)
+        except ValueError:
+            return dash.no_update
 
-    category = trigger_id.get('category')
-    role = trigger_id.get('role')
-    if not category or not role:
-        return dash.no_update
+        if current_filter and current_filter.get('category') == category_key and current_filter.get('role') == role_key:
+            return dash.no_update
 
-    if current_filter and current_filter.get('category') == category and current_filter.get('role') == role:
-        # Clicking the same button toggles the filter off
-        return None
+        return {'category': category_key, 'role': role_key}
 
-    return {'category': category, 'role': role}
+    return dash.no_update
 
 
 
