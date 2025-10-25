@@ -51,6 +51,9 @@ def create_card_node(card: Dict) -> Dict:
     # Get card colors for visual representation
     colors = card.get('colors', [])
     color_code = get_color_code(colors)
+    border_color = get_border_color(colors)
+    secondary_border = get_secondary_border_color(colors)
+    is_multicolor = len(colors) >= 2
 
     # Create node data
     node_data = {
@@ -72,7 +75,11 @@ def create_card_node(card: Dict) -> Dict:
 
         # Visual properties
         'color_code': color_code,
+        'border_color': border_color,
+        'secondary_border': secondary_border if is_multicolor else border_color,
+        'is_multicolor': is_multicolor,
         'image_url': card.get('image_uris', {}).get('normal', ''),
+        'art_crop_url': card.get('image_uris', {}).get('art_crop', ''),  # Just the artwork
 
         # Categories from Archidekt
         'categories': card.get('categories', [])
@@ -153,6 +160,60 @@ def get_color_code(colors: List[str]) -> str:
         return '#F4E15B'
 
     return '#BCC3C7'
+
+
+def get_border_color(colors: List[str]) -> str:
+    """
+    Get border color for MTG cards - for multi-color, return first color
+
+    Args:
+        colors: List of MTG color codes (W, U, B, R, G)
+
+    Returns:
+        Hex color code for border
+    """
+    # MTG color mapping (brighter versions for borders)
+    border_color_map = {
+        'W': '#FFFACD',  # Bright white/cream
+        'U': '#1E90FF',  # Bright blue
+        'B': '#4B0082',  # Dark purple (better than pure black)
+        'R': '#FF4500',  # Bright red-orange
+        'G': '#32CD32',  # Bright green
+    }
+
+    if not colors:
+        return '#BCC3C7'  # Colorless (gray)
+
+    # For single color, use that color
+    if len(colors) == 1:
+        return border_color_map.get(colors[0], '#BCC3C7')
+
+    # For multi-color, use first color (will be used for split border)
+    return border_color_map.get(colors[0], '#F4E15B')
+
+
+def get_secondary_border_color(colors: List[str]) -> str:
+    """
+    Get secondary border color for multi-color cards
+
+    Args:
+        colors: List of MTG color codes (W, U, B, R, G)
+
+    Returns:
+        Hex color code for secondary border, or None if single color
+    """
+    border_color_map = {
+        'W': '#FFFACD',
+        'U': '#1E90FF',
+        'B': '#4B0082',
+        'R': '#FF4500',
+        'G': '#32CD32',
+    }
+
+    if len(colors) >= 2:
+        return border_color_map.get(colors[1], '#F4E15B')
+
+    return None
 
 
 def filter_graph_by_card(elements: List[Dict], card_name: str) -> List[Dict]:
