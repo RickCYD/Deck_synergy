@@ -116,6 +116,8 @@ def create_synergy_edge(synergy_key: str, synergy_data: Dict) -> Dict:
 
     edge_id = f"{card1}_{card2}".replace(' ', '_').replace(',', '').replace("'", '')
 
+    weight = synergy_data.get('total_weight', 1.0)
+
     edge_data = {
         'id': edge_id,
         'source': card1,
@@ -124,14 +126,11 @@ def create_synergy_edge(synergy_key: str, synergy_data: Dict) -> Dict:
         'target_label': card2,
 
         # Synergy weight
-        'weight': synergy_data.get('total_weight', 1.0),
+        'weight': round(weight, 1),
 
         # Synergy details
         'synergies': synergy_data.get('synergies', {}),
-        'synergy_count': synergy_data.get('synergy_count', 0),
-
-        # Edge label (optional, shows on hover)
-        'label': f"{synergy_data.get('total_weight', 0):.1f}"
+        'synergy_count': synergy_data.get('synergy_count', 0)
     }
 
     return {

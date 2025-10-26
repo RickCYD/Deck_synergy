@@ -101,13 +101,67 @@ def get_base_stylesheet() -> List[Dict[str, Any]]:
                 'border-width': '4px'
             }
         },
+        # Base edge style
         {
             'selector': 'edge',
             'style': {
-                'width': 'data(weight)',
+                'width': 2,
                 'line-color': '#95a5a6',
                 'curve-style': 'bezier',
-                'opacity': 0.6
+                'opacity': 0.7,
+                'label': 'data(weight)',
+                'font-size': '9px',
+                'color': '#2c3e50',
+                'text-background-color': '#ffffff',
+                'text-background-opacity': 0.85,
+                'text-background-padding': '3px',
+                'text-background-shape': 'roundrectangle',
+                'text-border-color': '#bdc3c7',
+                'text-border-width': 0.5,
+                'text-border-opacity': 0.8
+            }
+        },
+        # Weight-based colors - gray to red gradient
+        {
+            'selector': 'edge[weight < 3]',
+            'style': {
+                'line-color': '#95a5a6',  # Gray
+                'width': 1.5
+            }
+        },
+        {
+            'selector': 'edge[weight >= 3][weight < 5]',
+            'style': {
+                'line-color': '#b3a59c',  # Light brown-gray
+                'width': 2
+            }
+        },
+        {
+            'selector': 'edge[weight >= 5][weight < 7]',
+            'style': {
+                'line-color': '#d4a574',  # Tan/beige
+                'width': 2.5
+            }
+        },
+        {
+            'selector': 'edge[weight >= 7][weight < 9]',
+            'style': {
+                'line-color': '#e67e22',  # Orange
+                'width': 3
+            }
+        },
+        {
+            'selector': 'edge[weight >= 9][weight < 11]',
+            'style': {
+                'line-color': '#e74c3c',  # Red-orange
+                'width': 4
+            }
+        },
+        {
+            'selector': 'edge[weight >= 11]',
+            'style': {
+                'line-color': '#c0392b',  # Dark red
+                'width': 5
             }
         }
     ]
@@ -170,7 +224,7 @@ def apply_role_filter_styles(
             'style': {
                 'opacity': 0.65,
                 'line-color': '#3498db',
-                'width': 'mapData(weight, 0, 10, 2, 8)'
+                'width': 3
             }
         })
 
@@ -381,13 +435,67 @@ app.layout = html.Div([
                             'border-width': '4px'
                         }
                     },
+                    # Base edge style
                     {
                         'selector': 'edge',
                         'style': {
-                            'width': 'data(weight)',
+                            'width': 2,
                             'line-color': '#95a5a6',
                             'curve-style': 'bezier',
-                            'opacity': 0.6
+                            'opacity': 0.7,
+                            'label': 'data(weight)',
+                            'font-size': '9px',
+                            'color': '#2c3e50',
+                            'text-background-color': '#ffffff',
+                            'text-background-opacity': 0.85,
+                            'text-background-padding': '3px',
+                            'text-background-shape': 'roundrectangle',
+                            'text-border-color': '#bdc3c7',
+                            'text-border-width': 0.5,
+                            'text-border-opacity': 0.8
+                        }
+                    },
+                    # Weight-based colors - gray to red gradient
+                    {
+                        'selector': 'edge[weight < 3]',
+                        'style': {
+                            'line-color': '#95a5a6',  # Gray
+                            'width': 1.5
+                        }
+                    },
+                    {
+                        'selector': 'edge[weight >= 3][weight < 5]',
+                        'style': {
+                            'line-color': '#b3a59c',  # Light brown-gray
+                            'width': 2
+                        }
+                    },
+                    {
+                        'selector': 'edge[weight >= 5][weight < 7]',
+                        'style': {
+                            'line-color': '#d4a574',  # Tan/beige
+                            'width': 2.5
+                        }
+                    },
+                    {
+                        'selector': 'edge[weight >= 7][weight < 9]',
+                        'style': {
+                            'line-color': '#e67e22',  # Orange
+                            'width': 3
+                        }
+                    },
+                    {
+                        'selector': 'edge[weight >= 9][weight < 11]',
+                        'style': {
+                            'line-color': '#e74c3c',  # Red-orange
+                            'width': 4
+                        }
+                    },
+                    {
+                        'selector': 'edge[weight >= 11]',
+                        'style': {
+                            'line-color': '#c0392b',  # Dark red
+                            'width': 5
                         }
                     },
                     {
@@ -413,12 +521,13 @@ app.layout = html.Div([
                 ]
             )
         ], style={
-            'flex': '1 1 75%',
+            'flex': '1 1 70%',
             'backgroundColor': '#ffffff',
             'borderRadius': '6px',
             'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
             'padding': '20px',
-            'minWidth': '400px'
+            'minWidth': '500px',
+            'order': 1
         }),
 
         # Info Panel - Right (1/4 of screen)
@@ -434,22 +543,24 @@ app.layout = html.Div([
                 ])
             ],
             style={
-                'flex': '0 0 25%',
-                'maxWidth': '25%',
-                'minWidth': '240px',
+                'flex': '0 0 28%',
+                'maxWidth': '350px',
+                'minWidth': '280px',
                 'backgroundColor': '#f8f9fa',
                 'borderRadius': '6px',
                 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
                 'padding': '16px',
                 'minHeight': '650px',
-                'border': '1px solid #dee2e6'
+                'border': '1px solid #dee2e6',
+                'order': 2
             }
         )
     ], style={
         'display': 'flex',
-        'flexWrap': 'wrap',
+        'flexWrap': 'nowrap',
         'gap': '20px',
-        'padding': '20px'
+        'padding': '20px',
+        'alignItems': 'flex-start'
     }),
 
     dcc.Store(id='deck-data-store'),
@@ -929,12 +1040,28 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
 
                 if source in top_card_names and target in top_card_names:
                     edge_id = element['data']['id']
+                    # Get the weight to determine color
+                    weight = element['data'].get('weight', 1)
+                    # Keep weight-based coloring even when highlighting
+                    if weight >= 11:
+                        edge_color = '#c0392b'
+                    elif weight >= 9:
+                        edge_color = '#e74c3c'
+                    elif weight >= 7:
+                        edge_color = '#e67e22'
+                    elif weight >= 5:
+                        edge_color = '#d4a574'
+                    elif weight >= 3:
+                        edge_color = '#b3a59c'
+                    else:
+                        edge_color = '#95a5a6'
+
                     base_stylesheet.append({
                         'selector': f'edge[id="{edge_id}"]',
                         'style': {
-                            'width': 'mapData(weight, 0, 10, 2, 8)',
-                            'line-color': '#2ecc71',
-                            'opacity': 0.8,
+                            'width': 6,
+                            'line-color': edge_color,
+                            'opacity': 0.9,
                             'z-index': 999
                         }
                     })
@@ -1031,10 +1158,33 @@ def handle_selection(node_data, edge_data, active_filter, elements, role_summary
             })
 
         if connected_edges:
-            stylesheet.append({
-                'selector': ', '.join(f'edge[id="{edge["data"]["id"]}"]' for edge in connected_edges),
-                'style': {'opacity': 1, 'line-color': '#2ecc71', 'width': 'mapData(weight, 0, 10, 2, 8)'}
-            })
+            # Highlight each connected edge individually while preserving weight-based color
+            for edge in connected_edges:
+                edge_id = edge["data"]["id"]
+                weight = edge["data"].get("weight", 1)
+
+                # Determine color based on weight
+                if weight >= 11:
+                    edge_color = '#c0392b'  # Dark red
+                elif weight >= 9:
+                    edge_color = '#e74c3c'  # Red-orange
+                elif weight >= 7:
+                    edge_color = '#e67e22'  # Orange
+                elif weight >= 5:
+                    edge_color = '#d4a574'  # Tan
+                elif weight >= 3:
+                    edge_color = '#b3a59c'  # Light brown-gray
+                else:
+                    edge_color = '#95a5a6'  # Gray
+
+                stylesheet.append({
+                    'selector': f'edge[id="{edge_id}"]',
+                    'style': {
+                        'opacity': 1,
+                        'line-color': edge_color,
+                        'width': max(weight * 0.4, 3)  # Scale width but ensure minimum visibility
+                    }
+                })
 
         synergy_items = []
         for edge in connected_edges:
@@ -1144,12 +1294,14 @@ def handle_selection(node_data, edge_data, active_filter, elements, role_summary
 
     if edge_data:
         edge_id = edge_data['id']
+        print(f"Edge clicked: {edge_id}")
+        print(f"Edge data: {edge_data}")
         stylesheet.extend([
             {
                 'selector': f'edge[id="{edge_id}"]',
                 'style': {
                     'line-color': '#f39c12',
-                    'width': 'mapData(weight, 0, 10, 3, 10)',
+                    'width': 6,
                     'opacity': 1
                 }
             },

@@ -95,6 +95,16 @@ LAND_SEARCH_PATTERNS = _compile(
     ]
 )
 
+COLOR_CORRECTION_PATTERNS = _compile(
+    [
+        r"search your library for a basic land card",
+        r"search your library for a plains, island, swamp, mountain, or forest card",
+        r"search your library for a land card with a basic land type",
+        r"search your library for up to two basic land cards",
+        r"search .* for a basic land",
+    ]
+)
+
 ADDITIONAL_LAND_PATTERNS = _compile(
     [
         r"play an additional land",
@@ -389,9 +399,40 @@ def match_card_advantage_role(ctx: Dict[str, Any]) -> bool:
     return _has_card_draw(text) or "clue token" in text or "investigate" in text
 
 
+def match_color_correction(ctx: Dict[str, Any]) -> bool:
+    """
+    Match cards that fix colors by fetching basic lands (like Terramorphic Expanse).
+    These are NOT ramp - they exchange a land for a basic land.
+
+    Key distinction: Color correction lands sacrifice themselves to get a basic.
+    Ramp spells/permanents ADD lands beyond the normal one-per-turn.
+    """
+    text = ctx["text"]
+    type_line = ctx["type_line"]
+
+    # Only lands can be color correction (not spells)
+    if "land" not in type_line:
+        return False
+
+    # Must sacrifice itself AND search for basic land(s)
+    if "sacrifice" in text and _text_mentions_patterns(text, COLOR_CORRECTION_PATTERNS):
+        return True
+
+    return False
+
+
 def match_ramp(ctx: Dict[str, Any]) -> bool:
+    """
+    Match cards that provide mana acceleration (ramp).
+    Excludes color-fixing lands that only fetch basics.
+    """
     text = ctx["text"]
     card = ctx["card"]
+
+    # First check if it's color correction - if so, NOT ramp
+    if match_color_correction(ctx):
+        return False
+
     if _produces_mana(card, text):
         return True
     if _text_mentions_patterns(text, LAND_SEARCH_PATTERNS):
@@ -532,6 +573,11 @@ ROLE_CATEGORIES: Dict[str, Dict[str, Any]] = {
                 "matcher": match_card_advantage_role,
             },
             {"key": "ramp", "label": "Ramp", "matcher": match_ramp},
+            {
+                "key": "color_correction",
+                "label": "Color Correction",
+                "matcher": match_color_correction,
+            },
             {"key": "removal", "label": "Removal", "matcher": match_removal},
             {"key": "recursion", "label": "Recursion", "matcher": match_recursion},
             {"key": "sacrifice", "label": "Sacrifice", "matcher": match_sacrifice},
