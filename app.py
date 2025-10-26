@@ -178,6 +178,23 @@ def apply_role_filter_styles(
 
 # Define the app layout
 app.layout = html.Div([
+    # Title Header - At the very top
+    html.Div([
+        html.Span(
+            "MTG Commander Deck Synergy Visualizer",
+            style={'fontWeight': '600', 'fontSize': '20px', 'color': '#2c3e50'}
+        ),
+        html.Span(
+            " – Visualize card synergies in your Commander deck",
+            style={'marginLeft': '8px', 'fontSize': '14px', 'color': '#7f8c8d'}
+        )
+    ], style={
+        'padding': '16px 24px',
+        'backgroundColor': '#ecf0f1',
+        'borderBottom': '2px solid #bdc3c7'
+    }),
+
+    # Control Bar - URL, Deck Selector, and Role Filter in one row
     html.Div([
         html.Div([
             html.Label("Archidekt Deck URL:", style={'fontWeight': 'bold', 'marginBottom': '6px'}),
@@ -219,34 +236,35 @@ app.layout = html.Div([
 
         html.Div([
             html.Label("Role Filter:", style={'fontWeight': 'bold', 'marginBottom': '6px'}),
-            dcc.Dropdown(
-                id='role-filter-dropdown',
-                placeholder='Filter by role...',
-                clearable=False,
-                style={'width': '100%'}
-            ),
-            html.Button(
-                'Clear Role Filter',
-                id='clear-role-filter-button',
-                n_clicks=0,
-                style={
-                    'marginTop': '6px',
-                    'padding': '8px',
-                    'backgroundColor': '#bdc3c7',
-                    'color': '#2c3e50',
-                    'border': 'none',
-                    'cursor': 'pointer',
-                    'fontSize': '14px',
-                    'fontWeight': 'bold',
-                    'borderRadius': '4px',
-                    'width': '100%'
-                }
-            ),
+            html.Div([
+                dcc.Dropdown(
+                    id='role-filter-dropdown',
+                    placeholder='Filter by role...',
+                    clearable=False,
+                    style={'flex': '1', 'minWidth': '180px'}
+                ),
+                html.Button(
+                    'Clear',
+                    id='clear-role-filter-button',
+                    n_clicks=0,
+                    style={
+                        'padding': '10px 16px',
+                        'backgroundColor': '#e74c3c',
+                        'color': 'white',
+                        'border': 'none',
+                        'cursor': 'pointer',
+                        'fontSize': '14px',
+                        'fontWeight': 'bold',
+                        'borderRadius': '4px',
+                        'marginLeft': '8px'
+                    }
+                )
+            ], style={'display': 'flex', 'gap': '8px', 'alignItems': 'center'}),
             html.Div(
                 id='active-role-filter-display',
-                style={'marginTop': '6px', 'color': '#7f8c8d', 'fontStyle': 'italic'}
+                style={'marginTop': '6px', 'color': '#7f8c8d', 'fontStyle': 'italic', 'fontSize': '12px'}
             )
-        ], style={'flex': '1 1 260px', 'minWidth': '240px'}),
+        ], style={'flex': '1 1 280px', 'minWidth': '260px'}),
 
         html.Div([
             dcc.Dropdown(
@@ -276,12 +294,6 @@ app.layout = html.Div([
 
     html.Div([
         html.Div([
-            html.Div([
-                html.H1("MTG Commander Deck Synergy Visualizer",
-                        style={'color': '#2c3e50', 'marginBottom': '6px'}),
-                html.P("Visualize card synergies in your Commander deck as an interactive graph",
-                       style={'color': '#7f8c8d', 'marginBottom': '12px'})
-            ], style={'marginBottom': '10px'}),
             html.Button(
                 'View Top Cards in Graph',
                 id='view-top-cards-button',
@@ -299,7 +311,7 @@ app.layout = html.Div([
                     'marginBottom': '12px'
                 }
             ),
-            html.Div(id='card-rankings-panel', style={'maxHeight': '160px', 'overflowY': 'auto', 'marginBottom': '16px'}),
+            html.Div(id='card-rankings-panel', style={'display': 'none', 'marginBottom': '16px'}),
             cyto.Cytoscape(
                 id='card-graph',
                 layout={'name': 'cose'},
@@ -516,72 +528,107 @@ def update_graph(deck_file):
         return [], None, {}
 
 
-# Callback to update card rankings when deck is selected
+# Callback to update card rankings when deck is selected AND toggle visibility
 @app.callback(
-    Output('card-rankings-panel', 'children'),
-    Input('deck-selector', 'value'),
+    [Output('card-rankings-panel', 'children'),
+     Output('card-rankings-panel', 'style'),
+     Output('view-top-cards-button', 'children')],
+    [Input('deck-selector', 'value'),
+     Input('view-top-cards-button', 'n_clicks')],
+    [State('card-rankings-panel', 'style')],
     prevent_initial_call=True
 )
-def update_card_rankings(deck_file):
-    """Calculate and display card rankings when a deck is selected."""
+def update_card_rankings(deck_file, n_clicks, current_style):
+    """Calculate and display card rankings when a deck is selected, and toggle visibility."""
+    ctx = dash.callback_context
+
+    # Determine if we're toggling or just updating
+    if ctx.triggered and ctx.triggered[0]['prop_id'] == 'view-top-cards-button.n_clicks':
+        # Toggle visibility
+        if current_style and current_style.get('display') == 'none':
+            new_style = {'display': 'flex', 'gap': '12px', 'overflowX': 'auto', 'padding': '10px 0'}
+            button_text = 'Hide Top Cards'
+        else:
+            new_style = {'display': 'none'}
+            button_text = 'View Top Cards in Graph'
+        return dash.no_update, new_style, button_text
+
+    # Updating rankings when deck changes
     if not deck_file:
-        return []
+        return [], {'display': 'none'}, 'View Top Cards in Graph'
 
     try:
         # Load deck data
         with open(deck_file, 'r') as f:
             deck_data = json.load(f)
 
-        # Get rankings
-        rankings_summary = get_deck_rankings_summary(deck_data, top_n=10)
+        # Get rankings - TOP 5 instead of 10
+        rankings_summary = get_deck_rankings_summary(deck_data, top_n=5)
 
-        # Build rankings display
+        # Build rankings display - HORIZONTAL BOXES
         rankings_items = []
         for card_info in rankings_summary['top_cards']:
-            rank_badge_style = {
-                'display': 'inline-block',
-                'width': '25px',
-                'height': '25px',
-                'borderRadius': '50%',
-                'backgroundColor': card_info['color'],
-                'color': 'white',
-                'textAlign': 'center',
-                'lineHeight': '25px',
-                'fontWeight': 'bold',
-                'marginRight': '10px',
-                'fontSize': '12px'
-            }
-
-            card_item_style = {
-                'padding': '10px',
-                'marginBottom': '8px',
-                'backgroundColor': '#f8f9fa',
-                'borderRadius': '5px',
-                'borderLeft': f'4px solid {card_info["color"]}',
-                'cursor': 'pointer',
-                'transition': 'all 0.2s'
-            }
-
-            rankings_items.append(
+            card_box = html.Div([
+                # Rank badge
+                html.Div(
+                    str(card_info['rank']),
+                    style={
+                        'width': '32px',
+                        'height': '32px',
+                        'borderRadius': '50%',
+                        'backgroundColor': card_info['color'],
+                        'color': 'white',
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'center',
+                        'fontWeight': 'bold',
+                        'fontSize': '16px',
+                        'marginBottom': '8px'
+                    }
+                ),
+                # Card name
+                html.Div(
+                    card_info['name'],
+                    style={
+                        'fontWeight': 'bold',
+                        'fontSize': '13px',
+                        'marginBottom': '8px',
+                        'color': '#2c3e50',
+                        'textAlign': 'center'
+                    }
+                ),
+                # Stats
                 html.Div([
                     html.Div([
-                        html.Span(str(card_info['rank']), style=rank_badge_style),
-                        html.Strong(card_info['name'], style={'fontSize': '14px'})
-                    ]),
+                        html.Span('Synergy: ', style={'fontSize': '11px', 'color': '#7f8c8d'}),
+                        html.Strong(str(card_info['total_synergy']), style={'fontSize': '11px', 'color': '#27ae60'})
+                    ], style={'marginBottom': '4px'}),
                     html.Div([
-                        html.Span(f"Synergy: {card_info['total_synergy']} | ",
-                                 style={'fontSize': '11px', 'color': '#7f8c8d'}),
-                        html.Span(f"Connections: {card_info['connections']}",
-                                 style={'fontSize': '11px', 'color': '#7f8c8d'})
-                    ], style={'marginTop': '5px', 'marginLeft': '35px'})
-                ], style=card_item_style, id={'type': 'ranking-card', 'index': card_info['rank']})
-            )
+                        html.Span('Connections: ', style={'fontSize': '11px', 'color': '#7f8c8d'}),
+                        html.Strong(str(card_info['connections']), style={'fontSize': '11px', 'color': '#3498db'})
+                    ])
+                ], style={'textAlign': 'center'})
+            ], style={
+                'minWidth': '140px',
+                'padding': '12px',
+                'backgroundColor': '#f8f9fa',
+                'borderRadius': '8px',
+                'border': f'3px solid {card_info["color"]}',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                'display': 'flex',
+                'flexDirection': 'column',
+                'alignItems': 'center',
+                'transition': 'transform 0.2s, box-shadow 0.2s',
+                'cursor': 'pointer'
+            })
+            rankings_items.append(card_box)
 
-        return rankings_items
+        # Return with hidden by default
+        return rankings_items, {'display': 'none'}, 'View Top Cards in Graph'
 
     except Exception as e:
         print(f"Error calculating rankings: {e}")
-        return [html.Div(f"Error: {str(e)}", style={'color': 'red'})]
+        return [html.Div(f"Error: {str(e)}", style={'color': 'red'})], {'display': 'none'}, 'View Top Cards in Graph'
 
 
 @app.callback(
