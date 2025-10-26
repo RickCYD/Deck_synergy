@@ -177,19 +177,46 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
 
 def detect_tribal_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
-    """Detect tribal synergies based on creature types"""
+    """
+    Detect tribal synergies based on creature types
+
+    Only triggers when a card ACTUALLY cares about a creature type with specific patterns,
+    not just when the creature type appears in the text (e.g., in token creation).
+    """
     card1_types = card1.get('card_types', {})
     card2_types = card2.get('card_types', {})
 
     card1_subtypes = set(card1_types.get('subtypes', []))
     card2_subtypes = set(card2_types.get('subtypes', []))
 
-    # Check if one card cares about a type the other has
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
+    # Specific patterns that indicate a card CARES about a creature type
+    def makes_tribal_pattern(creature_type: str) -> List[str]:
+        """Generate patterns that indicate caring about a specific creature type"""
+        ct = creature_type.lower()
+        return [
+            rf'whenever you cast a {ct}',
+            rf'whenever a {ct} enters',
+            rf'whenever a {ct} you control',
+            rf'{ct}s you control get',
+            rf'{ct}s you control have',
+            rf'for each {ct} you control',
+            rf'for each {ct}',
+            rf'target {ct}',
+            rf'choose a {ct}',
+            rf'{ct} creatures you control',
+            rf'other {ct}s you control',
+            rf'other {ct} creatures',
+            rf'{ct} spells you cast',
+            rf'each {ct} you control',
+        ]
+
+    # Check if card1 cares about a type that card2 has
     for subtype in card2_subtypes:
-        if subtype.lower() in card1_text:
+        patterns = makes_tribal_pattern(subtype)
+        if any(re.search(pattern, card1_text) for pattern in patterns):
             return {
                 'name': 'Tribal Synergy',
                 'description': f"{card1['name']} cares about {subtype}s, {card2['name']} is a {subtype}",
@@ -198,8 +225,10 @@ def detect_tribal_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
                 'subcategory': 'tribal'
             }
 
+    # Check if card2 cares about a type that card1 has
     for subtype in card1_subtypes:
-        if subtype.lower() in card2_text:
+        patterns = makes_tribal_pattern(subtype)
+        if any(re.search(pattern, card2_text) for pattern in patterns):
             return {
                 'name': 'Tribal Synergy',
                 'description': f"{card2['name']} cares about {subtype}s, {card1['name']} is a {subtype}",

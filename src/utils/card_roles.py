@@ -102,6 +102,7 @@ COLOR_CORRECTION_PATTERNS = _compile(
         r"search your library for a land card with a basic land type",
         r"search your library for up to two basic land cards",
         r"search .* for a basic land",
+        r"search your library for a basic (plains|island|swamp|mountain|forest)",
     ]
 )
 
@@ -401,21 +402,24 @@ def match_card_advantage_role(ctx: Dict[str, Any]) -> bool:
 
 def match_color_correction(ctx: Dict[str, Any]) -> bool:
     """
-    Match cards that fix colors by fetching basic lands (like Terramorphic Expanse).
-    These are NOT ramp - they exchange a land for a basic land.
+    Match cards that fix colors by fetching basic lands.
 
-    Key distinction: Color correction lands sacrifice themselves to get a basic.
-    Ramp spells/permanents ADD lands beyond the normal one-per-turn.
+    Examples:
+    - Terramorphic Expanse (fetch land)
+    - Evolving Wilds (fetch land)
+    - Foreboding Landscape (produces mana + can fetch)
+
+    These cards allow you to get the specific basic land type you need.
     """
     text = ctx["text"]
     type_line = ctx["type_line"]
 
-    # Only lands can be color correction (not spells)
+    # Only lands can be color correction (not spells like Cultivate)
     if "land" not in type_line:
         return False
 
-    # Must sacrifice itself AND search for basic land(s)
-    if "sacrifice" in text and _text_mentions_patterns(text, COLOR_CORRECTION_PATTERNS):
+    # Check if it searches for basic land(s)
+    if _text_mentions_patterns(text, COLOR_CORRECTION_PATTERNS):
         return True
 
     return False
@@ -424,23 +428,53 @@ def match_color_correction(ctx: Dict[str, Any]) -> bool:
 def match_ramp(ctx: Dict[str, Any]) -> bool:
     """
     Match cards that provide mana acceleration (ramp).
-    Excludes color-fixing lands that only fetch basics.
+
+    TRUE RAMP (includes):
+    - Mana rocks (Sol Ring, Arcane Signet) - extra mana sources
+    - Mana dorks (Llanowar Elves) - extra mana sources
+    - Land fetch spells (Cultivate, Rampant Growth) - put extra lands on battlefield
+    - Treasure token creators - create extra mana sources
+    - Lands that give extra land drops (Exploration effects)
+
+    NOT RAMP (excludes):
+    - Regular lands (Forest, Command Tower) - normal 1 per turn
+    - Fetch lands that sacrifice (Terramorphic Expanse, Fabled Passage) - 1 land → 1 land
+
+    Key: Ramp = net GAIN in mana/lands, not just color fixing
     """
     text = ctx["text"]
     card = ctx["card"]
+    type_line = ctx["type_line"]
 
-    # First check if it's color correction - if so, NOT ramp
-    if match_color_correction(ctx):
+    # If it's a land:
+    if "land" in type_line:
+        # Lands that let you play ADDITIONAL lands ARE ramp
+        if _text_mentions_patterns(text, ADDITIONAL_LAND_PATTERNS):
+            return True
+        # Fetch lands that SACRIFICE themselves are NOT ramp (1 land → 1 land)
+        # They're color correction only
+        if "sacrifice" in text and _text_mentions_patterns(text, LAND_SEARCH_PATTERNS):
+            return False
+        # Other lands that search (like Golos activated ability) might be ramp
+        # but for now, regular lands are NOT ramp
         return False
 
+    # Non-land permanents that produce mana ARE ramp (mana rocks, mana dorks)
     if _produces_mana(card, text):
         return True
+
+    # Spells that search for lands and put them on battlefield ARE ramp
     if _text_mentions_patterns(text, LAND_SEARCH_PATTERNS):
         return True
+
+    # Effects that give extra land drops ARE ramp
     if _text_mentions_patterns(text, ADDITIONAL_LAND_PATTERNS):
         return True
+
+    # Treasure tokens ARE ramp
     if _creates_specific_token(text, "treasure"):
         return True
+
     return False
 
 
