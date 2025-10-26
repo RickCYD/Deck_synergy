@@ -292,26 +292,36 @@ app.layout = html.Div([
         'zIndex': 100
     }),
 
+    # View Top Cards Button - Above the graph/info panel area
     html.Div([
+        html.Button(
+            'View Top Cards in Graph',
+            id='view-top-cards-button',
+            n_clicks=0,
+            style={
+                'padding': '8px 12px',
+                'backgroundColor': '#2ecc71',
+                'color': 'white',
+                'border': 'none',
+                'cursor': 'pointer',
+                'fontSize': '14px',
+                'fontWeight': 'bold',
+                'borderRadius': '4px',
+                'marginBottom': '12px'
+            }
+        ),
+        html.Div(id='card-rankings-panel', style={
+            'height': '0px',
+            'overflow': 'hidden',
+            'marginBottom': '16px',
+            'transition': 'height 0.3s ease'
+        }),
+    ], style={'padding': '0 20px', 'marginTop': '16px'}),
+
+    # Main content area with graph and info panel
+    html.Div([
+        # Graph Section - Left (3/4 of screen)
         html.Div([
-            html.Button(
-                'View Top Cards in Graph',
-                id='view-top-cards-button',
-                n_clicks=0,
-                style={
-                    'padding': '8px 12px',
-                    'backgroundColor': '#2ecc71',
-                    'color': 'white',
-                    'border': 'none',
-                    'cursor': 'pointer',
-                    'fontSize': '14px',
-                    'fontWeight': 'bold',
-                    'borderRadius': '4px',
-                    'alignSelf': 'flex-start',
-                    'marginBottom': '12px'
-                }
-            ),
-            html.Div(id='card-rankings-panel', style={'display': 'none', 'marginBottom': '16px'}),
             cyto.Cytoscape(
                 id='card-graph',
                 layout={'name': 'cose'},
@@ -403,24 +413,36 @@ app.layout = html.Div([
                 ]
             )
         ], style={
-            'flex': '2 1 65%',
+            'flex': '1 1 75%',
             'backgroundColor': '#ffffff',
             'borderRadius': '6px',
             'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
             'padding': '20px',
-            'minWidth': '320px'
+            'minWidth': '400px'
         }),
 
+        # Info Panel - Right (1/4 of screen)
         html.Div(
             id='info-panel',
+            children=[
+                html.Div([
+                    html.H3("Card Details", style={'color': '#2c3e50', 'marginBottom': '12px', 'fontSize': '16px', 'fontWeight': 'bold'}),
+                    html.P(
+                        "Click on a card in the graph to view its details and synergies here.",
+                        style={'color': '#7f8c8d', 'fontSize': '13px', 'lineHeight': '1.6'}
+                    )
+                ])
+            ],
             style={
-                'flex': '1 1 30%',
-                'minWidth': '260px',
-                'backgroundColor': '#ffffff',
+                'flex': '0 0 25%',
+                'maxWidth': '25%',
+                'minWidth': '240px',
+                'backgroundColor': '#f8f9fa',
                 'borderRadius': '6px',
                 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-                'padding': '20px',
-                'minHeight': '650px'
+                'padding': '16px',
+                'minHeight': '650px',
+                'border': '1px solid #dee2e6'
             }
         )
     ], style={
@@ -434,8 +456,20 @@ app.layout = html.Div([
     dcc.Store(id='selected-node-store'),
     dcc.Store(id='current-deck-file-store'),
     dcc.Store(id='role-filter-data'),
-    dcc.Store(id='active-role-filter')
+    dcc.Store(id='active-role-filter'),
+    dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True)
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
+
+
+# Callback to show "Loading..." immediately when button clicked
+@app.callback(
+    Output('status-message', 'children', allow_duplicate=True),
+    Input('load-deck-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def show_loading_message(n_clicks):
+    """Show loading message immediately when button is clicked"""
+    return html.Div("Loading deck...", style={'color': '#3498db', 'fontWeight': 'bold'})
 
 
 # Callback to load deck from URL
@@ -443,7 +477,8 @@ app.layout = html.Div([
     [Output('status-message', 'children'),
      Output('deck-selector', 'options'),
      Output('deck-data-store', 'data'),
-     Output('deck-selector', 'value')],
+     Output('deck-selector', 'value'),
+     Output('status-clear-interval', 'disabled')],
     Input('load-deck-button', 'n_clicks'),
     State('deck-url-input', 'value'),
     State('deck-data-store', 'data'),
@@ -452,12 +487,9 @@ app.layout = html.Div([
 def load_deck(n_clicks, url, current_data):
     """Load deck from Archidekt URL and fetch card details from Scryfall"""
     if not url:
-        return html.Div("Please enter a deck URL", style={'color': 'red'}), [], current_data, None
+        return html.Div("Please enter a deck URL", style={'color': 'red'}), dash.no_update, current_data, None, True
 
     try:
-        # Update status
-        status = html.Div("Loading deck...", style={'color': 'blue'})
-
         # Fetch deck from Archidekt
         deck_info = fetch_deck_from_archidekt(url)
 
@@ -488,12 +520,24 @@ def load_deck(n_clicks, url, current_data):
         stored_data = current_data or {}
         stored_data[deck.name] = deck.to_dict()
 
-        status = html.Div(f"Successfully loaded deck: {deck.name}", style={'color': 'green'})
-        # Automatically select the newly loaded deck
-        return status, deck_options, stored_data, str(deck_file_path)
+        status = html.Div(f"Successfully loaded deck: {deck.name}", style={'color': '#27ae60', 'fontWeight': 'bold'})
+        # Automatically select the newly loaded deck and enable auto-clear interval
+        return status, deck_options, stored_data, str(deck_file_path), False
 
     except Exception as e:
-        return html.Div(f"Error loading deck: {str(e)}", style={'color': 'red'}), [], current_data, None
+        return html.Div(f"Error loading deck: {str(e)}", style={'color': '#e74c3c', 'fontWeight': 'bold'}), dash.no_update, current_data, None, True
+
+
+# Callback to auto-clear success message after 3 seconds
+@app.callback(
+    [Output('status-message', 'children', allow_duplicate=True),
+     Output('status-clear-interval', 'disabled', allow_duplicate=True)],
+    Input('status-clear-interval', 'n_intervals'),
+    prevent_initial_call=True
+)
+def clear_status_message(n_intervals):
+    """Clear status message after interval triggers"""
+    return "", True  # Clear message and disable interval
 
 
 # Callback to update graph when deck is selected
@@ -544,18 +588,37 @@ def update_card_rankings(deck_file, n_clicks, current_style):
 
     # Determine if we're toggling or just updating
     if ctx.triggered and ctx.triggered[0]['prop_id'] == 'view-top-cards-button.n_clicks':
-        # Toggle visibility
-        if current_style and current_style.get('display') == 'none':
-            new_style = {'display': 'flex', 'gap': '12px', 'overflowX': 'auto', 'padding': '10px 0'}
+        # Toggle visibility - use height instead of display to prevent layout shift
+        if current_style and current_style.get('height') == '0px':
+            new_style = {
+                'height': '120px',
+                'overflow': 'hidden',
+                'overflowX': 'auto',
+                'marginBottom': '16px',
+                'display': 'flex',
+                'gap': '12px',
+                'padding': '10px 0',
+                'transition': 'height 0.3s ease'
+            }
             button_text = 'Hide Top Cards'
         else:
-            new_style = {'display': 'none'}
+            new_style = {
+                'height': '0px',
+                'overflow': 'hidden',
+                'marginBottom': '16px',
+                'transition': 'height 0.3s ease'
+            }
             button_text = 'View Top Cards in Graph'
         return dash.no_update, new_style, button_text
 
     # Updating rankings when deck changes
     if not deck_file:
-        return [], {'display': 'none'}, 'View Top Cards in Graph'
+        return [], {
+            'height': '0px',
+            'overflow': 'hidden',
+            'marginBottom': '16px',
+            'transition': 'height 0.3s ease'
+        }, 'View Top Cards in Graph'
 
     try:
         # Load deck data
@@ -569,12 +632,12 @@ def update_card_rankings(deck_file, n_clicks, current_style):
         rankings_items = []
         for card_info in rankings_summary['top_cards']:
             card_box = html.Div([
-                # Rank badge
+                # Rank badge - MUCH SMALLER
                 html.Div(
                     str(card_info['rank']),
                     style={
-                        'width': '32px',
-                        'height': '32px',
+                        'width': '18px',
+                        'height': '18px',
                         'borderRadius': '50%',
                         'backgroundColor': card_info['color'],
                         'color': 'white',
@@ -582,8 +645,8 @@ def update_card_rankings(deck_file, n_clicks, current_style):
                         'alignItems': 'center',
                         'justifyContent': 'center',
                         'fontWeight': 'bold',
-                        'fontSize': '16px',
-                        'marginBottom': '8px'
+                        'fontSize': '10px',
+                        'marginBottom': '6px'
                     }
                 ),
                 # Card name
@@ -591,30 +654,31 @@ def update_card_rankings(deck_file, n_clicks, current_style):
                     card_info['name'],
                     style={
                         'fontWeight': 'bold',
-                        'fontSize': '13px',
-                        'marginBottom': '8px',
+                        'fontSize': '11px',
+                        'marginBottom': '6px',
                         'color': '#2c3e50',
-                        'textAlign': 'center'
+                        'textAlign': 'center',
+                        'lineHeight': '1.2'
                     }
                 ),
                 # Stats
                 html.Div([
                     html.Div([
-                        html.Span('Synergy: ', style={'fontSize': '11px', 'color': '#7f8c8d'}),
-                        html.Strong(str(card_info['total_synergy']), style={'fontSize': '11px', 'color': '#27ae60'})
-                    ], style={'marginBottom': '4px'}),
+                        html.Span('Syn: ', style={'fontSize': '9px', 'color': '#7f8c8d'}),
+                        html.Strong(str(card_info['total_synergy']), style={'fontSize': '9px', 'color': '#27ae60'})
+                    ], style={'marginBottom': '2px'}),
                     html.Div([
-                        html.Span('Connections: ', style={'fontSize': '11px', 'color': '#7f8c8d'}),
-                        html.Strong(str(card_info['connections']), style={'fontSize': '11px', 'color': '#3498db'})
+                        html.Span('Con: ', style={'fontSize': '9px', 'color': '#7f8c8d'}),
+                        html.Strong(str(card_info['connections']), style={'fontSize': '9px', 'color': '#3498db'})
                     ])
                 ], style={'textAlign': 'center'})
             ], style={
-                'minWidth': '140px',
-                'padding': '12px',
+                'minWidth': '90px',
+                'padding': '8px',
                 'backgroundColor': '#f8f9fa',
-                'borderRadius': '8px',
-                'border': f'3px solid {card_info["color"]}',
-                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                'borderRadius': '6px',
+                'border': f'2px solid {card_info["color"]}',
+                'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
                 'display': 'flex',
                 'flexDirection': 'column',
                 'alignItems': 'center',
@@ -623,12 +687,22 @@ def update_card_rankings(deck_file, n_clicks, current_style):
             })
             rankings_items.append(card_box)
 
-        # Return with hidden by default
-        return rankings_items, {'display': 'none'}, 'View Top Cards in Graph'
+        # Return with hidden by default (height 0)
+        return rankings_items, {
+            'height': '0px',
+            'overflow': 'hidden',
+            'marginBottom': '16px',
+            'transition': 'height 0.3s ease'
+        }, 'View Top Cards in Graph'
 
     except Exception as e:
         print(f"Error calculating rankings: {e}")
-        return [html.Div(f"Error: {str(e)}", style={'color': 'red'})], {'display': 'none'}, 'View Top Cards in Graph'
+        return [html.Div(f"Error: {str(e)}", style={'color': 'red'})], {
+            'height': '0px',
+            'overflow': 'hidden',
+            'marginBottom': '16px',
+            'transition': 'height 0.3s ease'
+        }, 'View Top Cards in Graph'
 
 
 @app.callback(
@@ -756,7 +830,7 @@ def update_layout(layout_name):
     prevent_initial_call=True
 )
 def view_top_cards_in_graph(n_clicks, deck_file, elements):
-    """Reorganize graph to highlight and center top 10 cards"""
+    """Reorganize graph to highlight and center top 5 cards"""
     if not deck_file or not elements:
         return dash.no_update, dash.no_update, dash.no_update
 
@@ -765,8 +839,8 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
         with open(deck_file, 'r') as f:
             deck_data = json.load(f)
 
-        # Get top 10 cards
-        rankings_summary = get_deck_rankings_summary(deck_data, top_n=10)
+        # Get top 5 cards - CHANGED FROM 10 TO 5
+        rankings_summary = get_deck_rankings_summary(deck_data, top_n=5)
         top_card_names = [card['name'] for card in rankings_summary['top_cards']]
 
         # Create stylesheet with highlighting - keep card art visible
