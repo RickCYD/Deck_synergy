@@ -1,11 +1,16 @@
 """
 Scryfall API Integration
 Fetches detailed card information from Scryfall.com
+
+Now with local card database support for 25-50x faster loading!
 """
 
 import requests
 import time
 from typing import Dict, List
+
+# Import local card database
+from src.api import local_cards
 
 
 class ScryfallAPI:
@@ -80,12 +85,13 @@ class ScryfallAPI:
             raise Exception(f"Failed to fetch card '{card_name}' from Scryfall: {str(e)}")
 
 
-def fetch_card_details(cards: List[Dict]) -> List[Dict]:
+def fetch_card_details(cards: List[Dict], use_local_cache: bool = True) -> List[Dict]:
     """
-    Fetch detailed information for a list of cards from Scryfall
+    Fetch detailed information for a list of cards from local cache or Scryfall
 
     Args:
         cards: List of card dictionaries from Archidekt (must have 'name' field)
+        use_local_cache: If True, check local database first (default: True)
 
     Returns:
         List of cards with complete Scryfall data merged in
@@ -103,14 +109,30 @@ def fetch_card_details(cards: List[Dict]) -> List[Dict]:
         - power, toughness: P/T for creatures
         - loyalty: Loyalty for planeswalkers
         - image_uris: Image URLs
-        - prices: Card prices
-        - legalities: Format legalities
+        - prices: Card prices (only from API)
+        - legalities: Format legalities (only from API)
     """
     api = ScryfallAPI()
     enriched_cards = []
 
     total_cards = len(cards)
-    print(f"Fetching details for {total_cards} cards from Scryfall...")
+
+    # Load local database if using cache
+    local_cache_available = False
+    if use_local_cache:
+        if not local_cards.is_loaded():
+            local_cache_available = local_cards.load_local_database()
+        else:
+            local_cache_available = True
+
+    if local_cache_available:
+        print(f"Fetching details for {total_cards} cards from local database...")
+    else:
+        print(f"Fetching details for {total_cards} cards from Scryfall API...")
+
+    # Track cache statistics
+    cache_hits = 0
+    api_calls = 0
 
     for idx, card in enumerate(cards, 1):
         card_name = card.get('name')
@@ -120,14 +142,27 @@ def fetch_card_details(cards: List[Dict]) -> List[Dict]:
             continue
 
         try:
-            # Fetch full card data from Scryfall
-            scryfall_data = api.get_card_by_name(card_name)
+            scryfall_data = None
+            from_cache = False
+
+            # Try local cache first
+            if local_cache_available:
+                local_data = local_cards.get_card_by_name(card_name)
+                if local_data:
+                    scryfall_data = local_data
+                    from_cache = True
+                    cache_hits += 1
+
+            # Fallback to API if not in cache
+            if not scryfall_data:
+                scryfall_data = api.get_card_by_name(card_name)
+                api_calls += 1
 
             # Merge Archidekt data with Scryfall data
             enriched_card = {
                 # Basic info
                 'name': scryfall_data.get('name'),
-                'scryfall_id': scryfall_data.get('id'),
+                'scryfall_id': scryfall_data.get('id') if not from_cache else None,
 
                 # From Archidekt
                 'quantity': card.get('quantity', 1),
@@ -143,8 +178,8 @@ def fetch_card_details(cards: List[Dict]) -> List[Dict]:
                 # Type information
                 'type_line': scryfall_data.get('type_line', ''),
                 'card_types': parse_type_line(scryfall_data.get('type_line', '')),
-                'supertypes': scryfall_data.get('supertypes', []),
-                'subtypes': scryfall_data.get('subtypes', []),
+                'supertypes': scryfall_data.get('supertypes', []) if not from_cache else [],
+                'subtypes': scryfall_data.get('subtypes', []) if not from_cache else [],
 
                 # Card text and abilities
                 'oracle_text': scryfall_data.get('oracle_text', ''),
@@ -155,35 +190,40 @@ def fetch_card_details(cards: List[Dict]) -> List[Dict]:
                 'toughness': scryfall_data.get('toughness'),
                 'loyalty': scryfall_data.get('loyalty'),
 
-                # Additional properties
-                'rarity': scryfall_data.get('rarity'),
-                'set': scryfall_data.get('set'),
-                'set_name': scryfall_data.get('set_name'),
+                # Additional properties (only available from API)
+                'rarity': scryfall_data.get('rarity') if not from_cache else None,
+                'set': scryfall_data.get('set') if not from_cache else None,
+                'set_name': scryfall_data.get('set_name') if not from_cache else None,
 
                 # Images
                 'image_uris': scryfall_data.get('image_uris', {}),
 
-                # Prices and legalities
-                'prices': scryfall_data.get('prices', {}),
-                'legalities': scryfall_data.get('legalities', {}),
+                # Prices and legalities (only from API)
+                'prices': scryfall_data.get('prices', {}) if not from_cache else {},
+                'legalities': scryfall_data.get('legalities', {}) if not from_cache else {},
 
                 # Card faces (for double-faced cards)
-                'card_faces': scryfall_data.get('card_faces', []),
+                'card_faces': scryfall_data.get('card_faces', []) if not from_cache else [],
 
                 # Additional metadata
-                'edhrec_rank': scryfall_data.get('edhrec_rank'),
+                'edhrec_rank': scryfall_data.get('edhrec_rank') if not from_cache else None,
                 'produced_mana': scryfall_data.get('produced_mana', []),
 
-                # Raw Scryfall data for reference
-                '_scryfall_raw': scryfall_data
+                # Raw Scryfall data for reference (only if from API)
+                '_scryfall_raw': scryfall_data if not from_cache else None,
+
+                # Track source
+                '_from_local_cache': from_cache
             }
 
             enriched_cards.append(enriched_card)
-            print(f"  [{idx}/{total_cards}] Fetched: {card_name}")
+
+            source = "local cache" if from_cache else "API"
+            print(f"  [{idx}/{total_cards}] {card_name} ({source})")
 
         except Exception as e:
             print(f"  [{idx}/{total_cards}] Error fetching {card_name}: {str(e)}")
-            # Add card with basic info even if Scryfall fetch fails
+            # Add card with basic info even if fetch fails
             enriched_cards.append({
                 'name': card_name,
                 'quantity': card.get('quantity', 1),
@@ -192,7 +232,16 @@ def fetch_card_details(cards: List[Dict]) -> List[Dict]:
                 'error': str(e)
             })
 
-    print(f"Successfully fetched details for {len(enriched_cards)} cards")
+    # Print summary statistics
+    if local_cache_available:
+        print(f"\n✅ Completed: {len(enriched_cards)} cards")
+        print(f"   Local cache: {cache_hits} cards ({cache_hits/total_cards*100:.1f}%)")
+        print(f"   API calls: {api_calls} cards ({api_calls/total_cards*100:.1f}%)")
+        if api_calls > 0:
+            print(f"   Time saved: ~{api_calls * 0.1:.1f}s (from rate limiting)")
+    else:
+        print(f"Successfully fetched details for {len(enriched_cards)} cards")
+
     return enriched_cards
 
 

@@ -378,7 +378,20 @@ app.layout = html.Div([
         html.Div([
             cyto.Cytoscape(
                 id='card-graph',
-                layout={'name': 'cose'},
+                layout={
+                    'name': 'cose',
+                    'animate': False,
+                    'nodeRepulsion': 25000,
+                    'idealEdgeLength': 250,
+                    'edgeElasticity': 100,
+                    'nestingFactor': 0.1,
+                    'gravity': 1,
+                    'numIter': 2500,
+                    'initialTemp': 500,
+                    'coolingFactor': 0.95,
+                    'minTemp': 1.0,
+                    'nodeOverlap': 100
+                },
                 style={'width': '100%', 'height': '650px'},
                 elements=[],
                 stylesheet=[
@@ -550,7 +563,10 @@ app.layout = html.Div([
                 'borderRadius': '6px',
                 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
                 'padding': '16px',
-                'minHeight': '650px',
+                'height': '650px',
+                'maxHeight': '650px',
+                'overflowY': 'auto',
+                'overflowX': 'hidden',
                 'border': '1px solid #dee2e6',
                 'order': 2
             }
@@ -1066,15 +1082,22 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
                         }
                     })
 
-        # Use cose layout instead of concentric (which has JS function issues in Dash)
+        # Use cose layout with optimized parameters for top cards view
         # The top cards will still be visually prominent due to size/color
         layout = {
             'name': 'cose',
             'animate': True,
             'animationDuration': 1000,
-            'nodeRepulsion': 8000,
-            'idealEdgeLength': 100,
-            'edgeElasticity': 100
+            'nodeRepulsion': 28000,
+            'idealEdgeLength': 270,
+            'edgeElasticity': 100,
+            'nestingFactor': 0.1,
+            'gravity': 1.5,
+            'numIter': 2500,
+            'initialTemp': 500,
+            'coolingFactor': 0.95,
+            'minTemp': 1.0,
+            'nodeOverlap': 100
         }
 
         return base_stylesheet, layout, dash.no_update
@@ -1088,7 +1111,8 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
 # Callback for node/edge selection and highlighting
 @app.callback(
     [Output('card-graph', 'stylesheet'),
-     Output('info-panel', 'children')],
+     Output('info-panel', 'children'),
+     Output('card-graph', 'layout', allow_duplicate=True)],
     [Input('card-graph', 'tapNodeData'),
      Input('card-graph', 'tapEdgeData'),
      Input('active-role-filter', 'data')],
@@ -1100,21 +1124,37 @@ def handle_selection(node_data, edge_data, active_filter, elements, role_summary
     """Handle node/edge selection and update role-based highlighting."""
     ctx = callback_context
     if not ctx.triggered:
-        return dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update
 
     triggered_prop = ctx.triggered[0]['prop_id']
 
     if elements is None:
         if triggered_prop == 'active-role-filter.data':
             stylesheet = apply_role_filter_styles(get_base_stylesheet(), active_filter, role_summary, [])
-            return stylesheet, dash.no_update
-        return dash.no_update, dash.no_update
+            return stylesheet, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update
 
     base_stylesheet = get_base_stylesheet()
     base_stylesheet = apply_role_filter_styles(base_stylesheet, active_filter, role_summary, elements)
 
     if triggered_prop == 'active-role-filter.data':
-        return base_stylesheet, dash.no_update
+        # Trigger layout reorganization for role filter
+        layout = {
+            'name': 'cose',
+            'animate': True,
+            'animationDuration': 1000,
+            'nodeRepulsion': 30000,
+            'idealEdgeLength': 280,
+            'edgeElasticity': 100,
+            'nestingFactor': 0.1,
+            'gravity': 2,
+            'numIter': 2500,
+            'initialTemp': 500,
+            'coolingFactor': 0.95,
+            'minTemp': 1.0,
+            'nodeOverlap': 100
+        }
+        return base_stylesheet, dash.no_update, layout
 
     stylesheet = list(base_stylesheet)
 
@@ -1290,7 +1330,26 @@ def handle_selection(node_data, edge_data, active_filter, elements, role_summary
         ])
 
         info_panel = html.Div(info_children)
-        return stylesheet, info_panel
+
+        # Trigger layout reorganization for card selection
+        # Use cose layout with high repulsion to prevent overlap
+        layout = {
+            'name': 'cose',
+            'animate': True,
+            'animationDuration': 1000,
+            'nodeRepulsion': 35000,
+            'idealEdgeLength': 250,
+            'edgeElasticity': 120,
+            'nestingFactor': 0.1,
+            'gravity': 3,
+            'numIter': 2500,
+            'initialTemp': 600,
+            'coolingFactor': 0.95,
+            'minTemp': 1.0,
+            'nodeOverlap': 100
+        }
+
+        return stylesheet, info_panel, layout
 
     if edge_data:
         edge_id = edge_data['id']
@@ -1347,9 +1406,26 @@ def handle_selection(node_data, edge_data, active_filter, elements, role_summary
             ])
         ])
 
-        return stylesheet, info_panel
+        # Trigger layout reorganization for edge selection
+        layout = {
+            'name': 'cose',
+            'animate': True,
+            'animationDuration': 1000,
+            'nodeRepulsion': 30000,
+            'idealEdgeLength': 260,
+            'edgeElasticity': 100,
+            'nestingFactor': 0.1,
+            'gravity': 2,
+            'numIter': 2500,
+            'initialTemp': 500,
+            'coolingFactor': 0.95,
+            'minTemp': 1.0,
+            'nodeOverlap': 100
+        }
 
-    return base_stylesheet, html.Div("Click on a card or synergy edge to see details")
+        return stylesheet, info_panel, layout
+
+    return base_stylesheet, html.Div("Click on a card or synergy edge to see details"), dash.no_update
 
 
 if __name__ == '__main__':

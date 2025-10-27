@@ -82,7 +82,9 @@ def detect_sacrifice_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     exclude_patterns = [
         r'opponent.*sacrifice',
         r'player.*sacrifice',
-        r'counter.*unless.*sacrifice'  # Counterspells with sacrifice clause
+        r'counter.*unless.*sacrifice',  # Counterspells with sacrifice clause
+        r'sacrifice this',               # Self-sacrifice (like fetch lands)
+        r'sacrifice .* land.*search'    # Fetch lands that sacrifice themselves
     ]
 
     death_trigger_keywords = [r'when .* dies', r'whenever .* dies', r'when .* is put into a graveyard']
@@ -410,7 +412,15 @@ def detect_combo_potential(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Both cards have combo-potential keywords
     if card1_has_combo_word and card2_has_combo_word:
         # Check for specific infinite mana combos
-        if 'untap' in card1_text and 'mana' in card2_text:
+        # Must have "untap target" or "untap another" (not self-untap)
+        card1_untaps_others = re.search(r'untap (target|another|all|up to)', card1_text)
+        card2_untaps_others = re.search(r'untap (target|another|all|up to)', card2_text)
+
+        # Must produce mana from tapping
+        card1_taps_for_mana = re.search(r'\{t\}.*add.*mana', card1_text) or re.search(r'\{t\}:.*add \{[wubrgc]\}', card1_text)
+        card2_taps_for_mana = re.search(r'\{t\}.*add.*mana', card2_text) or re.search(r'\{t\}:.*add \{[wubrgc]\}', card2_text)
+
+        if (card1_untaps_others and card2_taps_for_mana) or (card2_untaps_others and card1_taps_for_mana):
             return {
                 'name': 'Potential Infinite Mana',
                 'description': f"Potential infinite mana combo between {card1['name']} and {card2['name']}",
@@ -419,7 +429,7 @@ def detect_combo_potential(card1: Dict, card2: Dict) -> Optional[Dict]:
                 'subcategory': 'infinite_mana'
             }
 
-        # General combo potential
+        # General combo potential (but be more conservative)
         return {
             'name': 'Combo Potential',
             'description': f"Potential combo interaction detected",
