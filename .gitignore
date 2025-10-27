@@ -42,8 +42,9 @@ data/decks/*.json
 data/cards/oracle-cards.json
 data/cards/rulings.json
 
-# Keep the minimal database (17MB - safe to commit)
-# data/cards/cards-minimal.json is NOT ignored - it should be committed
+# Keep the optimized databases (both safe to commit)
+# data/cards/cards-minimal.json is NOT ignored - it should be committed (17MB)
+# data/cards/cards-preprocessed.json is NOT ignored - it should be committed (16MB)
 
 # OS
 .DS_Store

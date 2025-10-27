@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 # Import custom modules
 from src.api.archidekt import fetch_deck_from_archidekt
 from src.api.scryfall import fetch_card_details
+from src.api import recommendations
 from src.models.deck import Deck
 from src.synergy_engine.analyzer import analyze_deck_synergies
 from src.utils.graph_builder import build_graph_elements
@@ -34,6 +35,10 @@ server = app.server  # Expose Flask server for production (e.g., Gunicorn)
 
 # Load Cytoscape layouts
 cyto.load_extra_layouts()
+
+# Load recommendation engine at startup
+print("Loading recommendation engine...")
+recommendations.load_recommendation_engine()
 
 # Get initial deck list
 def get_deck_options():
@@ -348,22 +353,41 @@ app.layout = html.Div([
 
     # View Top Cards Button - Above the graph/info panel area
     html.Div([
-        html.Button(
-            'View Top Cards in Graph',
-            id='view-top-cards-button',
-            n_clicks=0,
-            style={
-                'padding': '8px 12px',
-                'backgroundColor': '#2ecc71',
-                'color': 'white',
-                'border': 'none',
-                'cursor': 'pointer',
-                'fontSize': '14px',
-                'fontWeight': 'bold',
-                'borderRadius': '4px',
-                'marginBottom': '12px'
-            }
-        ),
+        html.Div([
+            html.Button(
+                'View Top Cards in Graph',
+                id='view-top-cards-button',
+                n_clicks=0,
+                style={
+                    'padding': '8px 12px',
+                    'backgroundColor': '#2ecc71',
+                    'color': 'white',
+                    'border': 'none',
+                    'cursor': 'pointer',
+                    'fontSize': '14px',
+                    'fontWeight': 'bold',
+                    'borderRadius': '4px',
+                    'marginBottom': '12px'
+                }
+            ),
+            html.Button(
+                '🔍 Get Recommendations',
+                id='get-recommendations-button',
+                n_clicks=0,
+                style={
+                    'padding': '8px 12px',
+                    'backgroundColor': '#9b59b6',
+                    'color': 'white',
+                    'border': 'none',
+                    'cursor': 'pointer',
+                    'fontSize': '14px',
+                    'fontWeight': 'bold',
+                    'borderRadius': '4px',
+                    'marginBottom': '12px',
+                    'marginLeft': '12px'
+                }
+            )
+        ], style={'display': 'flex', 'gap': '12px'}),
         html.Div(id='card-rankings-panel', style={
             'height': '0px',
             'overflow': 'hidden',
@@ -1115,18 +1139,125 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
      Output('card-graph', 'layout', allow_duplicate=True)],
     [Input('card-graph', 'tapNodeData'),
      Input('card-graph', 'tapEdgeData'),
-     Input('active-role-filter', 'data')],
+     Input('active-role-filter', 'data'),
+     Input('get-recommendations-button', 'n_clicks')],
     [State('card-graph', 'elements'),
-     State('role-filter-data', 'data')],
+     State('role-filter-data', 'data'),
+     State('current-deck-file-store', 'data')],
     prevent_initial_call=True
 )
-def handle_selection(node_data, edge_data, active_filter, elements, role_summary):
-    """Handle node/edge selection and update role-based highlighting."""
+def handle_selection(node_data, edge_data, active_filter, rec_clicks, elements, role_summary, deck_file):
+    """Handle node/edge selection, role filter, recommendations, and update highlighting."""
     ctx = callback_context
     if not ctx.triggered:
         return dash.no_update, dash.no_update, dash.no_update
 
     triggered_prop = ctx.triggered[0]['prop_id']
+
+    # Handle recommendations button click
+    if triggered_prop == 'get-recommendations-button.n_clicks':
+        print(f"[DEBUG] Recommendations triggered in handle_selection callback, deck_file={deck_file}")
+
+        if not deck_file:
+            return dash.no_update, html.Div([
+                html.P("⚠️ Please load a deck first before getting recommendations.",
+                       style={'color': '#e74c3c', 'padding': '16px', 'textAlign': 'center'})
+            ]), dash.no_update
+
+        # Load deck from file and generate recommendations
+        try:
+            with open(deck_file, 'r') as f:
+                deck_obj = json.load(f)
+
+            # Get commander's color identity
+            commander_colors = None
+            for card in deck_obj.get('cards', []):
+                if card.get('is_commander', False):
+                    commander_colors = card.get('color_identity', [])
+                    break
+
+            # Get recommendations
+            print(f"[DEBUG] Generating recommendations for {len(deck_obj.get('cards', []))} cards, colors={commander_colors}")
+            recommended_cards = recommendations.get_recommendations(
+                deck_cards=deck_obj.get('cards', []),
+                color_identity=commander_colors,
+                limit=10
+            )
+            print(f"[DEBUG] Got {len(recommended_cards)} recommendations")
+
+            # Build recommendations UI (detailed for side panel)
+            rec_items = []
+            for idx, card in enumerate(recommended_cards, 1):
+                card_name = card.get('name', 'Unknown')
+                score = card.get('recommendation_score', 0)
+                type_line = card.get('type_line', '')
+                mana_cost = card.get('mana_cost', '')
+                oracle_text = card.get('oracle_text', '')
+                synergy_reasons = card.get('synergy_reasons', [])
+                cmc = card.get('cmc', 0)
+
+                # Truncate oracle text if too long
+                if len(oracle_text) > 200:
+                    oracle_text = oracle_text[:200] + '...'
+
+                rec_items.append(html.Div([
+                    # Card name and score
+                    html.Div([
+                        html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
+                        html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
+                        html.Span(f" ({score:.0f})", style={'fontSize': '11px', 'color': '#9b59b6', 'marginLeft': '4px'})
+                    ], style={'marginBottom': '4px'}),
+
+                    # Type line
+                    html.Div(type_line, style={'fontSize': '11px', 'color': '#34495e', 'fontStyle': 'italic', 'marginBottom': '4px'}),
+
+                    # Mana cost and CMC
+                    html.Div([
+                        html.Span(mana_cost if mana_cost else '—', style={'fontSize': '12px', 'color': '#7f8c8d', 'marginRight': '8px'}),
+                        html.Span(f"CMC: {cmc}", style={'fontSize': '11px', 'color': '#95a5a6'})
+                    ], style={'marginBottom': '6px'}),
+
+                    # Synergy reasons
+                    html.Div([
+                        html.Strong("Why?", style={'fontSize': '11px', 'color': '#16a085'}),
+                        html.Ul([
+                            html.Li(reason, style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'})
+                            for reason in synergy_reasons[:3]  # Top 3 reasons
+                        ], style={'marginTop': '2px', 'marginBottom': '6px', 'paddingLeft': '16px'})
+                    ] if synergy_reasons else None),
+
+                    # Oracle text
+                    html.Div(oracle_text, style={
+                        'fontSize': '10px',
+                        'color': '#7f8c8d',
+                        'fontStyle': 'italic',
+                        'backgroundColor': '#f8f9fa',
+                        'padding': '6px',
+                        'borderRadius': '4px',
+                        'marginTop': '6px'
+                    }) if oracle_text else None
+
+                ], style={
+                    'marginBottom': '14px',
+                    'paddingBottom': '14px',
+                    'borderBottom': '2px solid #ecf0f1',
+                    'paddingLeft': '4px',
+                    'borderLeft': '3px solid #9b59b6'
+                }))
+
+            recommendations_panel = html.Div([
+                html.H4("🔍 Recommendations", style={'marginBottom': '12px', 'color': '#9b59b6', 'fontSize': '16px'}),
+                html.Div(rec_items)
+            ])
+
+            return dash.no_update, recommendations_panel, dash.no_update
+
+        except Exception as e:
+            print(f"[DEBUG] Error generating recommendations: {e}")
+            return dash.no_update, html.Div([
+                html.P(f"⚠️ Error: {str(e)}",
+                       style={'color': '#e74c3c', 'padding': '16px', 'fontSize': '12px'})
+            ]), dash.no_update
 
     if elements is None:
         if triggered_prop == 'active-role-filter.data':
