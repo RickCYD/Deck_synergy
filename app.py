@@ -27,6 +27,9 @@ from src.utils.card_roles import (
     assign_roles_to_cards,
     summarize_roles
 )
+from src.simulation.mana_simulator import ManaSimulator, SimulationParams
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # Initialize Dash app
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
@@ -371,6 +374,23 @@ app.layout = html.Div([
                 }
             ),
             html.Button(
+                '✂️ Cards to Cut',
+                id='cards-to-cut-button',
+                n_clicks=0,
+                style={
+                    'padding': '8px 12px',
+                    'backgroundColor': '#e74c3c',
+                    'color': 'white',
+                    'border': 'none',
+                    'cursor': 'pointer',
+                    'fontSize': '14px',
+                    'fontWeight': 'bold',
+                    'borderRadius': '4px',
+                    'marginBottom': '12px',
+                    'marginLeft': '12px'
+                }
+            ),
+            html.Button(
                 '🔍 Get Recommendations',
                 id='get-recommendations-button',
                 n_clicks=0,
@@ -388,220 +408,157 @@ app.layout = html.Div([
                 }
             )
         ], style={'display': 'flex', 'gap': '12px'}),
-        html.Div(id='card-rankings-panel', style={
-            'height': '0px',
-            'overflow': 'hidden',
-            'marginBottom': '16px',
-            'transition': 'height 0.3s ease'
-        }),
     ], style={'padding': '0 20px', 'marginTop': '16px'}),
 
-    # Main content area with graph and info panel
-    html.Div([
-        # Graph Section - Left (3/4 of screen)
-        html.Div([
-            cyto.Cytoscape(
-                id='card-graph',
-                layout={
-                    'name': 'cose',
-                    'animate': False,
-                    'nodeRepulsion': 25000,
-                    'idealEdgeLength': 250,
-                    'edgeElasticity': 100,
-                    'nestingFactor': 0.1,
-                    'gravity': 1,
-                    'numIter': 2500,
-                    'initialTemp': 500,
-                    'coolingFactor': 0.95,
-                    'minTemp': 1.0,
-                    'nodeOverlap': 100
-                },
-                style={'width': '100%', 'height': '650px'},
-                elements=[],
-                stylesheet=[
-                    {
-                        'selector': 'node',
-                        'style': {
-                            'label': 'data(label)',
-                            'shape': 'rectangle',
-                            'background-color': 'data(color_code)',
-                            'background-image': 'data(art_crop_url)',
-                            'background-fit': 'cover',
-                            'background-clip': 'node',
-                            'color': '#fff',
-                            'text-valign': 'bottom',
-                            'text-halign': 'center',
-                            'text-background-color': '#000',
-                            'text-background-opacity': 0.7,
-                            'text-background-padding': '3px',
-                            'font-size': '10px',
-                            'width': '90px',
-                            'height': '90px',
-                            'border-width': '4px',
-                            'border-color': 'data(border_color)',
-                            'border-style': 'solid',
-                            'text-outline-width': '1px',
-                            'text-outline-color': '#000'
-                        }
-                    },
-                    {
-                        'selector': 'node[is_multicolor]',
-                        'style': {
-                            'border-width': '3px',
-                            'border-color': 'data(border_color)'
-                        }
-                    },
-                    {
-                        'selector': 'node[type="commander"]',
-                        'style': {
-                            'background-color': 'data(color_code)',
-                            'background-image': 'data(art_crop_url)',
-                            'background-fit': 'cover',
-                            'background-clip': 'node',
-                            'width': '110px',
-                            'height': '110px',
-                            'font-size': '12px',
-                            'font-weight': 'bold',
-                            'border-width': '5px',
-                            'border-color': 'data(border_color)'
-                        }
-                    },
-                    {
-                        'selector': 'node[type="commander"][is_multicolor]',
-                        'style': {
-                            'border-width': '4px'
-                        }
-                    },
-                    # Base edge style
-                    {
-                        'selector': 'edge',
-                        'style': {
-                            'width': 2,
-                            'line-color': '#95a5a6',
-                            'curve-style': 'bezier',
-                            'opacity': 0.7,
-                            'label': 'data(weight)',
-                            'font-size': '9px',
-                            'color': '#2c3e50',
-                            'text-background-color': '#ffffff',
-                            'text-background-opacity': 0.85,
-                            'text-background-padding': '3px',
-                            'text-background-shape': 'roundrectangle',
-                            'text-border-color': '#bdc3c7',
-                            'text-border-width': 0.5,
-                            'text-border-opacity': 0.8
-                        }
-                    },
-                    # Weight-based colors - gray to red gradient
-                    {
-                        'selector': 'edge[weight < 3]',
-                        'style': {
-                            'line-color': '#95a5a6',  # Gray
-                            'width': 1.5
-                        }
-                    },
-                    {
-                        'selector': 'edge[weight >= 3][weight < 5]',
-                        'style': {
-                            'line-color': '#b3a59c',  # Light brown-gray
-                            'width': 2
-                        }
-                    },
-                    {
-                        'selector': 'edge[weight >= 5][weight < 7]',
-                        'style': {
-                            'line-color': '#d4a574',  # Tan/beige
-                            'width': 2.5
-                        }
-                    },
-                    {
-                        'selector': 'edge[weight >= 7][weight < 9]',
-                        'style': {
-                            'line-color': '#e67e22',  # Orange
-                            'width': 3
-                        }
-                    },
-                    {
-                        'selector': 'edge[weight >= 9][weight < 11]',
-                        'style': {
-                            'line-color': '#e74c3c',  # Red-orange
-                            'width': 4
-                        }
-                    },
-                    {
-                        'selector': 'edge[weight >= 11]',
-                        'style': {
-                            'line-color': '#c0392b',  # Dark red
-                            'width': 5
-                        }
-                    },
-                    {
-                        'selector': 'node:selected',
-                        'style': {
-                            'border-width': '4px',
-                            'border-color': '#f39c12'
-                        }
-                    },
-                    {
-                        'selector': '.highlighted',
-                        'style': {
-                            'opacity': 1,
-                            'z-index': 999
-                        }
-                    },
-                    {
-                        'selector': '.dimmed',
-                        'style': {
-                            'opacity': 0.2
-                        }
-                    }
-                ]
-            )
-        ], style={
-            'flex': '1 1 70%',
-            'backgroundColor': '#ffffff',
-            'borderRadius': '6px',
-            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-            'padding': '20px',
-            'minWidth': '500px',
-            'order': 1
-        }),
-
-        # Info Panel - Right (1/4 of screen)
-        html.Div(
-            id='info-panel',
-            children=[
+    # Tabbed content: Synergy Graph and Mana Simulation
+    dcc.Tabs(id='main-tabs', value='synergy', children=[
+        dcc.Tab(label='Synergy Graph', value='synergy', children=[
+            html.Div([
+                # Graph Section - Left (3/4 of screen)
                 html.Div([
-                    html.H3("Card Details", style={'color': '#2c3e50', 'marginBottom': '12px', 'fontSize': '16px', 'fontWeight': 'bold'}),
-                    html.P(
-                        "Click on a card in the graph to view its details and synergies here.",
-                        style={'color': '#7f8c8d', 'fontSize': '13px', 'lineHeight': '1.6'}
+                    cyto.Cytoscape(
+                        id='card-graph',
+                        layout={
+                            'name': 'cose',
+                            'animate': False,
+                            'nodeRepulsion': 25000,
+                            'idealEdgeLength': 250,
+                            'edgeElasticity': 100,
+                            'nestingFactor': 0.1,
+                            'gravity': 1,
+                            'numIter': 2500,
+                            'initialTemp': 500,
+                            'coolingFactor': 0.95,
+                            'minTemp': 1.0,
+                            'nodeOverlap': 100
+                        },
+                        style={'width': '100%', 'height': '650px'},
+                        elements=[],
+                        stylesheet=get_base_stylesheet()
                     )
-                ])
-            ],
-            style={
-                'flex': '0 0 28%',
-                'maxWidth': '350px',
-                'minWidth': '280px',
-                'backgroundColor': '#f8f9fa',
-                'borderRadius': '6px',
-                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-                'padding': '16px',
-                'height': '650px',
-                'maxHeight': '650px',
-                'overflowY': 'auto',
-                'overflowX': 'hidden',
-                'border': '1px solid #dee2e6',
-                'order': 2
-            }
-        )
-    ], style={
-        'display': 'flex',
-        'flexWrap': 'nowrap',
-        'gap': '20px',
-        'padding': '20px',
-        'alignItems': 'flex-start'
-    }),
+                ], style={
+                    'flex': '1 1 70%',
+                    'backgroundColor': '#ffffff',
+                    'borderRadius': '6px',
+                    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                    'padding': '20px',
+                    'minWidth': '500px',
+                    'order': 1
+                }),
+
+                # Info Panel - Right (1/4 of screen)
+                html.Div(
+                    id='info-panel',
+                    children=[
+                        html.Div([
+                            html.H3("Card Details", style={'color': '#2c3e50', 'marginBottom': '12px', 'fontSize': '16px', 'fontWeight': 'bold'}),
+                            html.P(
+                                "Click on a card in the graph to view its details and synergies here.",
+                                style={'color': '#7f8c8d', 'fontSize': '13px', 'lineHeight': '1.6'}
+                            )
+                        ])
+                    ],
+                    style={
+                        'flex': '0 0 28%',
+                        'maxWidth': '350px',
+                        'minWidth': '280px',
+                        'backgroundColor': '#f8f9fa',
+                        'borderRadius': '6px',
+                        'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                        'padding': '16px',
+                        'height': '650px',
+                        'maxHeight': '650px',
+                        'overflowY': 'auto',
+                        'overflowX': 'hidden',
+                        'border': '1px solid #dee2e6',
+                        'order': 2
+                    }
+                )
+            ], style={
+                'display': 'flex',
+                'flexWrap': 'nowrap',
+                'gap': '20px',
+                'padding': '20px',
+                'alignItems': 'flex-start'
+            })
+        ]),
+        dcc.Tab(label='Mana Simulation', value='simulation', children=[
+            html.Div([
+                html.Div([
+                    html.Label('Simulation Parameters', style={'fontWeight': 'bold'}),
+                    html.Div([
+                        html.Div([
+                            html.Label('Iterations'),
+                            dcc.Input(id='simulation-iterations-input', type='number', value=50000, min=1000, step=5000, style={'width': '120px'})
+                        ]),
+                        html.Div([
+                            html.Label('Max Turn'),
+                            dcc.Input(id='simulation-turns-input', type='number', value=10, min=1, max=20, step=1, style={'width': '100px'})
+                        ]),
+                        html.Div([
+                            html.Label('Play/Draw'),
+                            dcc.RadioItems(
+                                id='simulation-play-draw-radio',
+                                options=[{'label': 'On the Play', 'value': 'play'}, {'label': 'On the Draw', 'value': 'draw'}],
+                                value='play', inline=True
+                            )
+                        ]),
+                        html.Div([
+                            dcc.Checklist(
+                                id='simulation-respect-tapped',
+                                options=[{'label': 'Respect enters tapped', 'value': 'tapped'}],
+                                value=['tapped']
+                            )
+                        ]),
+                        html.Div([
+                            dcc.Checklist(
+                                id='simulation-use-accelerators',
+                                options=[{'label': 'Use accelerators (rocks/ramp)', 'value': 'accel'}],
+                                value=['accel']
+                            )
+                        ]),
+                        html.Div([
+                            html.Label('Per-card turn'),
+                            dcc.Input(id='per-card-turn-input', type='number', value=4, min=1, max=20, step=1, style={'width': '100px'})
+                        ]),
+                        html.Div([
+                            html.Label('Per-card rows'),
+                            dcc.Input(id='per-card-topn-input', type='number', value=25, min=5, max=100, step=5, style={'width': '100px'})
+                        ])
+                    ], style={'display': 'flex', 'gap': '18px', 'flexWrap': 'wrap', 'alignItems': 'center'})
+                ], style={'backgroundColor': '#fff', 'padding': '12px 16px', 'borderRadius': '6px', 'boxShadow': '0 1px 2px rgba(0,0,0,0.08)'}),
+
+                html.Div([
+                    html.Button('Run Simulation', id='run-simulation-button', n_clicks=0, style={'padding': '10px 14px', 'backgroundColor': '#2980b9', 'color': '#fff', 'border': 'none', 'borderRadius': '4px', 'cursor': 'pointer', 'fontWeight': 'bold'}),
+                    html.Span(id='simulation-status-message', style={'marginLeft': '12px', 'color': '#7f8c8d'})
+                ], style={'marginTop': '12px'}),
+
+                html.Div(id='simulation-summary', style={'marginTop': '8px', 'color': '#2c3e50'}),
+
+                html.Div([
+                    dcc.Graph(id='simulation-result-graph', figure={'data': [], 'layout': {'title': 'Simulation Results', 'xaxis': {'title': 'Turn'}, 'yaxis': {'title': 'Probability', 'range': [0, 1]}}}),
+                ], style={'marginTop': '16px'}),
+
+                html.Div([
+                    dcc.Graph(id='simulation-mana-heatmap')
+                ], style={'marginTop': '12px'}),
+
+                html.Div([
+                    dcc.Graph(id='simulation-opening-hand-hist')
+                ], style={'marginTop': '12px'}),
+
+                html.Div([
+                    dcc.Graph(id='simulation-lands-in-hand-cdf')
+                ], style={'marginTop': '12px'}),
+
+                html.Div(id='simulation-result-table', style={'marginTop': '8px'}),
+
+                html.Hr(),
+                html.H4('Per-card castability by turn', style={'marginTop': '8px'}),
+                html.Div(id='per-card-result-table', style={'marginTop': '8px'})
+            ], style={'padding': '20px'})
+        ])
+    ]),
 
     dcc.Store(id='deck-data-store'),
     dcc.Store(id='selected-node-store'),
@@ -723,139 +680,6 @@ def update_graph(deck_file):
         return [], None, {}
 
 
-# Callback to update card rankings when deck is selected AND toggle visibility
-@app.callback(
-    [Output('card-rankings-panel', 'children'),
-     Output('card-rankings-panel', 'style'),
-     Output('view-top-cards-button', 'children')],
-    [Input('deck-selector', 'value'),
-     Input('view-top-cards-button', 'n_clicks')],
-    [State('card-rankings-panel', 'style')],
-    prevent_initial_call=True
-)
-def update_card_rankings(deck_file, n_clicks, current_style):
-    """Calculate and display card rankings when a deck is selected, and toggle visibility."""
-    ctx = dash.callback_context
-
-    # Determine if we're toggling or just updating
-    if ctx.triggered and ctx.triggered[0]['prop_id'] == 'view-top-cards-button.n_clicks':
-        # Toggle visibility - use height instead of display to prevent layout shift
-        if current_style and current_style.get('height') == '0px':
-            new_style = {
-                'height': '120px',
-                'overflow': 'hidden',
-                'overflowX': 'auto',
-                'marginBottom': '16px',
-                'display': 'flex',
-                'gap': '12px',
-                'padding': '10px 0',
-                'transition': 'height 0.3s ease'
-            }
-            button_text = 'Hide Top Cards'
-        else:
-            new_style = {
-                'height': '0px',
-                'overflow': 'hidden',
-                'marginBottom': '16px',
-                'transition': 'height 0.3s ease'
-            }
-            button_text = 'View Top Cards in Graph'
-        return dash.no_update, new_style, button_text
-
-    # Updating rankings when deck changes
-    if not deck_file:
-        return [], {
-            'height': '0px',
-            'overflow': 'hidden',
-            'marginBottom': '16px',
-            'transition': 'height 0.3s ease'
-        }, 'View Top Cards in Graph'
-
-    try:
-        # Load deck data
-        with open(deck_file, 'r') as f:
-            deck_data = json.load(f)
-
-        # Get rankings - TOP 5 instead of 10
-        rankings_summary = get_deck_rankings_summary(deck_data, top_n=5)
-
-        # Build rankings display - HORIZONTAL BOXES
-        rankings_items = []
-        for card_info in rankings_summary['top_cards']:
-            card_box = html.Div([
-                # Rank badge - MUCH SMALLER
-                html.Div(
-                    str(card_info['rank']),
-                    style={
-                        'width': '18px',
-                        'height': '18px',
-                        'borderRadius': '50%',
-                        'backgroundColor': card_info['color'],
-                        'color': 'white',
-                        'display': 'flex',
-                        'alignItems': 'center',
-                        'justifyContent': 'center',
-                        'fontWeight': 'bold',
-                        'fontSize': '10px',
-                        'marginBottom': '6px'
-                    }
-                ),
-                # Card name
-                html.Div(
-                    card_info['name'],
-                    style={
-                        'fontWeight': 'bold',
-                        'fontSize': '11px',
-                        'marginBottom': '6px',
-                        'color': '#2c3e50',
-                        'textAlign': 'center',
-                        'lineHeight': '1.2'
-                    }
-                ),
-                # Stats
-                html.Div([
-                    html.Div([
-                        html.Span('Syn: ', style={'fontSize': '9px', 'color': '#7f8c8d'}),
-                        html.Strong(str(card_info['total_synergy']), style={'fontSize': '9px', 'color': '#27ae60'})
-                    ], style={'marginBottom': '2px'}),
-                    html.Div([
-                        html.Span('Con: ', style={'fontSize': '9px', 'color': '#7f8c8d'}),
-                        html.Strong(str(card_info['connections']), style={'fontSize': '9px', 'color': '#3498db'})
-                    ])
-                ], style={'textAlign': 'center'})
-            ], style={
-                'minWidth': '90px',
-                'padding': '8px',
-                'backgroundColor': '#f8f9fa',
-                'borderRadius': '6px',
-                'border': f'2px solid {card_info["color"]}',
-                'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
-                'display': 'flex',
-                'flexDirection': 'column',
-                'alignItems': 'center',
-                'transition': 'transform 0.2s, box-shadow 0.2s',
-                'cursor': 'pointer'
-            })
-            rankings_items.append(card_box)
-
-        # Return with hidden by default (height 0)
-        return rankings_items, {
-            'height': '0px',
-            'overflow': 'hidden',
-            'marginBottom': '16px',
-            'transition': 'height 0.3s ease'
-        }, 'View Top Cards in Graph'
-
-    except Exception as e:
-        print(f"Error calculating rankings: {e}")
-        return [html.Div(f"Error: {str(e)}", style={'color': 'red'})], {
-            'height': '0px',
-            'overflow': 'hidden',
-            'marginBottom': '16px',
-            'transition': 'height 0.3s ease'
-        }, 'View Top Cards in Graph'
-
-
 @app.callback(
     [Output('role-filter-dropdown', 'options'),
      Output('role-filter-dropdown', 'disabled'),
@@ -958,6 +782,222 @@ def set_active_role_filter(dropdown_value, clear_click, current_filter):
 def reset_role_filter_on_deck_change(_):
     """Clear the role filter whenever a new deck is selected."""
     return None
+
+
+# Simulation callback: runs Monte Carlo and updates outputs
+@app.callback(
+    [Output('simulation-result-graph', 'figure'),
+     Output('simulation-status-message', 'children'),
+     Output('simulation-result-table', 'children'),
+     Output('simulation-mana-heatmap', 'figure'),
+     Output('simulation-opening-hand-hist', 'figure'),
+     Output('simulation-summary', 'children'),
+     Output('per-card-result-table', 'children'),
+     Output('simulation-lands-in-hand-cdf', 'figure')],
+    Input('run-simulation-button', 'n_clicks'),
+    [State('current-deck-file-store', 'data'),
+     State('simulation-iterations-input', 'value'),
+     State('simulation-turns-input', 'value'),
+     State('simulation-play-draw-radio', 'value'),
+     State('simulation-respect-tapped', 'value'),
+     State('simulation-use-accelerators', 'value'),
+     State('per-card-turn-input', 'value'),
+     State('per-card-topn-input', 'value')],
+    prevent_initial_call=True
+)
+def run_mana_simulation(n_clicks, deck_file, iterations, turns, play_or_draw, respect_tapped_vals, use_accel_vals, per_card_turn, per_card_topn):
+    if not deck_file:
+        return (
+            dash.no_update,
+            html.Span('Load or select a deck first.', style={'color': '#e74c3c'}),
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+        )
+
+    try:
+        with open(deck_file, 'r') as f:
+            deck_data = json.load(f)
+    except Exception as e:
+        return dash.no_update, html.Span(f'Failed to read deck file: {e}', style={'color': '#e74c3c'}), dash.no_update
+
+    try:
+        deck = Deck.from_dict(deck_data)
+        params = SimulationParams(
+            iterations=int(iterations or 50000),
+            max_turn=int(turns or 10),
+            on_the_play=(play_or_draw != 'draw'),
+            respect_enters_tapped=('tapped' in (respect_tapped_vals or [])),
+            use_accelerators=('accel' in (use_accel_vals or []))
+        )
+        sim = ManaSimulator(params)
+        result = sim.simulate_deck(deck)
+
+        # Build plotly figure
+        x = list(range(1, params.max_turn + 1))
+        y_color = [result.p_color_coverage.get(t, 0.0) for t in x]
+        y_playable = [result.p_playable_spell.get(t, 0.0) for t in x]
+
+        # Percentile band (available mana) overlay on a secondary y-axis
+        p10s = [float(result.available_mana_summary.get(t, {}).get('p10', 0.0)) for t in x]
+        p50s = [float(result.available_mana_summary.get(t, {}).get('p50', 0.0)) for t in x]
+        p90s = [float(result.available_mana_summary.get(t, {}).get('p90', 0.0)) for t in x]
+
+        # Color limitation rates (W/U/B/R/G) and playable fraction for saturation insights
+        # Use deck's active colors from the simulation result
+        colors = result.active_colors or []
+        color_palette = {
+            'W': '#f1c40f',  # yellow
+            'U': '#3498db',  # blue
+            'B': '#2c3e50',  # dark gray/black-ish
+            'R': '#e74c3c',  # red
+            'G': '#27ae60',  # green
+        }
+        color_lim_lines = {c: [float(result.color_limitation_rate.get(t, {}).get(c, 0.0)) for t in x] for c in colors}
+        playable_fraction = [float(result.playable_fraction.get(t, 0.0)) for t in x]
+
+        # Build a 2-row subplot: top — existing lines with percentile band; bottom — color limitation rates and playable fraction
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.12, specs=[[{"secondary_y": True}], [{}]])
+
+        # Row 1: probabilities on primary y
+        fig.add_trace(go.Scatter(x=x, y=y_color, mode='lines+markers', name='All Colors Available', line=dict(color='#1f77b4')), row=1, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=x, y=y_playable, mode='lines+markers', name='At Least One Spell Castable', line=dict(color='#2ca02c')), row=1, col=1, secondary_y=False)
+        # Row 1: secondary y available mana percentiles band
+        fig.add_trace(go.Scatter(x=x, y=p10s, mode='lines', line=dict(width=0, color='#e67e22'), name='Available Mana p10–p90', showlegend=True, hovertemplate='Turn %{x}<br>p10=%{y}<extra></extra>'), row=1, col=1, secondary_y=True)
+        fig.add_trace(go.Scatter(x=x, y=p90s, mode='lines', line=dict(width=0, color='#e67e22'), fill='tonexty', fillcolor='rgba(230,126,34,0.20)', name='Available Mana p10–p90', showlegend=False, hovertemplate='Turn %{x}<br>p90=%{y}<extra></extra>'), row=1, col=1, secondary_y=True)
+        fig.add_trace(go.Scatter(x=x, y=p50s, mode='lines+markers', name='Available Mana p50', line=dict(color='#e67e22')), row=1, col=1, secondary_y=True)
+
+        # Row 2: color limitation rates per color
+        for c in colors:
+            fig.add_trace(go.Scatter(x=x, y=color_lim_lines[c], mode='lines+markers', name=f'Blocked by {c}', line=dict(color=color_palette[c], dash='dot')), row=2, col=1)
+        # Row 2: playable fraction (how saturated the hand is overall)
+        fig.add_trace(go.Scatter(x=x, y=playable_fraction, mode='lines+markers', name='% Cards Playable', line=dict(color='#7f8c8d')), row=2, col=1)
+
+        # Layout and axes
+        fig.update_layout(
+            title={'text': 'Simulation Results<br><sup>Top: Probabilities (left) + Available mana percentiles (right) • Bottom: Color limitation rates and % playable</sup>'},
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+        )
+        fig.update_xaxes(title_text='Turn', row=2, col=1)
+        fig.update_yaxes(title_text='Probability', range=[0, 1], color='#1f77b4', row=1, col=1, secondary_y=False)
+        fig.update_yaxes(title_text='Available mana', color='#e67e22', row=1, col=1, secondary_y=True)
+        fig.update_yaxes(title_text='Color limitation / % playable', range=[0, 1], row=2, col=1)
+
+        # Build simple table
+        header = html.Tr([
+            html.Th('Turn'),
+            html.Th('% Have All Colors'),
+            html.Th('% Have Playable Spell'),
+            html.Th('Avg Lands in Play')
+        ])
+        rows = []
+        for t in x:
+            rows.append(html.Tr([
+                html.Td(t),
+                html.Td(f"{result.p_color_coverage.get(t, 0.0) * 100:.1f}%"),
+                html.Td(f"{result.p_playable_spell.get(t, 0.0) * 100:.1f}%"),
+                html.Td(f"{result.avg_lands_in_play.get(t, 0.0):.2f}")
+            ]))
+        table = html.Table([header] + rows, style={'width': '100%', 'backgroundColor': '#fff', 'borderCollapse': 'collapse'})
+
+        # Heatmap for available mana distribution
+        z_vals = []
+        y_vals = []
+        x_vals = x
+        # Collect all mana keys to determine y-axis
+        mana_keys = sorted({k for t in x for k in result.available_mana_hist.get(t, {}).keys()})
+        for mk in mana_keys:
+            y_vals.append(str(mk))
+            row = []
+            for t in x:
+                hist = result.available_mana_hist.get(t, {})
+                total = sum(hist.values()) or 1
+                row.append((hist.get(mk, 0)) / total)
+            z_vals.append(row)
+        heatmap_fig = go.Figure(data=go.Heatmap(z=z_vals, x=x_vals, y=y_vals, colorscale='Blues'))
+        heatmap_fig.update_layout(title='Available Mana Distribution (per turn)', xaxis_title='Turn', yaxis_title='Available mana', yaxis_type='category')
+
+        # Opening hand lands histogram
+        oh_hist = result.opening_hand_land_hist or {}
+        oh_x = sorted(oh_hist.keys())
+        oh_y = [oh_hist[k] / max(1, sum(oh_hist.values())) for k in oh_x]
+        opening_fig = go.Figure(data=[go.Bar(x=oh_x, y=oh_y)])
+        opening_fig.update_layout(title='Opening Hand Land Count (probability)', xaxis_title='Lands in opening 7', yaxis_title='Probability', yaxis=dict(range=[0,1]))
+
+        # Summary text: min, max, mode curves for available mana
+        min_curve = [int(result.available_mana_summary.get(t, {}).get('min', 0)) for t in x]
+        max_curve = [int(result.available_mana_summary.get(t, {}).get('max', 0)) for t in x]
+        mode_curve = [int(result.mode_available_mana_curve.get(t, 0)) for t in x]
+        # Color status at focus turn (use per-card turn if provided, else last turn)
+        t_focus = int(per_card_turn or params.max_turn)
+        color_status_lines = []
+        focus_colors = colors
+        for c in focus_colors:
+            avail = float(result.color_available_prob.get(t_focus, {}).get(c, 0.0))
+            block = float(result.color_limitation_rate.get(t_focus, {}).get(c, 0.0))
+            if avail > 0.9 and block < 0.05:
+                status = 'saturated'
+            elif avail < 0.6 or block > 0.15:
+                status = 'missing'
+            else:
+                status = 'balanced'
+            ksuggest = int(result.color_suggest_k.get(t_focus, {}).get(c, 0))
+            suggest_str = f"; suggest +{ksuggest} {c} sources" if ksuggest > 0 and status != 'saturated' else ''
+            color_status_lines.append(html.Span(f"{c}: {status} (P(avail)={avail:.2f}, block={block:.2f}{suggest_str})", style={'marginRight': '12px'}))
+
+        summary = html.Div([
+            html.Div(f"Mode curve (available mana): {mode_curve}"),
+            html.Div(f"Min curve: {min_curve}"),
+            html.Div(f"Max curve: {max_curve}"),
+            html.Div([html.Strong(f"Color status at turn {t_focus}: "), *color_status_lines], style={'marginTop': '6px'})
+        ])
+
+        # Per-card table: probability castable by selected turn
+        t_sel = int(per_card_turn or params.max_turn)
+        topn = int(per_card_topn or 25)
+        items = []
+        for name, by_turn in result.per_card_prob_by_turn.items():
+            p = by_turn.get(t_sel, 0.0)
+            items.append((name, p))
+        # Sort descending and take top N
+        items.sort(key=lambda x: x[1], reverse=True)
+        items = items[:topn]
+        card_table = html.Table([
+            html.Tr([html.Th('Card'), html.Th(f'% Castable by turn {t_sel}')])
+        ] + [
+            html.Tr([html.Td(name), html.Td(f"{p*100:.1f}%")]) for name, p in items
+        ], style={'width':'100%', 'backgroundColor':'#fff', 'borderCollapse':'collapse'})
+
+        status = html.Span(
+            f"Done. Iterations: {params.iterations}, Max turn: {params.max_turn}, On the play: {params.on_the_play}",
+            style={'color': '#2c3e50'}
+        )
+
+        # Lands-in-hand CDF at focus turn
+        lih = result.lands_in_hand_hist.get(t_focus, {}) or {}
+        total_lih = sum(lih.values()) or 1
+        xs = sorted(lih.keys())
+        cum = 0.0
+        cdf_y = []
+        for k in xs:
+            cum += lih.get(k, 0) / total_lih
+            cdf_y.append(cum)
+        cdf_fig = go.Figure(data=[go.Scatter(x=xs, y=cdf_y, mode='lines+markers', line=dict(shape='hv'))])
+        cdf_fig.update_layout(title=f'Lands in Hand CDF (turn {t_focus})', xaxis_title='Lands in hand', yaxis_title='Cumulative probability', yaxis=dict(range=[0,1]))
+
+        return fig, status, table, heatmap_fig, opening_fig, summary, card_table, cdf_fig
+    except Exception as e:
+        return (dash.no_update,
+                html.Span(f'Simulation error: {e}', style={'color': '#e74c3c'}),
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update)
 
 
 # Callback to update graph layout
@@ -1140,13 +1180,15 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
     [Input('card-graph', 'tapNodeData'),
      Input('card-graph', 'tapEdgeData'),
      Input('active-role-filter', 'data'),
-     Input('get-recommendations-button', 'n_clicks')],
+     Input('get-recommendations-button', 'n_clicks'),
+     Input('cards-to-cut-button', 'n_clicks'),
+     Input('view-top-cards-button', 'n_clicks')],
     [State('card-graph', 'elements'),
      State('role-filter-data', 'data'),
      State('current-deck-file-store', 'data')],
     prevent_initial_call=True
 )
-def handle_selection(node_data, edge_data, active_filter, rec_clicks, elements, role_summary, deck_file):
+def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks, top_clicks, elements, role_summary, deck_file):
     """Handle node/edge selection, role filter, recommendations, and update highlighting."""
     ctx = callback_context
     if not ctx.triggered:
@@ -1254,6 +1296,330 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, elements, 
 
         except Exception as e:
             print(f"[DEBUG] Error generating recommendations: {e}")
+            return dash.no_update, html.Div([
+                html.P(f"⚠️ Error: {str(e)}",
+                       style={'color': '#e74c3c', 'padding': '16px', 'fontSize': '12px'})
+            ]), dash.no_update
+
+    # Handle cards-to-cut button click
+    if triggered_prop == 'cards-to-cut-button.n_clicks':
+        print(f"[DEBUG] Cards to cut triggered, deck_file={deck_file}")
+
+        if not deck_file:
+            return dash.no_update, html.Div([
+                html.P("⚠️ Please load a deck first before analyzing cards to cut.",
+                       style={'color': '#e74c3c', 'padding': '16px', 'textAlign': 'center'})
+            ]), dash.no_update
+
+        # Load deck from file
+        try:
+            with open(deck_file, 'r') as f:
+                deck_obj = json.load(f)
+
+            cards = deck_obj.get('cards', [])
+            synergies = deck_obj.get('synergies', [])
+
+            # Calculate synergy scores for each card
+            card_scores = {}
+
+            # Handle synergies as dict (canonical format) or list (legacy)
+            if isinstance(synergies, dict):
+                synergy_list = list(synergies.values())
+            else:
+                synergy_list = synergies
+
+            for card in cards:
+                card_name = card.get('name')
+                if not card_name:
+                    continue
+
+                # Count synergies involving this card
+                score = 0
+                for synergy in synergy_list:
+                    # Handle both dict and other data structures
+                    if isinstance(synergy, dict):
+                        if card_name in [synergy.get('card1'), synergy.get('card2')]:
+                            score += synergy.get('total_weight', 1.0)
+
+                card_scores[card_name] = score
+
+            # Calculate deck statistics for context
+            if card_scores:
+                avg_synergy = sum(card_scores.values()) / len(card_scores)
+                max_synergy = max(card_scores.values())
+            else:
+                avg_synergy = 0
+                max_synergy = 0
+
+            # Get bottom 10 cards (least synergistic)
+            sorted_cards = sorted(card_scores.items(), key=lambda x: x[1])
+            bottom_cards = sorted_cards[:10]
+
+            # Build cards-to-cut UI
+            cut_items = []
+            for idx, (card_name, score) in enumerate(bottom_cards, 1):
+                # Find full card data
+                card_data = next((c for c in cards if c.get('name') == card_name), {})
+
+                type_line = card_data.get('type_line', '')
+                mana_cost = card_data.get('mana_cost', '')
+                oracle_text = card_data.get('oracle_text', '')
+                cmc = card_data.get('cmc', 0)
+
+                # Truncate oracle text
+                if len(oracle_text) > 200:
+                    oracle_text = oracle_text[:200] + '...'
+
+                # Determine reason with meaningful context
+                reasons = []
+                if score == 0:
+                    reasons.append("No synergies detected")
+                else:
+                    # Show absolute score with deck context
+                    reasons.append(f"Synergy score: {score:.1f} (deck avg: {avg_synergy:.1f}, max: {max_synergy:.1f})")
+
+                cut_items.append(html.Div([
+                    # Card name and score
+                    html.Div([
+                        html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
+                        html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
+                        html.Span(f" ({score:.1f})", style={'fontSize': '11px', 'color': '#e74c3c', 'marginLeft': '4px'})
+                    ], style={'marginBottom': '4px'}),
+
+                    # Type line
+                    html.Div(type_line, style={'fontSize': '11px', 'color': '#34495e', 'fontStyle': 'italic', 'marginBottom': '4px'}),
+
+                    # Mana cost and CMC
+                    html.Div([
+                        html.Span(mana_cost if mana_cost else '—', style={'fontSize': '12px', 'color': '#7f8c8d', 'marginRight': '8px'}),
+                        html.Span(f"CMC: {cmc}", style={'fontSize': '11px', 'color': '#95a5a6'})
+                    ], style={'marginBottom': '6px'}),
+
+                    # Reasons for cutting
+                    html.Div([
+                        html.Strong("Why cut?", style={'fontSize': '11px', 'color': '#c0392b'}),
+                        html.Ul([
+                            html.Li(reason, style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'})
+                            for reason in reasons
+                        ], style={'marginTop': '2px', 'marginBottom': '6px', 'paddingLeft': '16px'})
+                    ]),
+
+                    # Oracle text
+                    html.Div(oracle_text, style={
+                        'fontSize': '10px',
+                        'color': '#7f8c8d',
+                        'fontStyle': 'italic',
+                        'backgroundColor': '#f8f9fa',
+                        'padding': '6px',
+                        'borderRadius': '4px',
+                        'marginTop': '6px'
+                    }) if oracle_text else None
+
+                ], style={
+                    'marginBottom': '14px',
+                    'paddingBottom': '14px',
+                    'borderBottom': '2px solid #ecf0f1',
+                    'paddingLeft': '4px',
+                    'borderLeft': '3px solid #e74c3c'
+                }))
+
+            cut_panel = html.Div([
+                html.H4("✂️ Cards to Cut", style={'marginBottom': '12px', 'color': '#e74c3c', 'fontSize': '16px'}),
+                html.P("These cards have the lowest synergy with the rest of your deck:", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginBottom': '12px'}),
+                html.Div(cut_items)
+            ])
+
+            # Create stylesheet highlighting low-synergy cards in red
+            stylesheet = list(get_base_stylesheet())
+            bottom_card_names = [name for name, _ in bottom_cards]
+
+            # Highlight low-synergy cards in red
+            for card_name in bottom_card_names:
+                stylesheet.append({
+                    'selector': f'node[label = "{card_name}"]',
+                    'style': {
+                        'border-color': '#e74c3c',
+                        'border-width': '6px',
+                        'background-color': '#e74c3c'
+                    }
+                })
+
+            # Dim other cards
+            for card in cards:
+                if card.get('name') not in bottom_card_names:
+                    stylesheet.append({
+                        'selector': f'node[label = "{card.get("name")}"]',
+                        'style': {
+                            'opacity': 0.3
+                        }
+                    })
+
+            # Create layout to highlight low-synergy cards
+            layout = {
+                'name': 'cose',
+                'animate': True,
+                'animationDuration': 1000,
+                'nodeRepulsion': 35000,
+                'idealEdgeLength': 250,
+                'edgeElasticity': 120,
+                'nestingFactor': 0.1,
+                'gravity': 3,
+                'numIter': 2500,
+                'initialTemp': 600,
+                'coolingFactor': 0.95,
+                'minTemp': 1.0,
+                'nodeOverlap': 100
+            }
+
+            return stylesheet, cut_panel, layout
+
+        except Exception as e:
+            print(f"[DEBUG] Error analyzing cards to cut: {e}")
+            import traceback
+            traceback.print_exc()
+            return dash.no_update, html.Div([
+                html.P(f"⚠️ Error: {str(e)}",
+                       style={'color': '#e74c3c', 'padding': '16px', 'fontSize': '12px'})
+            ]), dash.no_update
+
+    # Handle view-top-cards button click
+    if triggered_prop == 'view-top-cards-button.n_clicks':
+        print(f"[DEBUG] View top cards triggered, deck_file={deck_file}")
+
+        if not deck_file:
+            return dash.no_update, html.Div([
+                html.P("⚠️ Please load a deck first.",
+                       style={'color': '#e74c3c', 'padding': '16px', 'textAlign': 'center'})
+            ]), dash.no_update
+
+        # Load deck from file
+        try:
+            with open(deck_file, 'r') as f:
+                deck_obj = json.load(f)
+
+            cards = deck_obj.get('cards', [])
+
+            # Get top 10 cards by synergy ranking
+            rankings_summary = get_deck_rankings_summary(deck_obj, top_n=10)
+            top_cards = rankings_summary.get('top_cards', [])
+
+            # Build top cards UI
+            top_items = []
+            for idx, card_info in enumerate(top_cards, 1):
+                card_name = card_info.get('name', 'Unknown')
+                rank_score = card_info.get('total_synergy', 0)
+
+                # Find full card data
+                card_data = next((c for c in cards if c.get('name') == card_name), {})
+
+                type_line = card_data.get('type_line', '')
+                mana_cost = card_data.get('mana_cost', '')
+                oracle_text = card_data.get('oracle_text', '')
+                cmc = card_data.get('cmc', 0)
+
+                # Truncate oracle text
+                if len(oracle_text) > 200:
+                    oracle_text = oracle_text[:200] + '...'
+
+                top_items.append(html.Div([
+                    # Card name and score
+                    html.Div([
+                        html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
+                        html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
+                        html.Span(f" ({rank_score:.1f})", style={'fontSize': '11px', 'color': '#2ecc71', 'marginLeft': '4px'})
+                    ], style={'marginBottom': '4px'}),
+
+                    # Type line
+                    html.Div(type_line, style={'fontSize': '11px', 'color': '#34495e', 'fontStyle': 'italic', 'marginBottom': '4px'}),
+
+                    # Mana cost and CMC
+                    html.Div([
+                        html.Span(mana_cost if mana_cost else '—', style={'fontSize': '12px', 'color': '#7f8c8d', 'marginRight': '8px'}),
+                        html.Span(f"CMC: {cmc}", style={'fontSize': '11px', 'color': '#95a5a6'})
+                    ], style={'marginBottom': '6px'}),
+
+                    # Why it's a top card
+                    html.Div([
+                        html.Strong("Why top card?", style={'fontSize': '11px', 'color': '#27ae60'}),
+                        html.Ul([
+                            html.Li(f"High synergy centrality (rank {idx})", style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'}),
+                            html.Li(f"Synergy score: {rank_score:.1f}", style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'})
+                        ], style={'marginTop': '2px', 'marginBottom': '6px', 'paddingLeft': '16px'})
+                    ]),
+
+                    # Oracle text
+                    html.Div(oracle_text, style={
+                        'fontSize': '10px',
+                        'color': '#7f8c8d',
+                        'fontStyle': 'italic',
+                        'backgroundColor': '#f8f9fa',
+                        'padding': '6px',
+                        'borderRadius': '4px',
+                        'marginTop': '6px'
+                    }) if oracle_text else None
+
+                ], style={
+                    'marginBottom': '14px',
+                    'paddingBottom': '14px',
+                    'borderBottom': '2px solid #ecf0f1',
+                    'paddingLeft': '4px',
+                    'borderLeft': '3px solid #2ecc71'
+                }))
+
+            top_panel = html.Div([
+                html.H4("⭐ Top Cards", style={'marginBottom': '12px', 'color': '#2ecc71', 'fontSize': '16px'}),
+                html.P("These cards have the highest synergy with the rest of your deck:", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginBottom': '12px'}),
+                html.Div(top_items)
+            ])
+
+            # Create stylesheet highlighting top cards in green
+            stylesheet = list(get_base_stylesheet())
+            top_card_names = [card['name'] for card in top_cards]
+
+            # Highlight top cards in green
+            for card_name in top_card_names:
+                stylesheet.append({
+                    'selector': f'node[label = "{card_name}"]',
+                    'style': {
+                        'border-color': '#2ecc71',
+                        'border-width': '6px',
+                        'background-color': '#2ecc71'
+                    }
+                })
+
+            # Dim other cards
+            for card in cards:
+                if card.get('name') not in top_card_names:
+                    stylesheet.append({
+                        'selector': f'node[label = "{card.get("name")}"]',
+                        'style': {
+                            'opacity': 0.3
+                        }
+                    })
+
+            # Create layout to highlight top cards
+            layout = {
+                'name': 'cose',
+                'animate': True,
+                'animationDuration': 1000,
+                'nodeRepulsion': 35000,
+                'idealEdgeLength': 250,
+                'edgeElasticity': 120,
+                'nestingFactor': 0.1,
+                'gravity': 3,
+                'numIter': 2500,
+                'initialTemp': 600,
+                'coolingFactor': 0.95,
+                'minTemp': 1.0,
+                'nodeOverlap': 100
+            }
+
+            return stylesheet, top_panel, layout
+
+        except Exception as e:
+            print(f"[DEBUG] Error showing top cards: {e}")
+            import traceback
+            traceback.print_exc()
             return dash.no_update, html.Div([
                 html.P(f"⚠️ Error: {str(e)}",
                        style={'color': '#e74c3c', 'padding': '16px', 'fontSize': '12px'})

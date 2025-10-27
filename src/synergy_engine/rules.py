@@ -5,6 +5,7 @@ Individual rule functions for detecting different types of synergies between car
 
 import re
 from typing import Dict, List, Optional
+from src.utils.damage_extractors import classify_damage_effect
 
 
 def detect_etb_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
@@ -136,6 +137,9 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         'G': [r'add \{g\}', r'add.*green', r'add one mana of any color']
     }
 
+    # Colorless/generic mana production patterns
+    colorless_patterns = [r'add \{c\}', r'add \{c\}\{c\}', r'add.*colorless mana']
+
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
     card1_type = card1.get('type_line', '').lower()
@@ -144,6 +148,32 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Get mana cost colors (colors actually needed to cast)
     card1_colors = set(card1.get('colors', []))
     card2_colors = set(card2.get('colors', []))
+
+    # Get CMC for generic mana detection
+    card1_cmc = card1.get('cmc', 0)
+    card2_cmc = card2.get('cmc', 0)
+
+    # Check if card1 produces colorless mana and card2 has any mana cost
+    card1_produces_colorless = any(re.search(pattern, card1_text) for pattern in colorless_patterns)
+    if card1_produces_colorless and card2_cmc > 0:
+        return {
+            'name': 'Mana Acceleration',
+            'description': f"{card1['name']} produces colorless mana for {card2['name']}'s generic cost",
+            'value': 1.0,
+            'category': 'mana_synergy',
+            'subcategory': 'mana_production'
+        }
+
+    # Check if card2 produces colorless mana and card1 has any mana cost
+    card2_produces_colorless = any(re.search(pattern, card2_text) for pattern in colorless_patterns)
+    if card2_produces_colorless and card1_cmc > 0:
+        return {
+            'name': 'Mana Acceleration',
+            'description': f"{card2['name']} produces colorless mana for {card1['name']}'s generic cost",
+            'value': 1.0,
+            'category': 'mana_synergy',
+            'subcategory': 'mana_production'
+        }
 
     # Check if card1 produces mana and card2 needs that color
     for color, patterns in mana_production_patterns.items():
@@ -1805,6 +1835,369 @@ def detect_voltron_evasion(card1: Dict, card2: Dict) -> Optional[Dict]:
     return None
 
 
+def detect_aristocrats_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect aristocrats synergies: death triggers + sacrifice outlets + drain effects
+
+    Aristocrats is a strategy where creatures dying triggers beneficial effects,
+    especially life drain effects like Blood Artist, Zulaport Cutthroat.
+    """
+    # Classify both cards
+    class1 = classify_damage_effect(card1)
+    class2 = classify_damage_effect(card2)
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # Death trigger patterns
+    death_trigger_patterns = [r'when .* dies', r'whenever .* dies', r'when .* is put into a graveyard']
+
+    # Sacrifice outlet patterns
+    sacrifice_outlet_patterns = [
+        r'sacrifice a creature',
+        r'sacrifice a permanent',
+        r'sacrifice.*you control',
+        r'you may sacrifice'
+    ]
+
+    # Token generation patterns
+    token_generation_patterns = [r'create.*token', r'put.*token.*onto the battlefield']
+
+    card1_is_drain = class1['strategy'] == 'drain'
+    card2_is_drain = class2['strategy'] == 'drain'
+
+    card1_has_death_trigger = any(re.search(pattern, card1_text) for pattern in death_trigger_patterns)
+    card2_has_death_trigger = any(re.search(pattern, card2_text) for pattern in death_trigger_patterns)
+
+    card1_is_sac_outlet = any(re.search(pattern, card1_text) for pattern in sacrifice_outlet_patterns)
+    card2_is_sac_outlet = any(re.search(pattern, card2_text) for pattern in sacrifice_outlet_patterns)
+
+    card1_makes_tokens = any(re.search(pattern, card1_text) for pattern in token_generation_patterns)
+    card2_makes_tokens = any(re.search(pattern, card2_text) for pattern in token_generation_patterns)
+
+    # Drain effect + sacrifice outlet = aristocrats combo
+    if card1_is_drain and card2_is_sac_outlet:
+        return {
+            'name': 'Aristocrats Combo',
+            'description': f"{card1['name']} drains life when creatures die, {card2['name']} provides sacrifice outlet",
+            'value': 4.0,
+            'category': 'combo',
+            'subcategory': 'aristocrats'
+        }
+
+    if card2_is_drain and card1_is_sac_outlet:
+        return {
+            'name': 'Aristocrats Combo',
+            'description': f"{card2['name']} drains life when creatures die, {card1['name']} provides sacrifice outlet",
+            'value': 4.0,
+            'category': 'combo',
+            'subcategory': 'aristocrats'
+        }
+
+    # Drain effect + token generation = fodder for aristocrats
+    if card1_is_drain and card2_makes_tokens:
+        return {
+            'name': 'Aristocrats Fodder',
+            'description': f"{card1['name']} drains life when creatures die, {card2['name']} creates sacrificial tokens",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'aristocrats'
+        }
+
+    if card2_is_drain and card1_makes_tokens:
+        return {
+            'name': 'Aristocrats Fodder',
+            'description': f"{card2['name']} drains life when creatures die, {card1['name']} creates sacrificial tokens",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'aristocrats'
+        }
+
+    # Multiple drain effects stack together
+    if card1_is_drain and card2_is_drain:
+        return {
+            'name': 'Stacking Drain Effects',
+            'description': f"{card1['name']} and {card2['name']} both drain opponents when creatures die",
+            'value': 4.5,
+            'category': 'combo',
+            'subcategory': 'aristocrats'
+        }
+
+    # Death trigger with death trigger (aristocrats package)
+    if card1_has_death_trigger and card2_has_death_trigger:
+        return {
+            'name': 'Death Trigger Synergy',
+            'description': f"{card1['name']} and {card2['name']} both trigger when creatures die",
+            'value': 2.5,
+            'category': 'triggers',
+            'subcategory': 'death_triggers'
+        }
+
+    return None
+
+
+def detect_burn_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect burn synergies: damage amplifiers + damage dealers
+
+    Burn strategy focuses on dealing direct damage to opponents.
+    """
+    class1 = classify_damage_effect(card1)
+    class2 = classify_damage_effect(card2)
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # Damage amplifier patterns
+    damage_amplifier_patterns = [
+        r'if.*source.*would deal damage.*deals.*instead',
+        r'if.*would deal damage.*deals.*plus',
+        r'if.*would deal damage.*double',
+        r'if.*would deal damage.*triple',
+        r'whenever.*deals damage.*deals.*additional'
+    ]
+
+    # Direct damage patterns
+    direct_damage_patterns = [
+        r'deals? \d+ damage',
+        r'deals? damage equal to',
+        r'each opponent loses \d+ life'
+    ]
+
+    card1_has_damage = class1['has_damage_effects'] or len(class1['direct_damages']) > 0 or len(class1['burn_effects']) > 0
+    card2_has_damage = class2['has_damage_effects'] or len(class2['direct_damages']) > 0 or len(class2['burn_effects']) > 0
+
+    card1_is_amplifier = any(re.search(pattern, card1_text) for pattern in damage_amplifier_patterns)
+    card2_is_amplifier = any(re.search(pattern, card2_text) for pattern in damage_amplifier_patterns)
+
+    card1_multiplayer = class1['is_multiplayer_focused']
+    card2_multiplayer = class2['is_multiplayer_focused']
+
+    # Damage amplifier + damage dealer
+    if card1_is_amplifier and card2_has_damage:
+        return {
+            'name': 'Burn Amplification',
+            'description': f"{card1['name']} amplifies damage from {card2['name']}",
+            'value': 4.0,
+            'category': 'combo',
+            'subcategory': 'burn'
+        }
+
+    if card2_is_amplifier and card1_has_damage:
+        return {
+            'name': 'Burn Amplification',
+            'description': f"{card2['name']} amplifies damage from {card1['name']}",
+            'value': 4.0,
+            'category': 'combo',
+            'subcategory': 'burn'
+        }
+
+    # Multiple burn effects for multiplayer
+    if card1_multiplayer and card2_multiplayer:
+        return {
+            'name': 'Multiplayer Burn Package',
+            'description': f"{card1['name']} and {card2['name']} both hit multiple opponents",
+            'value': 3.0,
+            'category': 'strategy',
+            'subcategory': 'burn'
+        }
+
+    # Multiple damage sources
+    if card1_has_damage and card2_has_damage:
+        total_damage = class1['estimated_damage'] + class2['estimated_damage']
+        if total_damage >= 10:
+            return {
+                'name': 'Burn Package',
+                'description': f"{card1['name']} and {card2['name']} combine for high damage output",
+                'value': 2.5,
+                'category': 'strategy',
+                'subcategory': 'burn'
+            }
+
+    return None
+
+
+def detect_lifegain_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect lifegain synergies: lifegain triggers + lifegain sources
+
+    Cards that benefit when you gain life + cards that gain life.
+    """
+    class1 = classify_damage_effect(card1)
+    class2 = classify_damage_effect(card2)
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # Lifegain trigger patterns (payoffs)
+    lifegain_payoff_patterns = [
+        r'whenever you gain life.*put.*counter',
+        r'whenever you gain life.*draw',
+        r'whenever you gain life.*create',
+        r'whenever you gain life.*gain',
+        r'if you would gain life.*gain.*instead'
+    ]
+
+    card1_has_lifegain = class1['has_life_gain'] or class1['strategy'] == 'lifegain'
+    card2_has_lifegain = class2['has_life_gain'] or class2['strategy'] == 'lifegain'
+
+    card1_is_payoff = any(re.search(pattern, card1_text) for pattern in lifegain_payoff_patterns)
+    card2_is_payoff = any(re.search(pattern, card2_text) for pattern in lifegain_payoff_patterns)
+
+    # Lifegain payoff + lifegain source
+    if card1_is_payoff and card2_has_lifegain:
+        return {
+            'name': 'Lifegain Synergy',
+            'description': f"{card1['name']} benefits when {card2['name']} gains you life",
+            'value': 3.5,
+            'category': 'triggers',
+            'subcategory': 'lifegain'
+        }
+
+    if card2_is_payoff and card1_has_lifegain:
+        return {
+            'name': 'Lifegain Synergy',
+            'description': f"{card2['name']} benefits when {card1['name']} gains you life",
+            'value': 3.5,
+            'category': 'triggers',
+            'subcategory': 'lifegain'
+        }
+
+    # Multiple lifegain sources
+    if card1_has_lifegain and card2_has_lifegain:
+        return {
+            'name': 'Lifegain Package',
+            'description': f"{card1['name']} and {card2['name']} both provide life gain",
+            'value': 2.0,
+            'category': 'strategy',
+            'subcategory': 'lifegain'
+        }
+
+    return None
+
+
+def detect_damage_based_card_draw(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect synergies between damage dealers and cards that draw when dealing damage
+
+    Examples: Niv-Mizzet draws when you deal damage, or deals damage when you draw
+    """
+    class1 = classify_damage_effect(card1)
+    class2 = classify_damage_effect(card2)
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # Draw when dealing damage patterns
+    damage_draw_patterns = [
+        r'whenever.*deal.*damage.*draw',
+        r'whenever you draw.*deals? damage',
+        r'whenever.*deals combat damage.*draw'
+    ]
+
+    card1_has_damage = class1['has_damage_effects']
+    card2_has_damage = class2['has_damage_effects']
+
+    card1_is_draw_trigger = any(re.search(pattern, card1_text) for pattern in damage_draw_patterns)
+    card2_is_draw_trigger = any(re.search(pattern, card2_text) for pattern in damage_draw_patterns)
+
+    # Damage + draw trigger creates engine
+    if card1_is_draw_trigger and card2_has_damage:
+        return {
+            'name': 'Damage Draw Engine',
+            'description': f"{card1['name']} creates draw/damage loop with {card2['name']}",
+            'value': 4.5,
+            'category': 'combo',
+            'subcategory': 'draw_damage'
+        }
+
+    if card2_is_draw_trigger and card1_has_damage:
+        return {
+            'name': 'Damage Draw Engine',
+            'description': f"{card2['name']} creates draw/damage loop with {card1['name']}",
+            'value': 4.5,
+            'category': 'combo',
+            'subcategory': 'draw_damage'
+        }
+
+    # Multiple draw/damage triggers create powerful engine
+    if card1_is_draw_trigger and card2_is_draw_trigger:
+        return {
+            'name': 'Double Draw/Damage Engine',
+            'description': f"{card1['name']} and {card2['name']} create powerful draw/damage loop",
+            'value': 5.0,
+            'category': 'combo',
+            'subcategory': 'draw_damage'
+        }
+
+    return None
+
+
+def detect_creature_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect synergies with creature-based damage (power matters, combat damage triggers)
+    """
+    class1 = classify_damage_effect(card1)
+    class2 = classify_damage_effect(card2)
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # Power boost patterns
+    power_boost_patterns = [
+        r'\+\d+/\+\d+',
+        r'gets \+\d+/\+\d+',
+        r'creatures you control get \+\d+/\+\d+'
+    ]
+
+    # Combat damage matter patterns
+    combat_matters_patterns = [
+        r'whenever.*deals combat damage',
+        r'when.*deals combat damage',
+        r'if.*dealt combat damage'
+    ]
+
+    card1_has_creature_damage = len(class1['creature_damages']) > 0
+    card2_has_creature_damage = len(class2['creature_damages']) > 0
+
+    card1_boosts_power = any(re.search(pattern, card1_text) for pattern in power_boost_patterns)
+    card2_boosts_power = any(re.search(pattern, card2_text) for pattern in power_boost_patterns)
+
+    card1_combat_matters = any(re.search(pattern, card1_text) for pattern in combat_matters_patterns)
+    card2_combat_matters = any(re.search(pattern, card2_text) for pattern in combat_matters_patterns)
+
+    # Power boost + combat damage trigger
+    if card1_boosts_power and card2_combat_matters:
+        return {
+            'name': 'Combat Damage Synergy',
+            'description': f"{card1['name']} boosts power for {card2['name']}'s combat triggers",
+            'value': 3.0,
+            'category': 'combat',
+            'subcategory': 'combat_damage'
+        }
+
+    if card2_boosts_power and card1_combat_matters:
+        return {
+            'name': 'Combat Damage Synergy',
+            'description': f"{card2['name']} boosts power for {card1['name']}'s combat triggers",
+            'value': 3.0,
+            'category': 'combat',
+            'subcategory': 'combat_damage'
+        }
+
+    # Multiple combat damage triggers
+    if card1_combat_matters and card2_combat_matters:
+        return {
+            'name': 'Combat Trigger Package',
+            'description': f"{card1['name']} and {card2['name']} both trigger on combat damage",
+            'value': 2.5,
+            'category': 'combat',
+            'subcategory': 'combat_damage'
+        }
+
+    return None
+
+
 # List of all detection functions
 ALL_RULES = [
     detect_etb_triggers,
@@ -1836,5 +2229,11 @@ ALL_RULES = [
     detect_token_doublers,
     detect_discard_madness_flashback,
     detect_enchantress_effects,
-    detect_voltron_evasion
+    detect_voltron_evasion,
+    # New damage/drain/burn synergies
+    detect_aristocrats_synergy,
+    detect_burn_synergy,
+    detect_lifegain_payoffs,
+    detect_damage_based_card_draw,
+    detect_creature_damage_synergy
 ]
