@@ -5,7 +5,23 @@ Individual rule functions for detecting different types of synergies between car
 
 import re
 from typing import Dict, List, Optional
+from functools import lru_cache
 from src.utils.damage_extractors import classify_damage_effect
+
+# Cache for damage classifications to avoid recomputing for same cards
+_damage_classification_cache = {}
+
+def get_damage_classification(card: Dict) -> Dict:
+    """Get cached damage classification for a card"""
+    card_name = card.get('name')
+    if card_name not in _damage_classification_cache:
+        _damage_classification_cache[card_name] = classify_damage_effect(card)
+    return _damage_classification_cache[card_name]
+
+def clear_damage_classification_cache():
+    """Clear the damage classification cache (call when analyzing new deck)"""
+    global _damage_classification_cache
+    _damage_classification_cache = {}
 
 
 def detect_etb_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
@@ -1842,9 +1858,9 @@ def detect_aristocrats_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     Aristocrats is a strategy where creatures dying triggers beneficial effects,
     especially life drain effects like Blood Artist, Zulaport Cutthroat.
     """
-    # Classify both cards
-    class1 = classify_damage_effect(card1)
-    class2 = classify_damage_effect(card2)
+    # Classify both cards (using cache)
+    class1 = get_damage_classification(card1)
+    class2 = get_damage_classification(card2)
 
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
@@ -1942,8 +1958,8 @@ def detect_burn_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     Burn strategy focuses on dealing direct damage to opponents.
     """
-    class1 = classify_damage_effect(card1)
-    class2 = classify_damage_effect(card2)
+    class1 = get_damage_classification(card1)
+    class2 = get_damage_classification(card2)
 
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
@@ -2023,8 +2039,8 @@ def detect_lifegain_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     Cards that benefit when you gain life + cards that gain life.
     """
-    class1 = classify_damage_effect(card1)
-    class2 = classify_damage_effect(card2)
+    class1 = get_damage_classification(card1)
+    class2 = get_damage_classification(card2)
 
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
@@ -2082,8 +2098,8 @@ def detect_damage_based_card_draw(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     Examples: Niv-Mizzet draws when you deal damage, or deals damage when you draw
     """
-    class1 = classify_damage_effect(card1)
-    class2 = classify_damage_effect(card2)
+    class1 = get_damage_classification(card1)
+    class2 = get_damage_classification(card2)
 
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
@@ -2137,8 +2153,8 @@ def detect_creature_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     """
     Detect synergies with creature-based damage (power matters, combat damage triggers)
     """
-    class1 = classify_damage_effect(card1)
-    class2 = classify_damage_effect(card2)
+    class1 = get_damage_classification(card1)
+    class2 = get_damage_classification(card2)
 
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()

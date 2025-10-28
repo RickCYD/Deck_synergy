@@ -63,7 +63,7 @@ def get_base_stylesheet() -> List[Dict[str, Any]]:
                 'label': 'data(label)',
                 'shape': 'rectangle',
                 'background-color': 'data(color_code)',
-                'background-image': 'data(art_crop_url)',  # Just the artwork
+                # Don't set background-image in base style - causes issues with empty strings
                 'background-fit': 'cover',
                 'background-clip': 'node',
                 'color': '#fff',
@@ -82,6 +82,12 @@ def get_base_stylesheet() -> List[Dict[str, Any]]:
             }
         },
         {
+            'selector': 'node[art_crop_url]',  # Only apply image if URL exists
+            'style': {
+                'background-image': 'data(art_crop_url)'
+            }
+        },
+        {
             'selector': 'node[is_multicolor]',
             'style': {
                 'border-width': '3px',
@@ -92,7 +98,7 @@ def get_base_stylesheet() -> List[Dict[str, Any]]:
             'selector': 'node[type="commander"]',
             'style': {
                 'background-color': 'data(color_code)',
-                'background-image': 'data(art_crop_url)',  # Just the artwork
+                # Background image handled by node[art_crop_url] selector above
                 'background-fit': 'cover',
                 'background-clip': 'node',
                 'width': '110px',
@@ -598,16 +604,24 @@ def load_deck(n_clicks, url, current_data):
         return html.Div("Please enter a deck URL", style={'color': 'red'}), dash.no_update, current_data, None, True
 
     try:
+        print(f"\n[DECK LOAD] Starting to load deck from URL: {url}")
+
         # Fetch deck from Archidekt
+        print("[DECK LOAD] Step 1: Fetching from Archidekt...")
         deck_info = fetch_deck_from_archidekt(url)
+        print(f"[DECK LOAD] Got deck: {deck_info['name']} with {len(deck_info['cards'])} cards")
 
         # Fetch detailed card info from Scryfall
+        print("[DECK LOAD] Step 2: Fetching card details from Scryfall...")
         cards_with_details = fetch_card_details(deck_info['cards'])
+        print(f"[DECK LOAD] Fetched details for {len(cards_with_details)} cards")
 
         # Annotate cards with functional roles
+        print("[DECK LOAD] Step 3: Assigning roles...")
         assign_roles_to_cards(cards_with_details)
 
         # Create deck object
+        print("[DECK LOAD] Step 4: Creating deck object...")
         deck = Deck(
             deck_id=deck_info['id'],
             name=deck_info['name'],
@@ -615,10 +629,15 @@ def load_deck(n_clicks, url, current_data):
         )
 
         # Analyze synergies
+        print(f"[DECK LOAD] Step 5: Analyzing synergies for {len(cards_with_details)} cards...")
+        print(f"[DECK LOAD] This may take 1-2 minutes for large decks. Please wait...")
         deck.synergies = analyze_deck_synergies(cards_with_details)
+        print(f"[DECK LOAD] Synergy analysis complete! Found {len(deck.synergies)} synergies")
 
         # Save deck to file
+        print("[DECK LOAD] Step 6: Saving deck to file...")
         deck_file_path = deck.save()
+        print(f"[DECK LOAD] Deck saved to: {deck_file_path}")
 
         # Update deck list
         deck_files = list(Path('data/decks').glob('*.json'))
@@ -628,11 +647,18 @@ def load_deck(n_clicks, url, current_data):
         stored_data = current_data or {}
         stored_data[deck.name] = deck.to_dict()
 
+        print(f"[DECK LOAD] SUCCESS! Deck loaded: {deck.name}")
         status = html.Div(f"Successfully loaded deck: {deck.name}", style={'color': '#27ae60', 'fontWeight': 'bold'})
         # Automatically select the newly loaded deck and enable auto-clear interval
         return status, deck_options, stored_data, str(deck_file_path), False
 
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"\n[DECK LOAD ERROR] Failed to load deck!")
+        print(f"[DECK LOAD ERROR] Error type: {type(e).__name__}")
+        print(f"[DECK LOAD ERROR] Error message: {str(e)}")
+        print(f"[DECK LOAD ERROR] Full traceback:\n{error_details}")
         return html.Div(f"Error loading deck: {str(e)}", style={'color': '#e74c3c', 'fontWeight': 'bold'}), dash.no_update, current_data, None, True
 
 
@@ -658,25 +684,47 @@ def clear_status_message(n_intervals):
 )
 def update_graph(deck_file):
     """Update graph visualization when a deck is selected"""
+    print(f"\n[UPDATE GRAPH] Called with deck_file: {deck_file}")
+
     if not deck_file:
-        return [], None, {}
+        print("[UPDATE GRAPH] No deck file provided, using dash.no_update to preserve current state")
+        return dash.no_update, dash.no_update, dash.no_update
 
     try:
+        # Check if file exists before trying to load
+        from pathlib import Path
+        if not Path(deck_file).exists():
+            print(f"[UPDATE GRAPH] WARNING: Deck file does not exist: {deck_file}")
+            print(f"[UPDATE GRAPH] Using dash.no_update to preserve current state")
+            return dash.no_update, dash.no_update, dash.no_update
+
         # Load deck data
+        print(f"[UPDATE GRAPH] Loading deck from file: {deck_file}")
         with open(deck_file, 'r') as f:
             deck_data = json.load(f)
 
         cards = deck_data.get('cards', [])
+        synergies = deck_data.get('synergies', {})
+        print(f"[UPDATE GRAPH] Loaded {len(cards)} cards and {len(synergies)} synergies")
+
         if cards:
             assign_roles_to_cards(cards)
         role_summary = summarize_roles(cards)
 
         # Build graph elements
+        print(f"[UPDATE GRAPH] Building graph elements...")
         elements = build_graph_elements(deck_data)
+        print(f"[UPDATE GRAPH] Built {len(elements)} graph elements")
+        print(f"[UPDATE GRAPH] SUCCESS - Graph updated!")
+
         return elements, deck_file, role_summary
 
     except Exception as e:
-        print(f"Error updating graph: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"\n[UPDATE GRAPH ERROR] Failed to update graph!")
+        print(f"[UPDATE GRAPH ERROR] Error: {e}")
+        print(f"[UPDATE GRAPH ERROR] Full traceback:\n{error_details}")
         return [], None, {}
 
 

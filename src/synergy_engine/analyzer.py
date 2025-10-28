@@ -5,7 +5,7 @@ Main module for analyzing deck synergies
 
 from typing import Dict, List, Tuple
 from itertools import combinations
-from .rules import ALL_RULES
+from .rules import ALL_RULES, clear_damage_classification_cache
 from .categories import get_category_weight
 
 
@@ -108,18 +108,32 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
             }
         }
     """
-    print(f"\nAnalyzing synergies for {len(cards)} cards...")
+    import time
+    start_time = time.time()
+
+    num_cards = len(cards)
+    print(f"\nAnalyzing synergies for {num_cards} cards...")
+
+    # Clear damage classification cache for fresh analysis
+    clear_damage_classification_cache()
 
     synergy_dict = {}
-    total_pairs = len(list(combinations(range(len(cards)), 2)))
+    total_pairs = (num_cards * (num_cards - 1)) // 2
     analyzed = 0
+
+    # For large decks, show more frequent progress updates
+    progress_interval = 100 if num_cards < 100 else 500
 
     # Analyze all card pairs
     for card1, card2 in combinations(cards, 2):
         analyzed += 1
 
-        if analyzed % 100 == 0:
-            print(f"  Analyzed {analyzed}/{total_pairs} card pairs...")
+        if analyzed % progress_interval == 0 or analyzed == total_pairs:
+            elapsed = time.time() - start_time
+            pairs_per_sec = analyzed / elapsed if elapsed > 0 else 0
+            remaining = (total_pairs - analyzed) / pairs_per_sec if pairs_per_sec > 0 else 0
+            print(f"  Progress: {analyzed}/{total_pairs} pairs ({100*analyzed/total_pairs:.1f}%) - "
+                  f"Elapsed: {elapsed:.1f}s - ETA: {remaining:.1f}s")
 
         # Skip if either card has errors
         if 'error' in card1 or 'error' in card2:
@@ -148,6 +162,8 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
                     'synergy_count': len(synergies)
                 }
 
+    elapsed = time.time() - start_time
+    print(f"  Completed in {elapsed:.1f}s ({total_pairs/elapsed:.0f} pairs/sec)")
     print(f"  Found {len(synergy_dict)} synergies above threshold ({min_synergy_threshold})")
     print(f"  Total synergy connections: {sum(s['synergy_count'] for s in synergy_dict.values())}")
 

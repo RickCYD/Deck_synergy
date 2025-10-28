@@ -70,6 +70,13 @@ class Deck:
 
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(self.to_json())
+            f.flush()  # Ensure file is written to disk
+            import os
+            os.fsync(f.fileno())  # Force OS to write to disk
+
+        print(f"[DECK SAVE] File written and flushed: {file_path}")
+        print(f"[DECK SAVE] File size: {file_path.stat().st_size} bytes")
+        print(f"[DECK SAVE] File exists: {file_path.exists()}")
 
         return file_path
 
