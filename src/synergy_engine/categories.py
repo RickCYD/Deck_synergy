@@ -97,7 +97,9 @@ SYNERGY_CATEGORIES = {
             'draw_engine': 'Card draw engines',
             'tutor_target': 'Tutor and target synergies',
             'recursion_loop': 'Recursion loops',
-            'scry_synergy': 'Scry and top-deck manipulation'
+            'scry_synergy': 'Scry synergies',
+            'surveil_synergy': 'Surveil synergies',
+            'top_deck_synergy': 'Top-deck synergies'
         }
     }
 }

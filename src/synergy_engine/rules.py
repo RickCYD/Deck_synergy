@@ -4,9 +4,10 @@ Individual rule functions for detecting different types of synergies between car
 """
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from functools import lru_cache
 from src.utils.damage_extractors import classify_damage_effect
+from src.synergy_engine.card_advantage_synergies import CARD_ADVANTAGE_SYNERGY_RULES
 
 # Cache for damage classifications to avoid recomputing for same cards
 _damage_classification_cache = {}
@@ -237,6 +238,22 @@ def detect_tribal_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_subtypes = set(card1_types.get('subtypes', []))
     card2_subtypes = set(card2_types.get('subtypes', []))
 
+    # Fallback: parse type_line for subtypes when card_types are missing or empty
+    def parse_subtypes_from_type_line(tl: str) -> Set[str]:
+        tl = (tl or '').lower()
+        if '—' in tl:
+            try:
+                _, sub = tl.split('—', 1)
+                return {s.strip().capitalize() for s in sub.split() if s.strip()}
+            except ValueError:
+                return set()
+        return set()
+
+    if not card1_subtypes:
+        card1_subtypes = parse_subtypes_from_type_line(card1.get('type_line', ''))
+    if not card2_subtypes:
+        card2_subtypes = parse_subtypes_from_type_line(card2.get('type_line', ''))
+
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
@@ -287,7 +304,9 @@ def detect_tribal_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check for shared creature types
     shared_types = card1_subtypes.intersection(card2_subtypes)
-    if shared_types and 'Creature' in card1_types.get('main_types', []) and 'Creature' in card2_types.get('main_types', []):
+    card1_is_creature = 'creature' in (card1.get('type_line', '').lower()) or 'Creature' in card1_types.get('main_types', [])
+    card2_is_creature = 'creature' in (card2.get('type_line', '').lower()) or 'Creature' in card2_types.get('main_types', [])
+    if shared_types and card1_is_creature and card2_is_creature:
         return {
             'name': 'Shared Tribe',
             'description': f"Both cards share creature type(s): {', '.join(shared_types)}",
@@ -324,17 +343,33 @@ def detect_card_draw_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
 
 def detect_ramp_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
-    """Detect mana ramp synergies"""
-    ramp_keywords = ['search.*library.*land', 'put.*land.*battlefield', 'add.*mana']
+    """Detect mana ramp synergies.
+
+    Heuristic rules:
+    - Treat NON-LAND cards that add mana or fetch/put lands as ramp (mana rocks/dorks, Cultivate effects).
+    - Treat LAND cards as NOT ramp for this pairwise rule (regular lands are baseline, not enablers).
+    - Include extra land drop effects ("play an additional land") as ramp.
+    """
+    ramp_keywords = [
+        r'search.*library.*land',
+        r'put.*land.*battlefield',
+        r'add.*mana',
+        r'play an additional land',
+        r'you may play an additional land',
+    ]
     high_cmc_threshold = 6
 
-    card1_text = card1.get('oracle_text', '').lower()
-    card2_text = card2.get('oracle_text', '').lower()
+    card1_text = (card1.get('oracle_text') or '').lower()
+    card2_text = (card2.get('oracle_text') or '').lower()
 
-    card1_is_ramp = any(re.search(kw, card1_text) for kw in ramp_keywords) or \
-                    ('Land' in card1.get('type_line', '') and 'add' in card1_text)
-    card2_is_ramp = any(re.search(kw, card2_text) for kw in ramp_keywords) or \
-                    ('Land' in card2.get('type_line', '') and 'add' in card2_text)
+    card1_type = (card1.get('type_line') or '')
+    card2_type = (card2.get('type_line') or '')
+    card1_is_land = 'land' in card1_type.lower()
+    card2_is_land = 'land' in card2_type.lower()
+
+    # Only non-lands can be considered 
+    card1_is_ramp = (not card1_is_land) and any(re.search(kw, card1_text) for kw in ramp_keywords)
+    card2_is_ramp = (not card2_is_land) and any(re.search(kw, card2_text) for kw in ramp_keywords)
 
     card1_cmc = card1.get('cmc', 0)
     card2_cmc = card2.get('cmc', 0)
@@ -587,9 +622,34 @@ def detect_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
 
 def detect_graveyard_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
-    """Detect graveyard and recursion synergies"""
+    """
+    Detect graveyard and recursion synergies.
+
+    NOTE: Flashback, Jump-start, and Retrace are SELF-RECURSION mechanics.
+    They don't benefit from OTHER cards filling the graveyard - only their own card.
+    These should NOT trigger graveyard synergies.
+
+    True graveyard payoffs care about OTHER cards in the graveyard:
+    - Reanimation (return OTHER creatures from graveyard)
+    - Delve/Escape (exile OTHER cards from graveyard)
+    - Threshold/Delirium (count cards in graveyard)
+    - Recursion that targets (return target card from graveyard)
+    """
     graveyard_fill = ['mill', 'put.*into.*graveyard', 'discard']
-    graveyard_payoff = ['from.*graveyard', 'return.*from.*graveyard', 'threshold', 'delve', 'flashback']
+
+    # Real graveyard payoffs - cards that benefit from OTHER cards in graveyard
+    # EXCLUDE: flashback, jump-start, retrace (self-recursion only)
+    graveyard_payoff = [
+        r'return\s+(?:target|a|up to).*(?:card|creature|permanent).*from.*graveyard',  # Reanimation
+        r'delve',  # Delve
+        r'escape',  # Escape
+        r'threshold',  # Threshold
+        r'delirium',  # Delirium
+        r'undergrowth',  # Undergrowth
+        r'cards?\s+in\s+(?:your|a|all)\s+graveyard',  # Counts graveyard
+        r'for\s+each.*in.*graveyard',  # Counts graveyard
+        r'exile.*from.*graveyard',  # Delve-like effects
+    ]
 
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
@@ -876,6 +936,23 @@ def detect_extra_combat_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             'subcategory': 'two_card_combo'
         }
 
+    # Special-case: Extra combat + postcombat mana (Neheb-like)
+    neheb_patterns = [
+        r'postcombat main phase, add \{r\}',
+        r'add \{r\} for each 1 life your opponents have lost this turn',
+        r'for each 1 life your opponents have lost this turn, add \{r\}'
+    ]
+    card1_neheb = any(re.search(p, card1_text) for p in neheb_patterns)
+    card2_neheb = any(re.search(p, card2_text) for p in neheb_patterns)
+    if (card1_extra_combat and card2_neheb) or (card2_extra_combat and card1_neheb):
+        return {
+            'name': 'Extra Combat Mana Loop',
+            'description': 'Extra combats plus postcombat mana generation enable explosive turns',
+            'value': 4.0,
+            'category': 'combo',
+            'subcategory': 'two_card_combo'
+        }
+
     return None
 
 
@@ -966,6 +1043,7 @@ def detect_tap_untap_engines(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'\{t\}:.*return',
         r'\{t\}:.*search',
         r'\{t\}:.*sacrifice',
+        r'\{t\}:.*copy',
         r'tap.*creature.*you control:',
         r'tap.*artifact.*you control:'
     ]
@@ -979,6 +1057,8 @@ def detect_tap_untap_engines(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
+    card1_name = (card1.get('name') or '').lower()
+    card2_name = (card2.get('name') or '').lower()
 
     # Check if card1 untaps and card2 has tap abilities
     card1_untaps = any(re.search(pattern, card1_text) for pattern in untap_patterns)
@@ -1006,6 +1086,18 @@ def detect_tap_untap_engines(card1: Dict, card2: Dict) -> Optional[Dict]:
             'value': 2.5,
             'category': 'combo',
             'subcategory': 'two_card_combo'
+        }
+
+    # Special-case: Isochron Scepter + Dramatic Reversal style
+    scepter_like = ('isochron scepter' in card1_name) or ('isochron scepter' in card2_name) or ('imprint' in card1_text) or ('imprint' in card2_text)
+    reversal_like = ('untap all nonland permanents' in card1_text) or ('untap all nonland permanents' in card2_text)
+    if scepter_like and reversal_like:
+        return {
+            'name': 'Isochron Reversal Loop',
+            'description': 'Imprinted untap effect enables repeatable untaps (Scepter + Reversal engine)',
+            'value': 4.0,
+            'category': 'combo',
+            'subcategory': 'tap_untap_loop'
         }
 
     return None
@@ -1068,6 +1160,98 @@ def detect_cheat_big_spells(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     return None
 
+def detect_scry_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    detect Scry Synergy (Rule 34)
+    Cards that scry + cards that benefit from scrying
+    """
+    # Scry patterns
+    scry_patterns = [
+        r'\bscry\b',
+    ]
+
+    # Cards that benefit from scrying
+    scry_benefit_patterns = [
+        r'whenever you scry',
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_keywords = [kw.lower() for kw in card1.get('keywords', [])]
+    card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
+
+    # Check if card1 scrys and card2 benefits from scrying
+    card1_scrys = 'scry' in card1_keywords or any(re.search(pattern, card1_text) for pattern in scry_patterns)
+    card2_benefits_scry = any(re.search(pattern, card2_text) for pattern in scry_benefit_patterns)
+
+    if card1_scrys and card2_benefits_scry:
+        return {
+            'name': 'Scry Synergy',
+            'description': f"{card1['name']} scrys to set up {card2['name']}'s benefits",
+            'value': 2.0,
+            'category': 'card_advantage',
+            'subcategory': 'scry_synergy'
+        }
+
+    # Check reverse
+    card2_scrys = 'scry' in card2_keywords or any(re.search(pattern, card2_text) for pattern in scry_patterns)
+    card1_benefits_scry = any(re.search(pattern, card1_text) for pattern in scry_benefit_patterns)
+
+    if card2_scrys and card1_benefits_scry:
+        return {
+            'name': 'Scry Synergy',
+            'description': f"{card2['name']} scrys to set up {card1['name']}'s benefits",
+            'value': 2.0,
+            'category': 'card_advantage',
+            'subcategory': 'scry_synergy'
+        }
+
+def detect_surveil_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    detect Surveil Synergy (Rule 34)
+    Cards that Surveil + cards that benefit from Surveiling
+    """
+    # Surveil patterns
+    surveil_patterns = [
+        r'\bsurveil\b',
+    ]
+
+    # Cards that benefit from Surveiling
+    surveil_benefit_patterns = [
+        r'whenever you surveil',
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_keywords = [kw.lower() for kw in card1.get('keywords', [])]
+    card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
+
+    # Check if card1 surveils and card2 benefits from Surveiling
+    card1_surveys = 'surveil' in card1_keywords or any(re.search(pattern, card1_text) for pattern in surveil_patterns)
+    card2_benefits_surveil = any(re.search(pattern, card2_text) for pattern in surveil_benefit_patterns)
+
+    if card1_surveys and card2_benefits_surveil:
+        return {
+            'name': 'Surveil Synergy',
+            'description': f"{card1['name']} surveils to set up {card2['name']}'s benefits",
+            'value': 2.0,
+            'category': 'card_advantage',
+            'subcategory': 'surveil_synergy'
+        }
+
+    # Check reverse
+    card2_surveys = 'surveil' in card2_keywords or any(re.search(pattern, card2_text) for pattern in surveil_patterns)
+    card1_benefits_surveil = any(re.search(pattern, card1_text) for pattern in surveil_benefit_patterns)
+
+    if card2_surveys and card1_benefits_surveil:
+        return {
+            'name': 'Surveil Synergy',
+            'description': f"{card2['name']} surveils to set up {card1['name']}'s benefits",
+            'value': 2.0,
+            'category': 'card_advantage',
+            'subcategory': 'surveil_synergy'
+        }
+
 
 def detect_topdeck_manipulation(card1: Dict, card2: Dict) -> Optional[Dict]:
     """
@@ -1107,8 +1291,7 @@ def detect_topdeck_manipulation(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
 
     # Check if card1 manipulates top and card2 cares about top
-    card1_manipulates = 'scry' in card1_keywords or 'surveil' in card1_keywords or \
-                        any(re.search(pattern, card1_text) for pattern in top_manipulation_patterns)
+    card1_manipulates = 'top' in card2_keywords or any(re.search(pattern, card1_text) for pattern in top_manipulation_patterns)
     card1_is_bounce = any(re.search(pattern, card1_text) for pattern in bounce_patterns)
     card2_cares_top = any(re.search(pattern, card2_text) for pattern in top_matters_patterns) or 'miracle' in card2_keywords
 
@@ -1118,12 +1301,11 @@ def detect_topdeck_manipulation(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card1['name']} sets up top of library for {card2['name']}",
             'value': 2.0,
             'category': 'card_advantage',
-            'subcategory': 'scry_synergy'
+            'subcategory': 'top_deck_synergy'
         }
 
     # Check reverse
-    card2_manipulates = 'scry' in card2_keywords or 'surveil' in card2_keywords or \
-                        any(re.search(pattern, card2_text) for pattern in top_manipulation_patterns)
+    card2_manipulates = 'top' in card2_keywords or any(re.search(pattern, card2_text) for pattern in top_manipulation_patterns)
     card2_is_bounce = any(re.search(pattern, card2_text) for pattern in bounce_patterns)
     card1_cares_top = any(re.search(pattern, card1_text) for pattern in top_matters_patterns) or 'miracle' in card1_keywords
 
@@ -1133,7 +1315,8 @@ def detect_topdeck_manipulation(card1: Dict, card2: Dict) -> Optional[Dict]:
             'description': f"{card2['name']} sets up top of library for {card1['name']}",
             'value': 2.0,
             'category': 'card_advantage',
-            'subcategory': 'scry_synergy'
+            'subcategory': 'top_deck_synergy'   
+            
         }
 
     return None
@@ -1361,10 +1544,13 @@ def detect_fling_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Check if card1 is fling and card2 is high power
     card1_is_fling = any(re.search(pattern, card1_text) for pattern in fling_patterns)
 
-    if card1_is_fling and card2_power >= HIGH_POWER:
+    # Ephemeral/high-power heuristic when power is unknown: look for haste+trample and end-step sacrifice
+    card2_ephemeral_big = ('haste' in card2_text and 'trample' in card2_text and ('sacrifice' in card2_text and 'end step' in card2_text))
+
+    if card1_is_fling and (card2_power >= HIGH_POWER or card2_ephemeral_big):
         return {
             'name': 'Fling Finisher',
-            'description': f"{card1['name']} flings {card2['name']} ({card2_power} power) for lethal damage",
+            'description': f"{card1['name']} flings {card2['name']} for heavy damage",
             'value': 4.0,
             'category': 'combo',
             'subcategory': 'two_card_combo'
@@ -1373,10 +1559,12 @@ def detect_fling_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Check reverse
     card2_is_fling = any(re.search(pattern, card2_text) for pattern in fling_patterns)
 
-    if card2_is_fling and card1_power >= HIGH_POWER:
+    card1_ephemeral_big = ('haste' in card1_text and 'trample' in card1_text and ('sacrifice' in card1_text and 'end step' in card1_text))
+
+    if card2_is_fling and (card1_power >= HIGH_POWER or card1_ephemeral_big):
         return {
             'name': 'Fling Finisher',
-            'description': f"{card2['name']} flings {card1['name']} ({card1_power} power) for lethal damage",
+            'description': f"{card2['name']} flings {card1['name']} for heavy damage",
             'value': 4.0,
             'category': 'combo',
             'subcategory': 'two_card_combo'
@@ -1496,7 +1684,11 @@ def detect_spellslinger_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
                         any(re.search(pattern, card1_text) for pattern in magecraft_patterns) or \
                         'prowess' in card1_keywords
 
-    card2_is_spell = 'instant' in card2_type or 'sorcery' in card2_type
+    # Heuristic: Instant/Sorcery by type, or by common spell-like text when type is missing
+    likely_spell_text = any(kw in card2_text for kw in [
+        'scry', 'draw', 'counter target', 'destroy target', 'deal', 'exile target', 'return target', 'create two', 'create', 'gain control of', 'target creature'
+    ]) and not any(kw in card2_text for kw in ['equipped creature', 'enchanted creature', 'whenever'])
+    card2_is_spell = ('instant' in card2_type or 'sorcery' in card2_type) or likely_spell_text
     card2_is_cheap = card2_cmc <= 3
 
     if card1_has_trigger and card2_is_spell and card2_is_cheap:
@@ -1513,7 +1705,10 @@ def detect_spellslinger_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
                         any(re.search(pattern, card2_text) for pattern in magecraft_patterns) or \
                         'prowess' in card2_keywords
 
-    card1_is_spell = 'instant' in card1_type or 'sorcery' in card1_type
+    likely_spell_text1 = any(kw in card1_text for kw in [
+        'scry', 'draw', 'counter target', 'destroy target', 'deal', 'exile target', 'return target', 'create two', 'create', 'gain control of', 'target creature'
+    ]) and not any(kw in card1_text for kw in ['equipped creature', 'enchanted creature', 'whenever'])
+    card1_is_spell = ('instant' in card1_type or 'sorcery' in card1_type) or likely_spell_text1
     card1_is_cheap = card1_cmc <= 3
 
     if card2_has_trigger and card1_is_spell and card1_is_cheap:
@@ -1742,9 +1937,13 @@ def detect_enchantress_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_type = card2.get('type_line', '').lower()
 
     # Check if card1 has enchantress effect and card2 is an enchantment
-    card1_is_enchantress = any(re.search(pattern, card1_text) for pattern in enchantress_patterns) or \
-                           any(re.search(pattern, card1_text) for pattern in constellation_patterns)
-    card2_is_enchantment = 'enchantment' in card2_type
+    card1_is_enchantress = (
+        any(re.search(pattern, card1_text) for pattern in enchantress_patterns)
+        or any(re.search(pattern, card1_text) for pattern in constellation_patterns)
+    )
+    # Consider enchantments by type or by clear Aura/enchant wording if type_line missing
+    card2_is_enchantment = 'enchantment' in card2_type or \
+                           ('enchant ' in card2_text) or ('aura' in card2_text)
 
     if card1_is_enchantress and card2_is_enchantment:
         return {
@@ -1756,9 +1955,12 @@ def detect_enchantress_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_is_enchantress = any(re.search(pattern, card2_text) for pattern in enchantress_patterns) or \
-                           any(re.search(pattern, card2_text) for pattern in constellation_patterns)
-    card1_is_enchantment = 'enchantment' in card1_type
+    card2_is_enchantress = (
+        any(re.search(pattern, card2_text) for pattern in enchantress_patterns)
+        or any(re.search(pattern, card2_text) for pattern in constellation_patterns)
+    )
+    card1_is_enchantment = 'enchantment' in card1_type or \
+                           ('enchant ' in card1_text) or ('aura' in card1_text)
 
     if card2_is_enchantress and card1_is_enchantment:
         return {
@@ -2235,6 +2437,8 @@ ALL_RULES = [
     detect_tap_untap_engines,
     detect_cheat_big_spells,
     detect_topdeck_manipulation,
+    detect_surveil_synergy,
+    detect_scry_synergy,
     detect_threaten_and_sac,
     detect_token_anthems,
     detect_convoke_improvise,
@@ -2252,4 +2456,4 @@ ALL_RULES = [
     detect_lifegain_payoffs,
     detect_damage_based_card_draw,
     detect_creature_damage_synergy
-]
+] + CARD_ADVANTAGE_SYNERGY_RULES  # Add card advantage synergies

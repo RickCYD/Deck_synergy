@@ -187,6 +187,7 @@ def classify_dual_land(card: Dict) -> Optional[Dict]:
     - Bounce lands (return land to hand)
     - Gain lands (enters tapped, gain life)
     - Scry lands (enters tapped, scry)
+    - Surveil lands (enters tapped, surveil)
 
     Args:
         card: Card dictionary
@@ -276,6 +277,12 @@ def classify_dual_land(card: Dict) -> Optional[Dict]:
     # Scry land (enters tapped, scry)
     if 'enters the battlefield tapped' in oracle_text and 'scry' in oracle_text:
         classification['subtype'] = 'scry_land'
+        classification['enters_tapped'] = True
+        return classification
+
+    # Surveil land (enters tapped, surveil)
+    if 'enters the battlefield tapped' in oracle_text and 'surveil' in oracle_text:
+        classification['subtype'] = 'surveil_land'
         classification['enters_tapped'] = True
         return classification
 

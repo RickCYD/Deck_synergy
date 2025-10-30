@@ -194,7 +194,20 @@ RECURSION_PATTERNS = _compile(
 SCRY_PATTERNS = _compile(
     [
         r"\bscry\b",
+
+    ]
+)
+
+
+SURVEIL_PATTERNS = _compile(
+    [
         r"\bsurveil\b",
+    ]
+)
+
+
+TOP_DECK_PATTERNS = _compile(
+    [
         r"look at the top card of your library",
         r"reveal the top card of your library",
         r"the top card of your library",
@@ -594,6 +607,14 @@ def match_scry_synergy(ctx: Dict[str, Any]) -> bool:
     return _text_mentions_patterns(ctx["text"], SCRY_PATTERNS)
 
 
+def match_surveil_synergy(ctx: Dict[str, Any]) -> bool:
+    return _text_mentions_patterns(ctx["text"], SURVEIL_PATTERNS)
+
+
+def match_top_deck_synergy(ctx: Dict[str, Any]) -> bool:
+    return _text_mentions_patterns(ctx["text"], TOP_DECK_PATTERNS)
+
+
 # Role definitions ----------------------------------------------------------
 
 ROLE_CATEGORIES: Dict[str, Dict[str, Any]] = {
@@ -697,6 +718,16 @@ ROLE_CATEGORIES: Dict[str, Dict[str, Any]] = {
                 "key": "scry_synergy",
                 "label": "Scry Synergy",
                 "matcher": match_scry_synergy,
+            },
+            {
+                "key": "surveil_synergy",
+                "label": "Surveil Synergy",
+                "matcher": match_surveil_synergy,
+            },
+            {
+                "key": "top_deck_synergy",
+                "label": "Top Deck Synergy",
+                "matcher": match_top_deck_synergy,
             },
         ],
     },
