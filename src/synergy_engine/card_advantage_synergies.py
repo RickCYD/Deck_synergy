@@ -7,10 +7,16 @@ Detects synergies between card advantage effects:
 - Tutors + combo pieces
 - Mill + graveyard strategies
 - Looting + reanimation
+- Reanimation + big creatures/ETBs
+- Flashback + discard outlets
+- Extra turns + win conditions
+- Cascade + cheap spells
+- Treasure/Clue tokens + artifact matters
 """
 
 from typing import Dict, List
 from src.utils.card_advantage_extractors import classify_card_advantage
+from src.synergy_engine.recursion_synergies import RECURSION_SYNERGY_RULES
 
 
 def detect_draw_payoff_synergies(card1: Dict, card2: Dict) -> List[Dict]:
@@ -202,6 +208,8 @@ def detect_tutor_combo_synergies(card1: Dict, card2: Dict) -> List[Dict]:
             can_find = True
         elif tutor_type == 'enchantment' and 'enchantment' in card2_type:
             can_find = True
+        elif tutor_type == 'artifact_or_enchantment' and ('artifact' in card2_type or 'enchantment' in card2_type):
+            can_find = True
         elif tutor_type == 'land' and 'land' in card2_type:
             can_find = True
 
@@ -255,6 +263,8 @@ def detect_tutor_combo_synergies(card1: Dict, card2: Dict) -> List[Dict]:
         elif tutor_type == 'artifact' and 'artifact' in card1_type:
             can_find = True
         elif tutor_type == 'enchantment' and 'enchantment' in card1_type:
+            can_find = True
+        elif tutor_type == 'artifact_or_enchantment' and ('artifact' in card1_type or 'enchantment' in card1_type):
             can_find = True
         elif tutor_type == 'land' and 'land' in card1_type:
             can_find = True
@@ -424,4 +434,4 @@ CARD_ADVANTAGE_SYNERGY_RULES = [
     detect_tutor_combo_synergies,
     detect_mill_graveyard_synergies,
     detect_looting_reanimation_synergies
-]
+] + RECURSION_SYNERGY_RULES  # Add recursion/graveyard synergies (6 new rules)

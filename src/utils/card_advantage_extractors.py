@@ -74,7 +74,9 @@ def extract_card_draw(card: Dict) -> Dict:
             elif amount_str in number_words:
                 amount = number_words[amount_str]
                 if amount == 1:
-                    result['draw_types'].append('single')
+                    # Only mark as 'single' if not already marked as 'fixed' from a larger draw
+                    if 'fixed' not in result['draw_types']:
+                        result['draw_types'].append('single')
                 else:
                     result['draw_types'].append('fixed')
                     if result['draw_amount'] is None or amount > result['draw_amount']:
@@ -82,7 +84,9 @@ def extract_card_draw(card: Dict) -> Dict:
             elif amount_str.isdigit():
                 amount = int(amount_str)
                 if amount == 1:
-                    result['draw_types'].append('single')
+                    # Only mark as 'single' if not already marked as 'fixed' from a larger draw
+                    if 'fixed' not in result['draw_types']:
+                        result['draw_types'].append('single')
                 else:
                     result['draw_types'].append('fixed')
                     if result['draw_amount'] is None or amount > result['draw_amount']:
@@ -157,15 +161,38 @@ def extract_wheel_effects(card: Dict) -> Dict:
         return result
 
     # Full wheel: discard hand, draw 7
-    full_wheel_pattern = r'(?:each\s+player|all\s+players).*?discards?.*?(?:their|his\s+or\s+her)\s+hands?.*?draws?\s+(\d+)\s+cards?'
-    match = re.search(full_wheel_pattern, text, re.DOTALL)
-
+    # Pattern 1: Simple "Each player discards their hand, then draws seven cards"
+    full_wheel_pattern1 = r'each\s+player\s+discards?\s+(?:their|his\s+or\s+her|all\s+the\s+cards\s+in\s+their)\s+hands?,\s+then\s+draws?\s+(\w+)\s+cards?'
+    match = re.search(full_wheel_pattern1, text)
     if match:
         result['is_wheel'] = True
         result['wheel_type'] = 'full_wheel'
-        result['cards_drawn'] = int(match.group(1))
+        amount_str = match.group(1)
+        # Convert number words to digits
+        number_words = {'seven': 7, 'six': 6, 'five': 5, 'four': 4, 'three': 3, 'two': 2, 'one': 1}
+        if amount_str in number_words:
+            result['cards_drawn'] = number_words[amount_str]
+        elif amount_str.isdigit():
+            result['cards_drawn'] = int(amount_str)
         result['examples'].append(match.group(0))
         return result
+
+    # Pattern 2: Multi-line wheel with complex text in between (Wheel of Misfortune)
+    # Look for: "discards their hand" + "draws seven cards" (with anything in between)
+    if 'discards their hand' in text or 'discard their hand' in text:
+        draw_match = re.search(r'draws?\s+(\w+)\s+cards?', text)
+        if draw_match:
+            amount_str = draw_match.group(1)
+            number_words = {'seven': 7, 'six': 6, 'five': 5, 'four': 4, 'three': 3, 'two': 2, 'one': 1}
+            if amount_str in number_words or amount_str.isdigit():
+                result['is_wheel'] = True
+                result['wheel_type'] = 'full_wheel'
+                if amount_str in number_words:
+                    result['cards_drawn'] = number_words[amount_str]
+                elif amount_str.isdigit():
+                    result['cards_drawn'] = int(amount_str)
+                result['examples'].append('wheel effect')
+                return result
 
     # Partial wheel: each player draws X
     partial_wheel_pattern = r'each\s+player\s+draws?\s+(\d+|[xX])\s+cards?'
@@ -238,7 +265,10 @@ def extract_tutors(card: Dict) -> Dict:
     result['is_tutor'] = True
 
     # Determine tutor type by what it searches for
+    # Check for combined types first (instant or sorcery, artifact or enchantment)
     card_types = {
+        'instant_or_sorcery': r'instant\s+or\s+sorcery\s+card',
+        'artifact_or_enchantment': r'artifact\s+or\s+enchantment\s+card',
         'creature': r'creature\s+card',
         'instant': r'instant\s+card',
         'sorcery': r'sorcery\s+card',
@@ -246,7 +276,6 @@ def extract_tutors(card: Dict) -> Dict:
         'enchantment': r'enchantment\s+card',
         'land': r'land\s+card',
         'planeswalker': r'planeswalker\s+card',
-        'instant_or_sorcery': r'instant\s+or\s+sorcery\s+card',
         'any': r'(?:a|any)\s+card'
     }
 
@@ -425,8 +454,9 @@ def extract_discard_effects(card: Dict) -> Dict:
     if not text:
         return result
 
-    # Discard pattern
-    discard_pattern = r'discards?\s+(?:a\s+card|(?:their|your|his\s+or\s+her)\s+hand|(\d+|[xX]|two|three|four|five|six|seven|eight|nine|ten)\s+cards?)'
+    # Discard pattern - updated to catch more variants including "that player discards"
+    # Note: "that card" is included to catch "that player discards that card" (Thoughtseize)
+    discard_pattern = r'(?:that\s+player\s+)?discards?\s+(?:that\s+card|a\s+card|(?:a\s+)?(?:creature|land|nonland|noncreature)\s+card|(?:their|your|his\s+or\s+her|all\s+the\s+cards\s+in\s+their)\s+hand|(\d+|[xX]|two|three|four|five|six|seven|eight|nine|ten)\s+cards?)'
 
     matches = list(re.finditer(discard_pattern, text))
 
@@ -439,7 +469,7 @@ def extract_discard_effects(card: Dict) -> Dict:
         result['examples'].append(match.group(0))
 
         # Determine discard amount and type
-        if 'their hand' in match.group(0) or 'your hand' in match.group(0) or 'his or her hand' in match.group(0):
+        if 'hand' in match.group(0):
             result['discard_type'] = 'hand'
         else:
             amount_str = match.group(1) if match.group(1) else '1'
@@ -466,6 +496,8 @@ def extract_discard_effects(card: Dict) -> Dict:
     # Check for choice or random
     if 'at random' in text:
         result['discard_type'] = 'random'
+    elif 'you choose' in text:
+        result['discard_type'] = 'choice'
     elif 'of your choice' in text or 'of their choice' in text:
         result['discard_type'] = 'choice'
 
@@ -473,10 +505,15 @@ def extract_discard_effects(card: Dict) -> Dict:
     if 'may discard' in text:
         result['is_optional'] = True
 
-    # Determine discard targets
+    # Determine discard targets - updated to catch more patterns
     target_patterns = [
+        # Check "whenever you discard" first for payoff cards (Bone Miser)
+        (r'whenever\s+you\s+discard', 'self'),
+        # Standard patterns
         (r'you\s+discards?', 'self'),
-        (r'target\s+(?:player|opponent)\s+discards?', 'target_opponent'),
+        (r'target\s+player.*?discards?', 'target_opponent'),
+        (r'that\s+player\s+discards?', 'target_opponent'),
+        (r'target\s+opponent\s+discards?', 'target_opponent'),
         (r'each\s+opponent\s+discards?', 'each_opponent'),
         (r'each\s+player\s+discards?', 'each_player'),
         (r'(?:an|target)\s+opponent\s+discards?', 'opponent')
@@ -519,7 +556,8 @@ def extract_looting_effects(card: Dict) -> Dict:
         return result
 
     # Looting pattern: draw X, then discard Y
-    looting_pattern = r'draws?\s+(?:a\s+card|(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+cards?)[\s,]+then\s+discards?\s+(?:a\s+card|(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+cards?)'
+    # Updated to handle "Draw X. Then discard Y" (with period instead of comma)
+    looting_pattern = r'draws?\s+(?:a\s+card|(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+cards?)[\s,.]+then\s+discards?\s+(?:a\s+card|(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+cards?)'
 
     match = re.search(looting_pattern, text)
 
@@ -569,44 +607,61 @@ def extract_impulse_draw(card: Dict) -> Dict:
     if not text:
         return result
 
-    # Impulse pattern: exile X, you may play/cast them
-    impulse_pattern = r'exile\s+(?:the\s+)?(?:top\s+)?(\d+|[xX])?\s+cards?.*?(?:you\s+)?may\s+(?:play|cast)'
+    # Check if this is an impulse draw effect by looking for exile + play/cast pattern
+    # Pattern needs to be more flexible to catch different wordings
 
-    # Need to check both ways: "exile... may play" and "you may play" appears after "exile"
-    if not re.search(impulse_pattern, text, re.DOTALL):
+    # Must have "exile" and "may play" or "may cast" or "you may play"
+    has_exile = 'exile' in text
+    has_may_play = 'may play' in text or 'may cast' in text or 'you may play' in text
+
+    if not (has_exile and has_may_play):
         return result
 
-    match = re.search(impulse_pattern, text, re.DOTALL)
+    result['has_impulse'] = True
 
+    # Extract the amount of cards exiled
+    # Pattern 1: "exile the top X cards"
+    amount_pattern1 = r'exile\s+the\s+top\s+(\w+)\s+cards?'
+    match = re.search(amount_pattern1, text)
     if match:
-        result['has_impulse'] = True
+        amount_str = match.group(1)
+        number_words = {
+            'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+            'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+        }
+        if amount_str in number_words:
+            result['impulse_amount'] = number_words[amount_str]
+        elif amount_str.isdigit():
+            result['impulse_amount'] = int(amount_str)
         result['examples'].append(match.group(0))
 
-        amount_str = match.group(1) if match.group(1) else '1'
-        if amount_str.isdigit():
-            result['impulse_amount'] = int(amount_str)
+    # Pattern 2: "exile the top card"
+    if result['impulse_amount'] is None:
+        if 'exile the top card' in text:
+            result['impulse_amount'] = 1
+            result['examples'].append('exile the top card')
 
-        # Determine duration
-        if 'until end of turn' in text or 'this turn' in text:
-            result['duration'] = 'until_end_of_turn'
-        elif 'until' in text and 'leaves' in text:
-            result['duration'] = 'permanent'
-        else:
-            result['duration'] = 'turn'
+    # Determine duration
+    if 'until the end of your next turn' in text:
+        result['duration'] = 'turn'
+    elif 'until end of turn' in text:
+        result['duration'] = 'until_end_of_turn'
+    elif 'this turn' in text:
+        result['duration'] = 'turn'
+    elif 'until' in text and 'leaves' in text:
+        result['duration'] = 'permanent'
+    else:
+        result['duration'] = 'turn'
 
-        # Determine card types that can be cast
-        type_patterns = {
-            'land': r'play.*?lands?',
-            'nonland': r'cast.*?nonlands?',
-            'any': r'play.*?(?:those cards|them|it)'
-        }
-
-        for card_type, pattern in type_patterns.items():
-            if re.search(pattern, text):
-                result['card_types'].append(card_type)
-
-        if not result['card_types']:
-            result['card_types'].append('any')
+    # Determine card types that can be cast
+    if 'may play those cards' in text or 'may play them' in text:
+        result['card_types'].append('any')
+    elif 'may play that card' in text or 'may play it' in text:
+        result['card_types'].append('any')
+    elif 'may cast' in text:
+        result['card_types'].append('nonland')
+    else:
+        result['card_types'].append('any')
 
     return result
 
