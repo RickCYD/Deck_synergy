@@ -288,6 +288,9 @@ def extract_tutors(card: Dict) -> Dict:
     restriction_patterns = [
         (r'with\s+(?:converted\s+)?mana\s+(?:cost|value)\s+(\d+)\s+or\s+less', 'cmc_restriction'),
         (r'with\s+mana\s+value\s+[xX]\s+or\s+less', 'cmc_x_or_less'),
+        (r'with\s+(?:the\s+)?same\s+(?:converted\s+)?mana\s+(?:cost|value)(?:\s+as\s+this\s+card)?', 'cmc_exact_match'),
+        (r'with\s+power\s+(\d+)\s+or\s+less', 'power_restriction'),
+        (r'with\s+toughness\s+(\d+)\s+or\s+less', 'toughness_restriction'),
         (r'with\s+(?:the\s+same|a different)\s+name', 'name_restriction'),
         (r'that\s+shares?\s+a\s+(?:creature\s+)?type', 'type_sharing'),
         (r'(?:basic|nonbasic)\s+land', 'land_type'),
@@ -295,8 +298,14 @@ def extract_tutors(card: Dict) -> Dict:
     ]
 
     for pattern, restriction in restriction_patterns:
-        if re.search(pattern, text):
-            result['restrictions'].append(restriction)
+        match = re.search(pattern, text)
+        if match:
+            if 'power_restriction' in restriction or 'toughness_restriction' in restriction:
+                # Store the numeric value with the restriction
+                restriction_value = match.group(1)
+                result['restrictions'].append(f"{restriction}_{restriction_value}")
+            else:
+                result['restrictions'].append(restriction)
 
     # Determine destination
     destination_patterns = [

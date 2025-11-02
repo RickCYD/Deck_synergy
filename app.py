@@ -745,7 +745,7 @@ app.clientside_callback(
                 const node = event.target;
                 const nodeData = node.data();
 
-                // Get the card image URL
+                // Get the full card image URL
                 const imageUrl = nodeData.image_url;
 
                 if (imageUrl) {
@@ -828,7 +828,7 @@ def load_deck(n_clicks, url, current_data):
 
         # Fetch detailed card info from Scryfall
         print("[DECK LOAD] Step 2: Fetching card details from Scryfall...")
-        cards_with_details = fetch_card_details(deck_info['cards'])
+        cards_with_details = fetch_card_details(deck_info['cards'], use_local_cache=True)
         print(f"[DECK LOAD] Fetched details for {len(cards_with_details)} cards")
 
         # Annotate cards with functional roles
@@ -1988,6 +1988,21 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
         node_id = node_data['id']
         print(f"Node clicked: {node_id}")
 
+        # Get full node data from elements (tapNodeData doesn't include all fields)
+        full_node_data = None
+        for element in elements:
+            if element.get('data', {}).get('id') == node_id:
+                full_node_data = element['data']
+                print(f"[DEBUG] Found full node data, keys: {full_node_data.keys()}")
+                print(f"[DEBUG] image_url in full data: {full_node_data.get('image_url')}")
+                break
+
+        # Use full node data if available, otherwise use tapNodeData
+        if full_node_data:
+            node_data = full_node_data
+        else:
+            print(f"[DEBUG] Could not find node in elements!")
+
         connected_edges = [
             element for element in elements
             if 'source' in element.get('data', {})
@@ -2124,20 +2139,46 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                     ', '.join(role_labels)
                 ]))
 
-        info_children = [
-            html.H3(node_data.get('label', 'Unknown Card'), style={'color': '#2c3e50'}),
-            html.Hr(),
-            html.Div([
-                html.P([html.Strong("Type: "), node_data.get('card_type', 'N/A')]),
-                html.P([html.Strong("Mana Cost: "), node_data.get('mana_cost', 'N/A')]),
-                html.P([html.Strong("Colors: "), ', '.join(node_data.get('colors', []))]),
-                html.P([html.Strong("Oracle Text: ")]),
-                html.P(
-                    node_data.get('oracle_text', 'N/A'),
-                    style={'fontStyle': 'italic', 'padding': '10px', 'backgroundColor': '#ecf0f1'}
-                ),
-            ], style={'marginBottom': '10px'})
-        ]
+        # Display card image if available, otherwise show text info
+        # Use image_url which contains the full card image
+        image_url = node_data.get('image_url') or node_data.get('art_crop_url')
+        print(f"[DEBUG] Node clicked: {node_data.get('label')}, image_url: {image_url}")
+
+        if image_url:
+            # Show card image prominently
+            info_children = [
+                html.Div([
+                    html.Img(
+                        src=image_url,
+                        style={
+                            'width': '100%',
+                            'maxWidth': '100%',
+                            'borderRadius': '12px',
+                            'boxShadow': '0 4px 12px rgba(0,0,0,0.3)',
+                            'marginBottom': '20px',
+                            'display': 'block',
+                            'marginLeft': 'auto',
+                            'marginRight': 'auto'
+                        }
+                    )
+                ], style={'textAlign': 'center'})
+            ]
+        else:
+            # Fallback to text info if no image
+            info_children = [
+                html.H3(node_data.get('label', 'Unknown Card'), style={'color': '#2c3e50'}),
+                html.Hr(),
+                html.Div([
+                    html.P([html.Strong("Type: "), node_data.get('card_type', 'N/A')]),
+                    html.P([html.Strong("Mana Cost: "), node_data.get('mana_cost', 'N/A')]),
+                    html.P([html.Strong("Colors: "), ', '.join(node_data.get('colors', []))]),
+                    html.P([html.Strong("Oracle Text: ")]),
+                    html.P(
+                        node_data.get('oracle_text', 'N/A'),
+                        style={'fontStyle': 'italic', 'padding': '10px', 'backgroundColor': '#ecf0f1'}
+                    ),
+                ], style={'marginBottom': '10px'})
+            ]
 
         if roles_list_items:
             info_children.extend([
