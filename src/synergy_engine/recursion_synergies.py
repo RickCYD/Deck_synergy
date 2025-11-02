@@ -11,6 +11,7 @@ Detects synergies between recursion effects:
 - Clue tokens + sacrifice payoffs
 """
 
+import re
 from typing import Dict, List
 from src.utils.recursion_extractors import classify_recursion_mechanics
 
@@ -325,8 +326,6 @@ def detect_treasure_artifact_synergies(card1: Dict, card2: Dict) -> List[Dict]:
     card2_cares_artifacts = any(re.search(pattern, card2_text) for pattern in artifact_matters_patterns)
     card1_cares_artifacts = any(re.search(pattern, card1_text) for pattern in artifact_matters_patterns)
 
-    import re
-
     if tokens1['generates_tokens'] and card2_cares_artifacts:
         strength = 2.0
 
@@ -396,8 +395,6 @@ def detect_clue_sacrifice_synergies(card1: Dict, card2: Dict) -> List[Dict]:
         'whenever.*artifact.*sacrificed',
         'sacrifice an artifact'
     ]
-
-    import re
 
     card2_sac_payoff = any(re.search(pattern, card2_text) for pattern in sac_patterns)
     card1_sac_payoff = any(re.search(pattern, card1_text) for pattern in sac_patterns)

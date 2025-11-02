@@ -55,9 +55,14 @@ def get_top_cards(card_scores: Dict[str, float], top_n: int = 10) -> List[Tuple[
 
     Returns:
         List of (card_name, score) tuples, sorted by score descending
+        (lands are excluded as they don't have strategic synergies)
     """
+    # Filter out cards with 0 score (typically lands with no synergies)
+    # Since lands are excluded from synergy analysis, they'll have score=0
+    filtered_scores = {name: score for name, score in card_scores.items() if score > 0}
+
     sorted_cards = sorted(
-        card_scores.items(),
+        filtered_scores.items(),
         key=lambda x: x[1],
         reverse=True
     )

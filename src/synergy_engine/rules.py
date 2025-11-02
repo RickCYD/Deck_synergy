@@ -105,7 +105,20 @@ def detect_sacrifice_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'sacrifice .* land.*search'    # Fetch lands that sacrifice themselves
     ]
 
-    death_trigger_keywords = [r'when .* dies', r'whenever .* dies', r'when .* is put into a graveyard']
+    # Death trigger patterns - exclude self-death triggers
+    death_trigger_keywords = [
+        r'whenever (?:a|another|one or more) creature', # "whenever a creature dies"
+        r'whenever.*creatures.*die',                     # "whenever one or more creatures die"
+        r'when (?:a|another) creature.*dies',           # "when a creature dies"
+        r'whenever (?:a|another) .*permanent.*dies',    # "whenever a permanent dies"
+    ]
+    # Self-death patterns to EXCLUDE (not payoffs, just self-triggers)
+    self_death_patterns = [
+        r'when (this|~) .*dies',                        # "when this creature dies"
+        r'when (this|~) .*is put into.*graveyard',     # "when this is put into a graveyard"
+        r'whenever (this|~) dies',                      # "whenever this dies"
+    ]
+
     token_generation = [r'create.*token', r'put.*token']
 
     card1_text = card1.get('oracle_text', '').lower()
@@ -114,7 +127,9 @@ def detect_sacrifice_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_is_outlet = any(re.search(pattern, card1_text) for pattern in sacrifice_outlet_patterns) and \
                       not any(re.search(pattern, card1_text) for pattern in exclude_patterns)
     card2_creates_tokens = any(re.search(kw, card2_text) for kw in token_generation)
-    card2_death_trigger = any(re.search(kw, card2_text) for kw in death_trigger_keywords)
+    # Only count as death trigger if NOT a self-death trigger
+    card2_death_trigger = any(re.search(kw, card2_text) for kw in death_trigger_keywords) and \
+                          not any(re.search(kw, card2_text) for kw in self_death_patterns)
 
     if card1_is_outlet and (card2_creates_tokens or card2_death_trigger):
         return {
@@ -129,7 +144,9 @@ def detect_sacrifice_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_is_outlet = any(re.search(pattern, card2_text) for pattern in sacrifice_outlet_patterns) and \
                       not any(re.search(pattern, card2_text) for pattern in exclude_patterns)
     card1_creates_tokens = any(re.search(kw, card1_text) for kw in token_generation)
-    card1_death_trigger = any(re.search(kw, card1_text) for kw in death_trigger_keywords)
+    # Only count as death trigger if NOT a self-death trigger
+    card1_death_trigger = any(re.search(kw, card1_text) for kw in death_trigger_keywords) and \
+                          not any(re.search(kw, card1_text) for kw in self_death_patterns)
 
     if card2_is_outlet and (card1_creates_tokens or card1_death_trigger):
         return {
@@ -171,12 +188,13 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_cmc = card2.get('cmc', 0)
 
     # Check if card1 produces colorless mana and card2 has any mana cost
+    # NOTE: Reduced weight from 1.0 to 0.2 - mana production is generic utility
     card1_produces_colorless = any(re.search(pattern, card1_text) for pattern in colorless_patterns)
     if card1_produces_colorless and card2_cmc > 0:
         return {
             'name': 'Mana Acceleration',
             'description': f"{card1['name']} produces colorless mana for {card2['name']}'s generic cost",
-            'value': 1.0,
+            'value': 0.2,  # Reduced from 1.0 - too generic
             'category': 'mana_synergy',
             'subcategory': 'mana_production'
         }
@@ -187,7 +205,7 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         return {
             'name': 'Mana Acceleration',
             'description': f"{card2['name']} produces colorless mana for {card1['name']}'s generic cost",
-            'value': 1.0,
+            'value': 0.2,  # Reduced from 1.0 - too generic
             'category': 'mana_synergy',
             'subcategory': 'mana_production'
         }
@@ -202,7 +220,7 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             return {
                 'name': 'Mana Fixing',
                 'description': f"{card1['name']} produces {color_names[color]} mana for {card2['name']}'s cost",
-                'value': 2.0,
+                'value': 0.3,  # Reduced from 2.0 - mana fixing is generic utility
                 'category': 'mana_synergy',
                 'subcategory': 'mana_production'
             }
@@ -217,7 +235,7 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             return {
                 'name': 'Mana Fixing',
                 'description': f"{card2['name']} produces {color_names[color]} mana for {card1['name']}'s cost",
-                'value': 2.0,
+                'value': 0.3,  # Reduced from 2.0 - mana fixing is generic utility
                 'category': 'mana_synergy',
                 'subcategory': 'mana_production'
             }
@@ -375,11 +393,14 @@ def detect_ramp_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_cmc = card2.get('cmc', 0)
 
     # Ramp enables high CMC card
+    # NOTE: Reduced weight from 2.0 to 0.3 because this creates too many generic synergies
+    # Ramp is utility, not a strategic combo. Every ramp spell pairs with every big spell,
+    # creating hundreds of low-value edges that drown out actual strategic synergies.
     if card1_is_ramp and card2_cmc >= high_cmc_threshold:
         return {
             'name': 'Ramp Enabler',
             'description': f"{card1['name']} helps cast expensive {card2['name']} (CMC {card2_cmc})",
-            'value': 2.0,
+            'value': 0.3,  # Reduced from 2.0 - generic utility, not strategic synergy
             'category': 'role_interaction',
             'subcategory': 'ramp'
         }
@@ -388,7 +409,7 @@ def detect_ramp_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         return {
             'name': 'Ramp Enabler',
             'description': f"{card2['name']} helps cast expensive {card1['name']} (CMC {card1_cmc})",
-            'value': 2.0,
+            'value': 0.3,  # Reduced from 2.0 - generic utility, not strategic synergy
             'category': 'role_interaction',
             'subcategory': 'ramp'
         }
@@ -661,7 +682,7 @@ def detect_graveyard_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         return {
             'name': 'Graveyard Synergy',
             'description': f"{card1['name']} fills graveyard for {card2['name']} to utilize",
-            'value': 2.5,
+            'value': 1.5,  # Reduced from 2.5 - graveyard is common, not always strategic
             'category': 'role_interaction',
             'subcategory': 'recursion'
         }
@@ -674,7 +695,7 @@ def detect_graveyard_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         return {
             'name': 'Graveyard Synergy',
             'description': f"{card2['name']} fills graveyard for {card1['name']} to utilize",
-            'value': 2.5,
+            'value': 1.5,  # Reduced from 2.5 - graveyard is common, not always strategic
             'category': 'role_interaction',
             'subcategory': 'recursion'
         }
@@ -2067,8 +2088,19 @@ def detect_aristocrats_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    # Death trigger patterns
-    death_trigger_patterns = [r'when .* dies', r'whenever .* dies', r'when .* is put into a graveyard']
+    # Death trigger patterns - exclude self-death triggers
+    death_trigger_patterns = [
+        r'whenever (?:a|another|one or more) creature', # "whenever a creature dies"
+        r'whenever.*creatures.*die',                     # "whenever one or more creatures die"
+        r'when (?:a|another) creature.*dies',           # "when a creature dies"
+        r'whenever (?:a|another) .*permanent.*dies',    # "whenever a permanent dies"
+    ]
+    # Self-death patterns to EXCLUDE (not payoffs, just self-triggers)
+    self_death_patterns = [
+        r'when (this|~) .*dies',                        # "when this creature dies"
+        r'when (this|~) .*is put into.*graveyard',     # "when this is put into a graveyard"
+        r'whenever (this|~) dies',                      # "whenever this dies"
+    ]
 
     # Sacrifice outlet patterns
     sacrifice_outlet_patterns = [
@@ -2084,8 +2116,11 @@ def detect_aristocrats_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_is_drain = class1['strategy'] == 'drain'
     card2_is_drain = class2['strategy'] == 'drain'
 
-    card1_has_death_trigger = any(re.search(pattern, card1_text) for pattern in death_trigger_patterns)
-    card2_has_death_trigger = any(re.search(pattern, card2_text) for pattern in death_trigger_patterns)
+    # Only count as death trigger if NOT a self-death trigger
+    card1_has_death_trigger = any(re.search(pattern, card1_text) for pattern in death_trigger_patterns) and \
+                               not any(re.search(pattern, card1_text) for pattern in self_death_patterns)
+    card2_has_death_trigger = any(re.search(pattern, card2_text) for pattern in death_trigger_patterns) and \
+                               not any(re.search(pattern, card2_text) for pattern in self_death_patterns)
 
     card1_is_sac_outlet = any(re.search(pattern, card1_text) for pattern in sacrifice_outlet_patterns)
     card2_is_sac_outlet = any(re.search(pattern, card2_text) for pattern in sacrifice_outlet_patterns)

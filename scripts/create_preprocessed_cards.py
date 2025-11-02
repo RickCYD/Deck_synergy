@@ -57,8 +57,21 @@ def extract_synergy_tags(card: Dict) -> List[str]:
         if not any(re.search(p, text) for p in exclude_sac):
             tags.append('sacrifice_outlet')
 
-    # Death triggers
-    if re.search(r'when .* dies|whenever .* dies|when .* is put into a graveyard', text):
+    # Death triggers - ONLY payoffs, not self-death triggers
+    death_trigger_patterns = [
+        r'whenever (?:a|another|one or more) creature',  # "whenever a creature dies"
+        r'whenever.*creatures.*die',                       # "whenever one or more creatures die"
+        r'when (?:a|another) creature.*dies',             # "when a creature dies"
+        r'whenever (?:a|another) .*permanent.*dies',      # "whenever a permanent dies"
+    ]
+    self_death_patterns = [
+        r'when (this|~) .*dies',                          # "when this creature dies"
+        r'when (this|~) .*is put into.*graveyard',       # "when this is put into a graveyard"
+        r'whenever (this|~) dies',                        # "whenever this dies"
+    ]
+    has_death_trigger = any(re.search(p, text) for p in death_trigger_patterns)
+    is_self_death = any(re.search(p, text) for p in self_death_patterns)
+    if has_death_trigger and not is_self_death:
         tags.append('death_trigger')
 
     # Token generation
@@ -74,7 +87,31 @@ def extract_synergy_tags(card: Dict) -> List[str]:
     if produced_mana or re.search(r'add \{[wubrgc]\}|add.*mana|search your library.*land', text):
         tags.append('ramp')
 
-    # Graveyard interaction
+    # Mill effects (putting cards from library into graveyard)
+    mill_patterns = [
+        r'\bmill\b',  # Mill keyword (word boundary to avoid "Millstone" false positives)
+        r'put.*top.*cards?.*library.*into.*graveyard',
+        r'put.*cards?.*from.*library.*into.*graveyard',
+        r'reveals? cards.*library.*puts?.*into.*graveyard',
+        r'reveal.*top.*cards?.*library.*(?:put|place).*(?:rest|them|those).*into.*graveyard',  # "reveal top 4, put the rest into graveyard"
+        r'reveal.*top.*cards?.*library.*(?:put|place).*into.*graveyard',  # variant
+    ]
+    if any(re.search(p, text) for p in mill_patterns):
+        tags.append('mill')
+
+    # Self-mill (you mill yourself, not opponent)
+    # Must actually put cards from library into graveyard, not just reference library
+    self_mill_patterns = [
+        r'you mill',                                      # "you mill X"
+        r'mills? you',                                    # "mills you"
+        r'put.*from your library.*into your graveyard',  # "put cards from your library into your graveyard"
+        r'from your library.*into your graveyard',       # variant
+        r'reveal.*top.*cards? of your library.*(?:put|place).*(?:rest|them|those).*into your graveyard',  # "reveal top 4 of your library, put rest into your graveyard"
+    ]
+    if any(re.search(p, text) for p in self_mill_patterns):
+        tags.append('self_mill')
+
+    # Graveyard interaction (broader category)
     if re.search(r'from.*graveyard|in.*graveyard|graveyard to|exile.*graveyard', text):
         tags.append('graveyard')
 
@@ -125,6 +162,19 @@ def extract_synergy_tags(card: Dict) -> List[str]:
     if 'aura' in type_line and 'enchant creature' in text:
         tags.append('aura')
 
+    # Equipment matters (cares about equipment)
+    equipment_matters_patterns = [
+        r'whenever.*equipped',
+        r'equipped creature',
+        r'attach.*equipment',
+        r'when.*equipment.*attached',
+        r'equipment.*costs?.*less',
+        r'search.*library.*equipment',
+        r'equipment you control'
+    ]
+    if any(re.search(p, text) for p in equipment_matters_patterns):
+        tags.append('equipment_matters')
+
     # Artifact synergy
     if re.search(r'artifact you control|artifact card|artifact from|sacrifice an artifact', text):
         tags.append('artifact_synergy')
@@ -132,6 +182,63 @@ def extract_synergy_tags(card: Dict) -> List[str]:
     # Enchantment synergy
     if re.search(r'enchantment you control|enchantment card|enchantment from', text):
         tags.append('enchantment_synergy')
+
+    # ============================================================================
+    # GLOBAL/SCALING SYNERGIES (count-based scaling)
+    # ============================================================================
+
+    # Artifact count scaling (Inspiring Statuary, Jhoira's Familiar, etc.)
+    # Scales with total number of artifacts in deck
+    if re.search(r'for each artifact you control|number of artifacts you control|artifact you control.*gets?|improvise', text):
+        tags.append('scales_with_artifacts')
+
+    # Equipment count scaling (Hammer of Nazahn, Heavenly Blademaster, etc.)
+    # Scales with total number of equipment in deck
+    if re.search(r'for each equipment|number of equipment|equipment you control.*gets?', text):
+        tags.append('scales_with_equipment')
+
+    # Instant/Sorcery count scaling (Sword of Once and Future, Aria of Flame, etc.)
+    # Scales with instant/sorcery count in graveyard or deck
+    if re.search(r'for each instant.*sorcery|instant.*sorcery.*in.*graveyard|prowess|magecraft', text):
+        tags.append('scales_with_spells')
+
+    # Permanent count scaling (Deadly Brew, Ulvenwald Mysteries, etc.)
+    # Scales with total permanents you control
+    if re.search(r'for each permanent|number of permanents|permanent you control.*gets?', text):
+        tags.append('scales_with_permanents')
+
+    # Creature count scaling
+    if re.search(r'for each creature|number of creatures you control|creature you control.*gets?', text):
+        tags.append('scales_with_creatures')
+
+    # Land count scaling (but NOT just landfall)
+    # Cards like Conduit of Worlds that care about land count
+    if re.search(r'for each land|number of lands you control', text):
+        tags.append('scales_with_lands')
+
+    # ============================================================================
+    # THREE-WAY SYNERGIES (requires multiple components)
+    # ============================================================================
+
+    # Graveyard recursion + type (e.g., Conduit of Worlds: lands + graveyard + ramp)
+    if re.search(r'play.*land.*from.*graveyard|land.*from.*graveyard.*to.*battlefield', text):
+        tags.append('recursion_land')
+
+    # Artifact recursion (needs artifacts + graveyard + recursion)
+    if re.search(r'artifact.*from.*graveyard', text):
+        tags.append('recursion_artifact')
+
+    # Creature recursion (needs creatures + graveyard + recursion)
+    if re.search(r'creature.*from.*graveyard', text):
+        tags.append('recursion_creature')
+
+    # Spell recursion (needs instants/sorceries + graveyard + spellslinger)
+    if re.search(r'instant.*sorcery.*from.*graveyard|flashback|retrace', text):
+        tags.append('recursion_spell')
+
+    # Equipment + creature synergy (voltron enablers like Ardenn)
+    if re.search(r'attach.*equipment.*creature|move.*equipment', text):
+        tags.append('equipment_enabler')
 
     return tags
 

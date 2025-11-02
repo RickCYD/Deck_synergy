@@ -1266,14 +1266,19 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                     commander_colors = card.get('color_identity', [])
                     break
 
-            # Get recommendations
+            # Get recommendations with deck scoring
             print(f"[DEBUG] Generating recommendations for {len(deck_obj.get('cards', []))} cards, colors={commander_colors}")
-            recommended_cards = recommendations.get_recommendations(
+            rec_result = recommendations.get_recommendations(
                 deck_cards=deck_obj.get('cards', []),
                 color_identity=commander_colors,
-                limit=10
+                limit=10,
+                include_deck_scores=True  # Score deck cards too
             )
-            print(f"[DEBUG] Got {len(recommended_cards)} recommendations")
+            recommended_cards = rec_result.get('recommendations', [])
+            deck_scores = rec_result.get('deck_scores', [])
+            total_synergy = rec_result.get('total_deck_synergy', {})
+            print(f"[DEBUG] Got {len(recommended_cards)} recommendations and scored {len(deck_scores)} deck cards")
+            print(f"[DEBUG] Total deck synergy: {total_synergy}")
 
             # Build recommendations UI (detailed for side panel)
             rec_items = []
@@ -1289,6 +1294,14 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 # Truncate oracle text if too long
                 if len(oracle_text) > 200:
                     oracle_text = oracle_text[:200] + '...'
+
+                # Get replacement suggestions (logic kept for future use)
+                # TODO: Implement smart single-card replacement that considers:
+                # - Card type matching (creature for creature, etc.)
+                # - Mana curve balance
+                # - Strategy alignment (voltron vs midrange vs combo)
+                # - Before/after total deck synergy comparison
+                could_replace = card.get('could_replace', [])
 
                 rec_items.append(html.Div([
                     # Card name and score
@@ -1306,6 +1319,10 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                         html.Span(mana_cost if mana_cost else '—', style={'fontSize': '12px', 'color': '#7f8c8d', 'marginRight': '8px'}),
                         html.Span(f"CMC: {cmc}", style={'fontSize': '11px', 'color': '#95a5a6'})
                     ], style={'marginBottom': '6px'}),
+
+                    # Replacement suggestions - HIDDEN FOR NOW
+                    # Will be re-enabled once we implement smart card-type-aware replacement logic
+                    # html.Div([...]) if could_replace else None,
 
                     # Synergy reasons
                     html.Div([
@@ -1335,9 +1352,53 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                     'borderLeft': '3px solid #9b59b6'
                 }))
 
+            # Build weakest cards summary
+            weakest_cards_section = None
+            if deck_scores:
+                # Show bottom 10 cards
+                weakest_cards = deck_scores[:10]
+                weakest_items = []
+                for i, weak_card in enumerate(weakest_cards, 1):
+                    weakest_items.append(html.Li([
+                        html.Span(f"{weak_card['name']}", style={'fontWeight': 'bold', 'color': '#e74c3c'}),
+                        html.Span(f" ({weak_card['synergy_score']:.0f})", style={'color': '#95a5a6', 'fontSize': '10px', 'marginLeft': '4px'})
+                    ], style={'fontSize': '11px', 'marginBottom': '4px'}))
+
+                weakest_cards_section = html.Div([
+                    html.H5("⚠️ Weakest Cards in Your Deck", style={'marginTop': '20px', 'marginBottom': '8px', 'color': '#e74c3c', 'fontSize': '14px'}),
+                    html.P("These cards have the lowest synergy with your deck:", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginBottom': '8px'}),
+                    html.Ol(weakest_items, style={'paddingLeft': '20px'})
+                ], style={'backgroundColor': '#fef5f5', 'padding': '12px', 'borderRadius': '6px', 'borderLeft': '3px solid #e74c3c'})
+
+            # Build total synergy display
+            total_synergy_section = None
+            if total_synergy:
+                total_score = total_synergy.get('total_score', 0)
+                avg_score = total_synergy.get('average_score', 0)
+                card_count = total_synergy.get('card_count', 0)
+
+                total_synergy_section = html.Div([
+                    html.Div([
+                        html.Span("📊 Deck Synergy Score: ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#2c3e50'}),
+                        html.Span(f"{total_score:.0f}", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#27ae60'}),
+                    ], style={'marginBottom': '6px'}),
+                    html.Div([
+                        html.Span(f"Average: {avg_score:.1f} per card ", style={'fontSize': '12px', 'color': '#7f8c8d'}),
+                        html.Span(f"({card_count} cards scored)", style={'fontSize': '11px', 'color': '#95a5a6'})
+                    ])
+                ], style={
+                    'backgroundColor': '#e8f8f5',
+                    'padding': '12px',
+                    'borderRadius': '6px',
+                    'marginBottom': '16px',
+                    'borderLeft': '4px solid #27ae60'
+                })
+
             recommendations_panel = html.Div([
                 html.H4("🔍 Recommendations", style={'marginBottom': '12px', 'color': '#9b59b6', 'fontSize': '16px'}),
-                html.Div(rec_items)
+                total_synergy_section,
+                html.Div(rec_items),
+                weakest_cards_section
             ])
 
             return dash.no_update, recommendations_panel, dash.no_update
@@ -1379,6 +1440,11 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             for card in cards:
                 card_name = card.get('name')
                 if not card_name:
+                    continue
+
+                # Skip lands - they don't have strategic synergies
+                card_type = card.get('type_line', '').lower()
+                if '//' not in card_type and 'land' in card_type:
                     continue
 
                 # Count synergies involving this card
@@ -1790,9 +1856,9 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                         html.Strong(category.replace('_', ' ').title() + ':', style={'color': '#3498db'}),
                         html.Ul([
                             html.Li([
-                                html.Strong(f"{syn['name']}: "),
+                                html.Strong(f"{syn.get('name', 'Synergy')}: "),
                                 f"{syn.get('description', 'N/A')} ",
-                                html.Span(f"(+{syn.get('value', 0)})", style={'color': '#27ae60', 'fontWeight': 'bold'})
+                                html.Span(f"(+{syn.get('value', syn.get('strength', 0))})", style={'color': '#27ae60', 'fontWeight': 'bold'})
                             ]) for syn in synergy_list
                         ], style={'marginLeft': '10px', 'marginTop': '5px'})
                     ], style={'marginBottom': '10px'})
