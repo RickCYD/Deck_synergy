@@ -710,7 +710,7 @@ app.layout = html.Div([
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
 
 
-# Clientside callback to handle card hover tooltips with 1-second delay
+# Clientside callback to handle card hover tooltips
 app.clientside_callback(
     """
     function(elements) {
@@ -735,8 +735,6 @@ app.clientside_callback(
                 return window.dash_clientside.no_update;
             }
 
-            let hoverTimeout = null;
-
             // Remove existing event handlers to prevent duplicates
             cy.off('mouseover', 'node');
             cy.off('mouseout', 'node');
@@ -747,30 +745,22 @@ app.clientside_callback(
                 const node = event.target;
                 const nodeData = node.data();
 
-                // Clear any existing timeout
-                if (hoverTimeout) {
-                    clearTimeout(hoverTimeout);
+                // Get the card image URL
+                const imageUrl = nodeData.image_url;
+
+                if (imageUrl) {
+                    // Set the image source
+                    tooltipImage.src = imageUrl;
+
+                    // Get mouse position relative to viewport
+                    const mouseX = event.originalEvent.clientX || event.originalEvent.pageX;
+                    const mouseY = event.originalEvent.clientY || event.originalEvent.pageY;
+
+                    // Position tooltip to the right of the cursor
+                    tooltip.style.left = (mouseX + 20) + 'px';
+                    tooltip.style.top = (mouseY - 150) + 'px';
+                    tooltip.style.display = 'block';
                 }
-
-                // Set a 1-second delay before showing tooltip
-                hoverTimeout = setTimeout(function() {
-                    // Get the card image URL
-                    const imageUrl = nodeData.image_url;
-
-                    if (imageUrl) {
-                        // Set the image source
-                        tooltipImage.src = imageUrl;
-
-                        // Get mouse position relative to viewport
-                        const mouseX = event.originalEvent.clientX || event.originalEvent.pageX;
-                        const mouseY = event.originalEvent.clientY || event.originalEvent.pageY;
-
-                        // Position tooltip to the right of the cursor
-                        tooltip.style.left = (mouseX + 20) + 'px';
-                        tooltip.style.top = (mouseY - 150) + 'px';
-                        tooltip.style.display = 'block';
-                    }
-                }, 1000); // 1-second delay
             });
 
             // Handle mouse movement to update tooltip position
@@ -786,12 +776,6 @@ app.clientside_callback(
 
             // Handle mouseout on nodes
             cy.on('mouseout', 'node', function(event) {
-                // Clear the timeout if mouse leaves before 1 second
-                if (hoverTimeout) {
-                    clearTimeout(hoverTimeout);
-                    hoverTimeout = null;
-                }
-
                 // Hide the tooltip
                 tooltip.style.display = 'none';
             });
