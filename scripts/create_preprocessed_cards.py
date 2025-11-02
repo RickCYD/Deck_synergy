@@ -240,6 +240,63 @@ def extract_synergy_tags(card: Dict) -> List[str]:
     if re.search(r'attach.*equipment.*creature|move.*equipment', text):
         tags.append('equipment_enabler')
 
+    # ============================================================================
+    # ATTACK TRIGGERS AND DOUBLERS
+    # ============================================================================
+
+    # Attack triggers (whenever creature attacks, when X attacks, etc.)
+    if re.search(r'whenever.*attacks|when.*attacks|attacking creature', text):
+        tags.append('attack_trigger')
+
+    # Blocking triggers (whenever creature blocks or becomes blocked)
+    if re.search(r'whenever.*blocks|when.*blocks|whenever.*becomes blocked|when.*becomes blocked|blocking creature', text):
+        tags.append('block_trigger')
+
+    # Trigger doubling (Annie Joins Up, Panharmonicon, Yarok, etc.)
+    # Doubles or copies triggered abilities
+    if re.search(r'triggers an additional time|trigger.*triggers again|triggered ability.*triggers|abilities trigger an additional time|ability triggers.*additional time', text):
+        tags.append('trigger_doubler')
+
+    # ============================================================================
+    # CAST TRIGGERS (spellslinger)
+    # ============================================================================
+
+    # Cast creature spell triggers (Lathril, Blade of the Elves; Aegar, etc.)
+    if re.search(r'whenever you cast.*creature spell|when you cast.*creature spell|you cast.*creature', text):
+        tags.append('cast_creature_trigger')
+
+    # Cast instant/sorcery triggers (Talrand, Sky Summoner; Young Pyromancer; etc.)
+    if re.search(r'whenever you cast.*instant.*sorcery|when you cast.*instant.*sorcery|whenever you cast.*noncreature spell|whenever you cast.*spell', text):
+        tags.append('cast_spell_trigger')
+
+    # ============================================================================
+    # SPECIFIC SACRIFICE TYPES (more granular than generic sacrifice_outlet)
+    # ============================================================================
+
+    # Sacrifice creature specifically
+    if re.search(r'sacrifice.*creature|as an additional cost.*sacrifice.*creature', text):
+        tags.append('sac_creature')
+
+    # Sacrifice token specifically
+    if re.search(r'sacrifice.*token', text):
+        tags.append('sac_token')
+
+    # Sacrifice artifact specifically
+    if re.search(r'sacrifice.*artifact|as an additional cost.*sacrifice.*artifact', text):
+        tags.append('sac_artifact')
+
+    # Sacrifice land specifically
+    if re.search(r'sacrifice.*land|as an additional cost.*sacrifice.*land', text):
+        tags.append('sac_land')
+
+    # Sacrifice permanent (generic)
+    if re.search(r'sacrifice.*permanent|sacrifice a permanent|as an additional cost.*sacrifice.*permanent', text):
+        tags.append('sac_permanent')
+
+    # Sacrifice non-land permanent
+    if re.search(r'sacrifice.*nonland permanent|sacrifice a nonland permanent', text):
+        tags.append('sac_nonland')
+
     return tags
 
 

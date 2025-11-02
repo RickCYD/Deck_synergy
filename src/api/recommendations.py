@@ -441,7 +441,10 @@ class RecommendationEngine:
         generic_tags = {'ramp', 'card_draw', 'removal', 'graveyard', 'counters', 'protection'}
         strategic_tags = {'self_mill', 'mill', 'death_trigger', 'sacrifice_outlet', 'token_gen',
                          'has_etb', 'flicker', 'untap_others', 'mana_ability', 'spellslinger',
-                         'equipment', 'equipment_matters', 'artifact_synergy', 'enchantment_synergy'}
+                         'equipment', 'equipment_matters', 'artifact_synergy', 'enchantment_synergy',
+                         'attack_trigger', 'block_trigger', 'trigger_doubler',
+                         'cast_creature_trigger', 'cast_spell_trigger',
+                         'sac_creature', 'sac_token', 'sac_artifact', 'sac_land', 'sac_permanent', 'sac_nonland'}
 
         # Tag synergy with reduced weights
         for tag in card_tags:
@@ -489,6 +492,22 @@ class RecommendationEngine:
             ('mill', 'graveyard', 3, 5),           # Mill enables graveyard
             ('equipment', 'equipment_matters', 3, 5),  # Equipment + equipment payoffs
             ('equipment_matters', 'equipment', 5, 3),  # Equipment payoffs + equipment
+            # Trigger synergies
+            ('attack_trigger', 'trigger_doubler', 5, 1),  # Attack triggers + doublers (Annie Joins Up, etc.)
+            ('trigger_doubler', 'attack_trigger', 1, 5),  # Doublers + attack triggers
+            ('block_trigger', 'trigger_doubler', 5, 1),   # Block triggers + doublers
+            ('trigger_doubler', 'block_trigger', 1, 5),   # Doublers + block triggers
+            ('cast_creature_trigger', 'trigger_doubler', 5, 1),  # Cast creature triggers + doublers
+            ('trigger_doubler', 'cast_creature_trigger', 1, 5),  # Doublers + cast creature triggers
+            ('cast_spell_trigger', 'trigger_doubler', 5, 1),     # Cast spell triggers + doublers
+            ('trigger_doubler', 'cast_spell_trigger', 1, 5),     # Doublers + cast spell triggers
+            # Specific sacrifice synergies
+            ('token_gen', 'sac_creature', 5, 3),   # Token generators + creature sacrifice
+            ('sac_creature', 'token_gen', 3, 5),   # Creature sacrifice + token generators
+            ('token_gen', 'sac_token', 5, 3),      # Token generators + token sacrifice
+            ('sac_token', 'token_gen', 3, 5),      # Token sacrifice + token generators
+            ('death_trigger', 'sac_creature', 3, 3),  # Death triggers + creature sacrifice
+            ('sac_creature', 'death_trigger', 3, 3),  # Creature sacrifice + death triggers
         ]
 
         for tag1, tag2, min1, min2 in complementary_pairs:
