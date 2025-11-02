@@ -566,13 +566,138 @@ app.layout = html.Div([
         ])
     ]),
 
+    # Hidden tooltip div for card image preview
+    html.Div(
+        id='card-tooltip',
+        style={
+            'position': 'fixed',
+            'display': 'none',
+            'zIndex': '10000',
+            'pointerEvents': 'none',
+            'backgroundColor': 'white',
+            'border': '3px solid white',
+            'boxShadow': '0 4px 12px rgba(0,0,0,0.3)',
+            'borderRadius': '12px',
+            'padding': '4px',
+            'maxWidth': '300px'
+        },
+        children=[
+            html.Img(
+                id='card-tooltip-image',
+                style={
+                    'display': 'block',
+                    'width': '100%',
+                    'height': 'auto',
+                    'borderRadius': '8px'
+                }
+            )
+        ]
+    ),
+
     dcc.Store(id='deck-data-store'),
     dcc.Store(id='selected-node-store'),
     dcc.Store(id='current-deck-file-store'),
     dcc.Store(id='role-filter-data'),
     dcc.Store(id='active-role-filter'),
+    dcc.Store(id='tooltip-init-store'),  # Dummy store for tooltip initialization
     dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True)
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
+
+
+# Clientside callback to handle card hover tooltips with 1-second delay
+app.clientside_callback(
+    """
+    function(elements) {
+        // Wait for the DOM to be ready
+        setTimeout(function() {
+            const cytoscapeElement = document.getElementById('card-graph');
+            if (!cytoscapeElement || !cytoscapeElement._cyreg) {
+                return window.dash_clientside.no_update;
+            }
+
+            // Get the Cytoscape instance
+            const cy = cytoscapeElement._cyreg.cy;
+            if (!cy) {
+                return window.dash_clientside.no_update;
+            }
+
+            // Get tooltip elements
+            const tooltip = document.getElementById('card-tooltip');
+            const tooltipImage = document.getElementById('card-tooltip-image');
+
+            if (!tooltip || !tooltipImage) {
+                return window.dash_clientside.no_update;
+            }
+
+            let hoverTimeout = null;
+
+            // Remove existing event handlers to prevent duplicates
+            cy.off('mouseover', 'node');
+            cy.off('mouseout', 'node');
+            cy.off('mousemove', 'node');
+
+            // Handle mouseover on nodes
+            cy.on('mouseover', 'node', function(event) {
+                const node = event.target;
+                const nodeData = node.data();
+
+                // Clear any existing timeout
+                if (hoverTimeout) {
+                    clearTimeout(hoverTimeout);
+                }
+
+                // Set a 1-second delay before showing tooltip
+                hoverTimeout = setTimeout(function() {
+                    // Get the card image URL
+                    const imageUrl = nodeData.image_url;
+
+                    if (imageUrl) {
+                        // Set the image source
+                        tooltipImage.src = imageUrl;
+
+                        // Get mouse position relative to viewport
+                        const mouseX = event.originalEvent.clientX || event.originalEvent.pageX;
+                        const mouseY = event.originalEvent.clientY || event.originalEvent.pageY;
+
+                        // Position tooltip to the right of the cursor
+                        tooltip.style.left = (mouseX + 20) + 'px';
+                        tooltip.style.top = (mouseY - 150) + 'px';
+                        tooltip.style.display = 'block';
+                    }
+                }, 1000); // 1-second delay
+            });
+
+            // Handle mouse movement to update tooltip position
+            cy.on('mousemove', 'node', function(event) {
+                if (tooltip.style.display === 'block') {
+                    const mouseX = event.originalEvent.clientX || event.originalEvent.pageX;
+                    const mouseY = event.originalEvent.clientY || event.originalEvent.pageY;
+
+                    tooltip.style.left = (mouseX + 20) + 'px';
+                    tooltip.style.top = (mouseY - 150) + 'px';
+                }
+            });
+
+            // Handle mouseout on nodes
+            cy.on('mouseout', 'node', function(event) {
+                // Clear the timeout if mouse leaves before 1 second
+                if (hoverTimeout) {
+                    clearTimeout(hoverTimeout);
+                    hoverTimeout = null;
+                }
+
+                // Hide the tooltip
+                tooltip.style.display = 'none';
+            });
+
+        }, 100); // Small delay to ensure Cytoscape is fully initialized
+
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output('tooltip-init-store', 'data'),
+    Input('card-graph', 'elements')
+)
 
 
 # Callback to show "Loading..." immediately when button clicked
