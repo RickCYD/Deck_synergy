@@ -22,15 +22,57 @@ def build_graph_elements(deck_data: Dict) -> List[Dict]:
 
     # Create nodes for each card
     cards = deck_data.get('cards', [])
-    for card in cards:
-        node = create_card_node(card)
-        elements.append(node)
+    print(f"[GRAPH BUILDER] Creating nodes for {len(cards)} cards")
+
+    for idx, card in enumerate(cards):
+        try:
+            if not card or not isinstance(card, dict):
+                print(f"[GRAPH BUILDER] WARNING: Card {idx} is not a valid dict, skipping")
+                continue
+
+            if not card.get('name'):
+                print(f"[GRAPH BUILDER] WARNING: Card {idx} has no name, skipping")
+                continue
+
+            node = create_card_node(card)
+
+            # Validate node has required fields
+            if not node.get('data') or not node['data'].get('id'):
+                print(f"[GRAPH BUILDER] WARNING: Node for {card.get('name')} is invalid, skipping")
+                continue
+
+            elements.append(node)
+        except Exception as e:
+            print(f"[GRAPH BUILDER] ERROR: Failed to create node for card {card.get('name', 'Unknown')}: {e}")
+            continue
+
+    print(f"[GRAPH BUILDER] Created {len(elements)} nodes")
 
     # Create edges for synergies
     synergies = deck_data.get('synergies', {})
+    print(f"[GRAPH BUILDER] Creating edges for {len(synergies)} synergies")
+
+    edges_created = 0
     for synergy_key, synergy_data in synergies.items():
-        edge = create_synergy_edge(synergy_key, synergy_data)
-        elements.append(edge)
+        try:
+            if not synergy_key or not isinstance(synergy_data, dict):
+                continue
+
+            edge = create_synergy_edge(synergy_key, synergy_data)
+
+            # Validate edge has required fields
+            if not edge.get('data') or not edge['data'].get('source') or not edge['data'].get('target'):
+                print(f"[GRAPH BUILDER] WARNING: Edge for {synergy_key} is invalid, skipping")
+                continue
+
+            elements.append(edge)
+            edges_created += 1
+        except Exception as e:
+            print(f"[GRAPH BUILDER] ERROR: Failed to create edge for {synergy_key}: {e}")
+            continue
+
+    print(f"[GRAPH BUILDER] Created {edges_created} edges")
+    print(f"[GRAPH BUILDER] Total elements: {len(elements)}")
 
     return elements
 
@@ -62,36 +104,45 @@ def create_card_node(card: Dict) -> Dict:
     secondary_border = get_secondary_border_color(colors)
     is_multicolor = len(colors) >= 2
 
-    # Create node data
+    # Get image URLs - use art_crop if available, fallback to normal
+    image_uris = card.get('image_uris') or {}
+    art_crop_url = image_uris.get('art_crop', '') or image_uris.get('normal', '') or ''
+    image_url = image_uris.get('normal', '') or ''
+
+    # Create node data - ensure no None values that could break Cytoscape
     node_data = {
-        'id': card_name,
-        'label': card_name,
+        'id': card_name or 'Unknown',
+        'label': card_name or 'Unknown',
         'type': node_type,
 
         # Card information
-        'card_type': card.get('type_line', 'Unknown'),
-        'mana_cost': card.get('mana_cost', ''),
-        'cmc': card.get('cmc', 0),
-        'colors': colors,
-        'color_identity': card.get('color_identity', []),
-        'oracle_text': card.get('oracle_text', ''),
-        'power': card.get('power'),
-        'toughness': card.get('toughness'),
-        'loyalty': card.get('loyalty'),
-        'rarity': card.get('rarity', ''),
+        'card_type': card.get('type_line') or 'Unknown',
+        'mana_cost': card.get('mana_cost') or '',
+        'cmc': card.get('cmc') or 0,
+        'colors': colors or [],
+        'color_identity': card.get('color_identity') or [],
+        'oracle_text': card.get('oracle_text') or '',
+        'power': card.get('power') or '',  # Convert None to empty string
+        'toughness': card.get('toughness') or '',  # Convert None to empty string
+        'loyalty': card.get('loyalty') or '',  # Convert None to empty string
+        'rarity': card.get('rarity') or '',
 
         # Visual properties
         'color_code': color_code,
         'border_color': border_color,
         'secondary_border': secondary_border if is_multicolor else border_color,
         'is_multicolor': is_multicolor,
-        'image_url': card.get('image_uris', {}).get('normal', ''),
-        'art_crop_url': card.get('image_uris', {}).get('art_crop', ''),  # Just the artwork
 
         # Categories from Archidekt
-        'categories': card.get('categories', []),
-        'roles': roles
+        'categories': card.get('categories') or [],
+        'roles': roles or {}
     }
+
+    # Only add image URLs if they're not empty (to avoid invalid CSS "background-image: " in Cytoscape)
+    if image_url:
+        node_data['image_url'] = image_url
+    if art_crop_url:
+        node_data['art_crop_url'] = art_crop_url
 
     classes = ' '.join([node_type] + role_classes) if role_classes else node_type
 
@@ -116,22 +167,21 @@ def create_synergy_edge(synergy_key: str, synergy_data: Dict) -> Dict:
 
     edge_id = f"{card1}_{card2}".replace(' ', '_').replace(',', '').replace("'", '')
 
+    weight = synergy_data.get('total_weight', 1.0)
+
     edge_data = {
-        'id': edge_id,
-        'source': card1,
-        'target': card2,
-        'source_label': card1,
-        'target_label': card2,
+        'id': edge_id or f"edge_{hash(synergy_key)}",
+        'source': card1 or 'Unknown',
+        'target': card2 or 'Unknown',
+        'source_label': card1 or 'Unknown',
+        'target_label': card2 or 'Unknown',
 
         # Synergy weight
-        'weight': synergy_data.get('total_weight', 1.0),
+        'weight': round(weight, 1) if weight is not None else 1.0,
 
         # Synergy details
-        'synergies': synergy_data.get('synergies', {}),
-        'synergy_count': synergy_data.get('synergy_count', 0),
-
-        # Edge label (optional, shows on hover)
-        'label': f"{synergy_data.get('total_weight', 0):.1f}"
+        'synergies': synergy_data.get('synergies') or {},
+        'synergy_count': synergy_data.get('synergy_count') or 0
     }
 
     return {

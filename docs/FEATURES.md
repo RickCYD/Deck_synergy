@@ -193,7 +193,9 @@ Select a different layout from the "Graph Layout" dropdown menu. The graph will 
 - **Draw Engine:** Card draw combinations
 - **Tutor Target:** Tutors and their targets
 - **Recursion Loop:** Graveyard loops
-- **Scry Synergy:** Top-deck manipulation
+- **Top Deck Synergy:** Top Deck 
+- **Scry Synergy:** Scry 
+- **Surveil Synergy:** Surveil 
 
 **Example:**
 - Multiple cards with draw abilities form a card advantage engine

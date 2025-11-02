@@ -17,7 +17,8 @@ SYNERGY_CATEGORIES = {
             'death_trigger': 'Death/sacrifice synergies',
             'combat_trigger': 'Combat-related triggers',
             'spell_trigger': 'Spell-casting triggers',
-            'ability_activated': 'Activated ability synergies'
+            'ability_activated': 'Activated ability synergies',
+            'landfall': 'Landfall synergies'
         }
     },
 
@@ -44,7 +45,9 @@ SYNERGY_CATEGORIES = {
             'removal': 'Removal and board wipe synergies',
             'recursion': 'Graveyard recursion',
             'sacrifice': 'Sacrifice outlet and fodder',
-            'token_generation': 'Token generation and payoffs'
+            'token_generation': 'Token generation and payoffs',
+            'spell_copy': 'Spell copying synergies',
+            'stax': 'Stax and tax effect synergies'
         }
     },
 
@@ -58,7 +61,12 @@ SYNERGY_CATEGORIES = {
             'infinite_damage': 'Infinite damage combinations',
             'infinite_mill': 'Infinite mill combinations',
             'two_card_combo': 'Two-card combos',
-            'three_card_combo': 'Three-card combos'
+            'three_card_combo': 'Three-card combos',
+            'counter_synergy': 'Counter doubling and synergies',
+            'copy_effects': 'Copy and clone effects',
+            'storm': 'Storm and spell velocity',
+            'energy': 'Energy generation and consumption',
+            'stax': 'Stax packages'
         }
     },
 
@@ -71,7 +79,8 @@ SYNERGY_CATEGORIES = {
             'synergy_type': 'Type-based benefits (e.g., all artifacts)',
             'keyword_grant': 'Keyword ability granting',
             'cost_matters': 'CMC-based synergies',
-            'tribal': 'Tribal synergies'
+            'tribal': 'Tribal synergies',
+            'counter_synergy': '+1/+1 counter placement and payoffs'
         }
     },
 
@@ -85,7 +94,8 @@ SYNERGY_CATEGORIES = {
             'enchantment_matters': 'Enchantment synergies',
             'instant_sorcery_matters': 'Instant/sorcery synergies',
             'land_matters': 'Land synergies',
-            'planeswalker_synergy': 'Planeswalker synergies'
+            'planeswalker_synergy': 'Planeswalker synergies',
+            'equipment_matters': 'Equipment synergies'
         }
     },
 
@@ -97,7 +107,9 @@ SYNERGY_CATEGORIES = {
             'draw_engine': 'Card draw engines',
             'tutor_target': 'Tutor and target synergies',
             'recursion_loop': 'Recursion loops',
-            'scry_synergy': 'Scry and top-deck manipulation'
+            'scry_synergy': 'Scry synergies',
+            'surveil_synergy': 'Surveil synergies',
+            'top_deck_synergy': 'Top-deck synergies'
         }
     }
 }

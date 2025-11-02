@@ -5,7 +5,7 @@ Main module for analyzing deck synergies
 
 from typing import Dict, List, Tuple
 from itertools import combinations
-from .rules import ALL_RULES
+from .rules import ALL_RULES, clear_damage_classification_cache
 from .categories import get_category_weight
 
 
@@ -27,7 +27,11 @@ def analyze_card_pair(card1: Dict, card2: Dict) -> List[Dict]:
         try:
             result = rule_func(card1, card2)
             if result:
-                synergies.append(result)
+                # Handle both old format (Optional[Dict]) and new format (List[Dict])
+                if isinstance(result, list):
+                    synergies.extend(result)
+                elif isinstance(result, dict):
+                    synergies.append(result)
         except Exception as e:
             # Log error but continue with other rules
             print(f"Error in {rule_func.__name__} for {card1.get('name')} and {card2.get('name')}: {e}")
@@ -53,7 +57,8 @@ def calculate_edge_weight(synergies: List[Dict]) -> float:
     for synergy in synergies:
         category = synergy.get('category', 'benefits')
         subcategory = synergy.get('subcategory')
-        value = synergy.get('value', 1.0)
+        # Support both old format (value) and new format (strength)
+        value = synergy.get('value') or synergy.get('strength', 1.0)
 
         # Get category weight multiplier
         category_weight = get_category_weight(category, subcategory)
@@ -108,21 +113,45 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
             }
         }
     """
-    print(f"\nAnalyzing synergies for {len(cards)} cards...")
+    import time
+    start_time = time.time()
+
+    num_cards = len(cards)
+    print(f"\nAnalyzing synergies for {num_cards} cards...")
+
+    # Clear damage classification cache for fresh analysis
+    clear_damage_classification_cache()
 
     synergy_dict = {}
-    total_pairs = len(list(combinations(range(len(cards)), 2)))
+    total_pairs = (num_cards * (num_cards - 1)) // 2
     analyzed = 0
+
+    # For large decks, show more frequent progress updates
+    progress_interval = 100 if num_cards < 100 else 500
 
     # Analyze all card pairs
     for card1, card2 in combinations(cards, 2):
         analyzed += 1
 
-        if analyzed % 100 == 0:
-            print(f"  Analyzed {analyzed}/{total_pairs} card pairs...")
+        if analyzed % progress_interval == 0 or analyzed == total_pairs:
+            elapsed = time.time() - start_time
+            pairs_per_sec = analyzed / elapsed if elapsed > 0 else 0
+            remaining = (total_pairs - analyzed) / pairs_per_sec if pairs_per_sec > 0 else 0
+            print(f"  Progress: {analyzed}/{total_pairs} pairs ({100*analyzed/total_pairs:.1f}%) - "
+                  f"Elapsed: {elapsed:.1f}s - ETA: {remaining:.1f}s")
 
         # Skip if either card has errors
         if 'error' in card1 or 'error' in card2:
+            continue
+
+        # Skip land synergies - they create noise in the graph and recommendations
+        # Lands have generic synergies (ramp, color fixing) that aren't strategically interesting
+        card1_type = card1.get('type_line', '').lower()
+        card2_type = card2.get('type_line', '').lower()
+
+        # Skip if either card is a land (excluding MDFCs with // in type line)
+        if ('//' not in card1_type and 'land' in card1_type) or \
+           ('//' not in card2_type and 'land' in card2_type):
             continue
 
         # Detect synergies
@@ -148,6 +177,8 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
                     'synergy_count': len(synergies)
                 }
 
+    elapsed = time.time() - start_time
+    print(f"  Completed in {elapsed:.1f}s ({total_pairs/elapsed:.0f} pairs/sec)")
     print(f"  Found {len(synergy_dict)} synergies above threshold ({min_synergy_threshold})")
     print(f"  Total synergy connections: {sum(s['synergy_count'] for s in synergy_dict.values())}")
 

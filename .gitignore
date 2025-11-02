@@ -38,6 +38,14 @@ wheels/
 data/decks/*.json
 !data/decks/.gitkeep
 
+# Large card database files (DO NOT COMMIT)
+data/cards/oracle-cards.json
+data/cards/rulings.json
+
+# Keep the optimized databases (both safe to commit)
+# data/cards/cards-minimal.json is NOT ignored - it should be committed (17MB)
+# data/cards/cards-preprocessed.json is NOT ignored - it should be committed (16MB)
+
 # OS
 .DS_Store
 Thumbs.db
