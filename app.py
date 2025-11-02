@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 # Import custom modules
 from src.api.archidekt import fetch_deck_from_archidekt
-from src.api.scryfall import fetch_card_details
+from src.api.scryfall import fetch_card_details, ScryfallAPI
 from src.api import recommendations
 from src.models.deck import Deck
 from src.synergy_engine.analyzer import analyze_deck_synergies
@@ -27,6 +27,7 @@ from src.utils.card_roles import (
     assign_roles_to_cards,
     summarize_roles
 )
+from src.utils.deck_builder import CommanderDeckBuilder
 from src.simulation.mana_simulator import ManaSimulator, SimulationParams
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -563,6 +564,109 @@ app.layout = html.Div([
                 html.H4('Per-card castability by turn', style={'marginTop': '8px'}),
                 html.Div(id='per-card-result-table', style={'marginTop': '8px'})
             ], style={'padding': '20px'})
+        ]),
+        dcc.Tab(label='Deck Builder', value='builder', children=[
+            html.Div([
+                html.H3("Commander Deck Builder", style={'color': '#2c3e50', 'marginBottom': '16px'}),
+                html.P("Build an optimized 100-card Commander deck starting from your commander.",
+                       style={'color': '#7f8c8d', 'marginBottom': '24px'}),
+
+                # Commander Search Section
+                html.Div([
+                    html.H4("1. Select Your Commander", style={'color': '#2c3e50', 'marginBottom': '12px'}),
+                    html.Div([
+                        dcc.Input(
+                            id='commander-search-input',
+                            type='text',
+                            placeholder='Enter commander name (e.g., "Atraxa, Praetors\' Voice")',
+                            style={'flex': '1', 'padding': '10px', 'marginRight': '8px', 'minWidth': '300px'}
+                        ),
+                        html.Button(
+                            'Search',
+                            id='commander-search-button',
+                            n_clicks=0,
+                            style={
+                                'padding': '10px 20px',
+                                'backgroundColor': '#3498db',
+                                'color': '#fff',
+                                'border': 'none',
+                                'borderRadius': '4px',
+                                'cursor': 'pointer',
+                                'fontWeight': 'bold'
+                            }
+                        )
+                    ], style={'display': 'flex', 'marginBottom': '12px'}),
+                    html.Div(id='commander-search-results', style={'marginTop': '12px'})
+                ], style={
+                    'backgroundColor': '#fff',
+                    'padding': '16px',
+                    'borderRadius': '6px',
+                    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                    'marginBottom': '20px'
+                }),
+
+                # Deck Requirements Section
+                html.Div([
+                    html.H4("2. Set Deck Requirements", style={'color': '#2c3e50', 'marginBottom': '12px'}),
+                    html.Div([
+                        html.Div([
+                            html.Label('Lands:', style={'fontWeight': 'bold', 'marginBottom': '4px', 'display': 'block'}),
+                            dcc.Input(id='builder-lands-input', type='number', value=37, min=30, max=50, step=1,
+                                     style={'width': '100%', 'padding': '8px'})
+                        ], style={'flex': '1', 'minWidth': '120px'}),
+                        html.Div([
+                            html.Label('Ramp:', style={'fontWeight': 'bold', 'marginBottom': '4px', 'display': 'block'}),
+                            dcc.Input(id='builder-ramp-input', type='number', value=10, min=0, max=20, step=1,
+                                     style={'width': '100%', 'padding': '8px'})
+                        ], style={'flex': '1', 'minWidth': '120px'}),
+                        html.Div([
+                            html.Label('Card Draw:', style={'fontWeight': 'bold', 'marginBottom': '4px', 'display': 'block'}),
+                            dcc.Input(id='builder-draw-input', type='number', value=10, min=0, max=20, step=1,
+                                     style={'width': '100%', 'padding': '8px'})
+                        ], style={'flex': '1', 'minWidth': '120px'}),
+                        html.Div([
+                            html.Label('Single Target Removal:', style={'fontWeight': 'bold', 'marginBottom': '4px', 'display': 'block'}),
+                            dcc.Input(id='builder-removal-input', type='number', value=5, min=0, max=15, step=1,
+                                     style={'width': '100%', 'padding': '8px'})
+                        ], style={'flex': '1', 'minWidth': '120px'}),
+                        html.Div([
+                            html.Label('Board Wipes:', style={'fontWeight': 'bold', 'marginBottom': '4px', 'display': 'block'}),
+                            dcc.Input(id='builder-wipes-input', type='number', value=3, min=0, max=10, step=1,
+                                     style={'width': '100%', 'padding': '8px'})
+                        ], style={'flex': '1', 'minWidth': '120px'})
+                    ], style={'display': 'flex', 'gap': '16px', 'flexWrap': 'wrap'})
+                ], style={
+                    'backgroundColor': '#fff',
+                    'padding': '16px',
+                    'borderRadius': '6px',
+                    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                    'marginBottom': '20px'
+                }),
+
+                # Build Button
+                html.Div([
+                    html.Button(
+                        '⚡ Build Deck',
+                        id='build-deck-button',
+                        n_clicks=0,
+                        style={
+                            'padding': '12px 32px',
+                            'backgroundColor': '#27ae60',
+                            'color': '#fff',
+                            'border': 'none',
+                            'borderRadius': '6px',
+                            'cursor': 'pointer',
+                            'fontWeight': 'bold',
+                            'fontSize': '16px'
+                        }
+                    ),
+                    html.Span(id='builder-status-message', style={'marginLeft': '16px', 'color': '#7f8c8d'})
+                ], style={'marginBottom': '20px'}),
+
+                # Results Section
+                html.Div(id='builder-results', style={'marginTop': '20px'})
+
+            ], style={'padding': '20px', 'maxWidth': '1200px', 'margin': '0 auto'})
         ])
     ]),
 
@@ -571,6 +675,8 @@ app.layout = html.Div([
     dcc.Store(id='current-deck-file-store'),
     dcc.Store(id='role-filter-data'),
     dcc.Store(id='active-role-filter'),
+    dcc.Store(id='selected-commander-store'),
+    dcc.Store(id='built-deck-store'),
     dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True)
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
 
@@ -2037,6 +2143,273 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
         return stylesheet, info_panel, layout
 
     return base_stylesheet, html.Div("Click on a card or synergy edge to see details"), dash.no_update
+
+
+# ============================================================================
+# Deck Builder Callbacks
+# ============================================================================
+
+@app.callback(
+    [Output('commander-search-results', 'children'),
+     Output('selected-commander-store', 'data')],
+    Input('commander-search-button', 'n_clicks'),
+    State('commander-search-input', 'value'),
+    prevent_initial_call=True
+)
+def search_commander(n_clicks, search_query):
+    """Search for a commander card"""
+    if not search_query:
+        return html.Div("Please enter a commander name", style={'color': '#e74c3c'}), None
+
+    try:
+        # Search for the card using Scryfall
+        api = ScryfallAPI()
+        card_data = api.get_card_by_name(search_query)
+
+        # Check if it's a valid commander
+        type_line = card_data.get('type_line', '').lower()
+        oracle_text = card_data.get('oracle_text', '').lower()
+        is_legendary = 'legendary' in type_line
+        is_creature = 'creature' in type_line
+        is_planeswalker = 'planeswalker' in type_line
+        can_be_commander = 'can be your commander' in oracle_text
+
+        if not ((is_legendary and (is_creature or is_planeswalker)) or can_be_commander):
+            return html.Div(
+                f"❌ {card_data['name']} is not a valid commander (must be a legendary creature or planeswalker)",
+                style={'color': '#e74c3c', 'padding': '12px', 'backgroundColor': '#fadbd8', 'borderRadius': '4px'}
+            ), None
+
+        # Get preprocessed data if available
+        if recommendations.is_loaded():
+            engine = recommendations._recommendation_engine
+            preprocessed = engine.cards_by_name.get(card_data['name'])
+            if preprocessed:
+                card_data['synergy_tags'] = preprocessed.get('synergy_tags', [])
+                card_data['roles'] = preprocessed.get('roles', [])
+
+        # Display commander info
+        color_identity = card_data.get('color_identity', [])
+        colors_display = ', '.join(color_identity) if color_identity else 'Colorless'
+
+        result_div = html.Div([
+            html.Div([
+                html.Img(
+                    src=card_data.get('image_uris', {}).get('normal', ''),
+                    style={'width': '200px', 'borderRadius': '8px', 'marginRight': '20px'}
+                ) if card_data.get('image_uris') else None,
+                html.Div([
+                    html.H4(card_data['name'], style={'color': '#27ae60', 'marginBottom': '8px'}),
+                    html.P([html.Strong("Type: "), card_data.get('type_line', 'N/A')]),
+                    html.P([html.Strong("Color Identity: "), colors_display]),
+                    html.P([html.Strong("Mana Cost: "), card_data.get('mana_cost', 'N/A')]),
+                    html.P([
+                        html.Strong("Oracle Text: "),
+                        html.Br(),
+                        html.Span(card_data.get('oracle_text', 'N/A'), style={'fontStyle': 'italic'})
+                    ]),
+                ], style={'flex': '1'})
+            ], style={'display': 'flex', 'alignItems': 'flex-start'}),
+            html.Div("✅ Commander selected! Set your requirements and click 'Build Deck'.",
+                    style={'color': '#27ae60', 'fontWeight': 'bold', 'marginTop': '12px'})
+        ], style={
+            'padding': '16px',
+            'backgroundColor': '#d5f4e6',
+            'borderRadius': '6px',
+            'border': '2px solid #27ae60'
+        })
+
+        return result_div, card_data
+
+    except Exception as e:
+        error_msg = str(e)
+        return html.Div(
+            f"❌ Error: {error_msg}",
+            style={'color': '#e74c3c', 'padding': '12px', 'backgroundColor': '#fadbd8', 'borderRadius': '4px'}
+        ), None
+
+
+@app.callback(
+    [Output('builder-results', 'children'),
+     Output('builder-status-message', 'children'),
+     Output('built-deck-store', 'data')],
+    Input('build-deck-button', 'n_clicks'),
+    [State('selected-commander-store', 'data'),
+     State('builder-lands-input', 'value'),
+     State('builder-ramp-input', 'value'),
+     State('builder-draw-input', 'value'),
+     State('builder-removal-input', 'value'),
+     State('builder-wipes-input', 'value')],
+    prevent_initial_call=True
+)
+def build_commander_deck(n_clicks, commander_data, num_lands, num_ramp, num_draw, num_removal, num_wipes):
+    """Build a Commander deck based on requirements"""
+    if not commander_data:
+        return html.Div(
+            "Please select a commander first",
+            style={'color': '#e74c3c', 'padding': '12px', 'backgroundColor': '#fadbd8', 'borderRadius': '4px'}
+        ), "", None
+
+    try:
+        # Build the deck
+        builder = CommanderDeckBuilder()
+
+        result = builder.build_deck(
+            commander=commander_data,
+            num_lands=num_lands,
+            num_ramp=num_ramp,
+            num_draw=num_draw,
+            num_removal_single=num_removal,
+            num_removal_mass=num_wipes
+        )
+
+        # Display results
+        deck_cards = result['cards']
+        mana_curve = result['mana_curve']
+        color_dist = result['color_distribution']
+        composition = result['deck_composition']
+        validation = result['validation']
+
+        # Create mana curve chart
+        curve_data = mana_curve['distribution']
+        mana_curve_fig = go.Figure(data=[
+            go.Bar(
+                x=list(curve_data.keys()),
+                y=list(curve_data.values()),
+                marker_color='#3498db'
+            )
+        ])
+        mana_curve_fig.update_layout(
+            title='Mana Curve',
+            xaxis_title='Mana Value',
+            yaxis_title='Number of Cards',
+            height=300
+        )
+
+        # Create deck list
+        deck_list_items = []
+        for card in sorted(deck_cards, key=lambda c: (c.get('cmc', 0), c['name'])):
+            deck_list_items.append(
+                html.Div([
+                    html.Span(f"1x ", style={'fontWeight': 'bold', 'marginRight': '8px'}),
+                    html.Span(card['name'], style={'flex': '1'}),
+                    html.Span(f"({card.get('type_line', 'Unknown')})",
+                             style={'color': '#7f8c8d', 'fontSize': '12px', 'marginLeft': '8px'})
+                ], style={
+                    'display': 'flex',
+                    'padding': '4px 8px',
+                    'borderBottom': '1px solid #ecf0f1'
+                })
+            )
+
+        results_div = html.Div([
+            # Validation
+            html.Div([
+                html.H4("Deck Validation", style={'marginBottom': '12px'}),
+                html.Div(
+                    f"✅ Deck is valid!" if validation['is_valid'] else f"❌ Deck has errors",
+                    style={
+                        'color': '#27ae60' if validation['is_valid'] else '#e74c3c',
+                        'fontWeight': 'bold',
+                        'marginBottom': '8px'
+                    }
+                ),
+                html.Div([
+                    html.P(error, style={'color': '#e74c3c'})
+                    for error in validation['errors']
+                ]) if validation['errors'] else None,
+                html.Div([
+                    html.P(f"⚠️ {warning}", style={'color': '#f39c12'})
+                    for warning in validation['warnings']
+                ]) if validation['warnings'] else None
+            ], style={
+                'backgroundColor': '#fff',
+                'padding': '16px',
+                'borderRadius': '6px',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                'marginBottom': '20px'
+            }),
+
+            # Statistics
+            html.Div([
+                html.H4("Deck Statistics", style={'marginBottom': '12px'}),
+                html.Div([
+                    html.Div([
+                        html.P([html.Strong("Total Cards: "), str(len(deck_cards))]),
+                        html.P([html.Strong("Average CMC: "), f"{mana_curve['average_cmc']:.2f}"]),
+                        html.P([html.Strong("Total Nonlands: "), str(mana_curve['total_nonlands'])]),
+                    ], style={'flex': '1'}),
+                    html.Div([
+                        html.P([html.Strong("Composition:")]),
+                        html.Ul([
+                            html.Li(f"{card_type}: {count}")
+                            for card_type, count in composition['by_type'].items()
+                        ])
+                    ], style={'flex': '1'}),
+                    html.Div([
+                        html.P([html.Strong("Color Distribution:")]),
+                        html.Ul([
+                            html.Li(f"{color}: {count}")
+                            for color, count in color_dist['counts'].items()
+                        ])
+                    ], style={'flex': '1'})
+                ], style={'display': 'flex', 'gap': '20px'})
+            ], style={
+                'backgroundColor': '#fff',
+                'padding': '16px',
+                'borderRadius': '6px',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                'marginBottom': '20px'
+            }),
+
+            # Mana Curve
+            html.Div([
+                html.H4("Mana Curve", style={'marginBottom': '12px'}),
+                dcc.Graph(figure=mana_curve_fig)
+            ], style={
+                'backgroundColor': '#fff',
+                'padding': '16px',
+                'borderRadius': '6px',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                'marginBottom': '20px'
+            }),
+
+            # Deck List
+            html.Div([
+                html.H4(f"Deck List ({len(deck_cards)} cards)", style={'marginBottom': '12px'}),
+                html.Div(
+                    deck_list_items,
+                    style={
+                        'maxHeight': '500px',
+                        'overflowY': 'auto',
+                        'border': '1px solid #ecf0f1',
+                        'borderRadius': '4px'
+                    }
+                )
+            ], style={
+                'backgroundColor': '#fff',
+                'padding': '16px',
+                'borderRadius': '6px',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'
+            })
+        ])
+
+        success_msg = html.Span(
+            f"✅ Deck built successfully! ({len(deck_cards)} cards)",
+            style={'color': '#27ae60', 'fontWeight': 'bold'}
+        )
+
+        return results_div, success_msg, result
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        error_div = html.Div(
+            f"❌ Error building deck: {str(e)}",
+            style={'color': '#e74c3c', 'padding': '12px', 'backgroundColor': '#fadbd8', 'borderRadius': '4px'}
+        )
+        error_msg = html.Span(f"Error: {str(e)}", style={'color': '#e74c3c'})
+        return error_div, error_msg, None
 
 
 if __name__ == '__main__':
