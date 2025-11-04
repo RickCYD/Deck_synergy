@@ -708,16 +708,16 @@ app.layout = html.Div([
                         layout={
                             'name': 'cose',
                             'animate': False,
-                            'nodeRepulsion': 25000,
-                            'idealEdgeLength': 250,
-                            'edgeElasticity': 100,
+                            'nodeRepulsion': 100000,
+                            'idealEdgeLength': 400,
+                            'edgeElasticity': 50,
                             'nestingFactor': 0.1,
-                            'gravity': 1,
+                            'gravity': 0.5,
                             'numIter': 2500,
                             'initialTemp': 500,
                             'coolingFactor': 0.95,
                             'minTemp': 1.0,
-                            'nodeOverlap': 100
+                            'nodeOverlap': 200
                         },
                         style={'width': '100%', 'height': '650px'},
                         elements=[],
@@ -1549,8 +1549,9 @@ def run_mana_simulation(n_clicks, deck_file, iterations, turns, play_or_draw, re
 
 # Callback to update graph layout
 @app.callback(
-    Output('card-graph', 'layout'),
-    Input('layout-selector', 'value')
+    Output('card-graph', 'layout', allow_duplicate=True),
+    Input('layout-selector', 'value'),
+    prevent_initial_call=True
 )
 def update_layout(layout_name):
     """Update graph layout"""
