@@ -18,7 +18,8 @@ from src.api import recommendations
 from src.models.deck import Deck
 from src.models.deck_session import DeckEditingSession
 from src.synergy_engine.analyzer import analyze_deck_synergies
-from src.synergy_engine.incremental_analyzer import analyze_card_addition, merge_synergies
+from src.synergy_engine.incremental_analyzer import analyze_card_addition, merge_synergies, analyze_card_removal
+from src.analysis.weakness_detector import DeckWeaknessAnalyzer
 from src.utils.graph_builder import build_graph_elements
 from src.utils.card_rankings import (
     calculate_weighted_degree_centrality,
@@ -246,6 +247,201 @@ def apply_role_filter_styles(
         })
 
     return stylesheet
+
+
+def build_weakness_analysis_ui(cards: List[Dict]) -> html.Div:
+    """
+    Build UI component for deck weakness analysis
+
+    Args:
+        cards: List of card dictionaries
+
+    Returns:
+        html.Div containing weakness analysis visualization
+    """
+    analyzer = DeckWeaknessAnalyzer()
+    analysis = analyzer.analyze_deck(cards)
+
+    role_dist = analysis['role_distribution']
+    weaknesses = analysis['weaknesses']
+    strengths = analysis['strengths']
+    overall_score = analysis['overall_score']
+    suggestions = analysis['suggestions']
+
+    # Overall score indicator
+    score_color = '#27ae60' if overall_score >= 75 else '#f39c12' if overall_score >= 50 else '#e74c3c'
+    score_display = html.Div([
+        html.Span("Overall Score: ", style={'fontWeight': 'bold', 'fontSize': '16px'}),
+        html.Span(
+            f"{overall_score}/100",
+            style={
+                'fontWeight': 'bold',
+                'fontSize': '20px',
+                'color': score_color,
+                'marginLeft': '8px'
+            }
+        )
+    ], style={'marginBottom': '20px', 'padding': '12px', 'backgroundColor': '#f8f9fa', 'borderRadius': '4px'})
+
+    # Role distribution bars
+    role_bars = []
+    for role, data in sorted(role_dist.items(), key=lambda x: x[1]['count'], reverse=True):
+        count = data['count']
+        status = data['status']
+        ranges = analyzer.RECOMMENDED_RANGES[role]
+
+        # Calculate bar width percentage (relative to max range)
+        max_range = ranges['max'] + 2
+        bar_width_pct = min(100, (count / max_range) * 100)
+
+        # Get status color
+        status_color = analyzer.get_role_status_color(status)
+
+        # Create bar with markers for min/ideal/max
+        ideal_pos = (ranges['ideal'] / max_range) * 100
+        min_pos = (ranges['min'] / max_range) * 100
+        max_pos = (ranges['max'] / max_range) * 100
+
+        role_bars.append(html.Div([
+            # Role name and count
+            html.Div([
+                html.Span(
+                    role.replace('_', ' ').title(),
+                    style={'fontWeight': 'bold', 'flex': '1', 'fontSize': '14px'}
+                ),
+                html.Span(
+                    f"{count} cards",
+                    style={'color': status_color, 'fontWeight': 'bold', 'fontSize': '14px'}
+                )
+            ], style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '4px'}),
+
+            # Bar container
+            html.Div([
+                # Background bar with range markers
+                html.Div([
+                    # Min marker
+                    html.Div(style={
+                        'position': 'absolute',
+                        'left': f'{min_pos}%',
+                        'height': '100%',
+                        'width': '2px',
+                        'backgroundColor': '#95a5a6',
+                        'zIndex': 1
+                    }),
+                    # Ideal marker
+                    html.Div(style={
+                        'position': 'absolute',
+                        'left': f'{ideal_pos}%',
+                        'height': '100%',
+                        'width': '2px',
+                        'backgroundColor': '#27ae60',
+                        'zIndex': 1
+                    }),
+                    # Max marker
+                    html.Div(style={
+                        'position': 'absolute',
+                        'left': f'{max_pos}%',
+                        'height': '100%',
+                        'width': '2px',
+                        'backgroundColor': '#95a5a6',
+                        'zIndex': 1
+                    }),
+                    # Actual bar
+                    html.Div(style={
+                        'width': f'{bar_width_pct}%',
+                        'height': '100%',
+                        'backgroundColor': status_color,
+                        'transition': 'width 0.3s ease',
+                        'zIndex': 2
+                    })
+                ], style={
+                    'position': 'relative',
+                    'width': '100%',
+                    'height': '24px',
+                    'backgroundColor': '#ecf0f1',
+                    'borderRadius': '4px',
+                    'overflow': 'hidden'
+                })
+            ], style={'marginBottom': '4px'}),
+
+            # Range indicators
+            html.Div([
+                html.Span(
+                    f"Min: {ranges['min']} | Ideal: {ranges['ideal']} | Max: {ranges['max']}",
+                    style={'fontSize': '11px', 'color': '#7f8c8d'}
+                )
+            ], style={'marginBottom': '8px'})
+
+        ], style={'marginBottom': '16px'}))
+
+    # Weaknesses section
+    weaknesses_section = None
+    if weaknesses:
+        weakness_items = []
+        for w in weaknesses[:5]:  # Show top 5 weaknesses
+            severity_color = {
+                'high': '#e74c3c',
+                'medium': '#f39c12',
+                'low': '#95a5a6'
+            }.get(w['severity'], '#95a5a6')
+
+            severity_icon = {
+                'high': '⚠️',
+                'medium': '⚡',
+                'low': 'ℹ️'
+            }.get(w['severity'], 'ℹ️')
+
+            weakness_items.append(html.Div([
+                html.Span(severity_icon, style={'marginRight': '8px'}),
+                html.Span(w['message'], style={'flex': '1'}),
+                html.Span(
+                    w['severity'].upper(),
+                    style={
+                        'fontSize': '11px',
+                        'fontWeight': 'bold',
+                        'color': severity_color,
+                        'padding': '2px 8px',
+                        'backgroundColor': f"{severity_color}22",
+                        'borderRadius': '3px'
+                    }
+                )
+            ], style={
+                'display': 'flex',
+                'alignItems': 'center',
+                'padding': '8px',
+                'marginBottom': '8px',
+                'backgroundColor': '#f8f9fa',
+                'borderRadius': '4px',
+                'borderLeft': f'4px solid {severity_color}'
+            }))
+
+        weaknesses_section = html.Div([
+            html.H5("⚠️ Areas for Improvement", style={'marginBottom': '12px', 'color': '#e74c3c'}),
+            html.Div(weakness_items)
+        ], style={'marginBottom': '20px'})
+
+    # Suggestions section
+    suggestions_section = None
+    if suggestions:
+        suggestion_items = [
+            html.Li(suggestion, style={'marginBottom': '8px'})
+            for suggestion in suggestions
+        ]
+
+        suggestions_section = html.Div([
+            html.H5("💡 Suggestions", style={'marginBottom': '12px', 'color': '#3498db'}),
+            html.Ul(suggestion_items, style={'paddingLeft': '20px'})
+        ])
+
+    # Combine all sections
+    return html.Div([
+        score_display,
+        html.H5("Role Distribution", style={'marginBottom': '12px', 'marginTop': '8px'}),
+        html.Div(role_bars),
+        weaknesses_section,
+        suggestions_section
+    ])
+
 
 # Define the app layout
 app.layout = html.Div([
@@ -788,8 +984,9 @@ app.layout = html.Div([
     dcc.Store(id='tooltip-init-store'),  # Dummy store for tooltip initialization
     dcc.Store(id='selected-commander-store'),
     dcc.Store(id='built-deck-store'),
-    dcc.Store(id='deck-session-store'),  # NEW - Deck editing session state
-    dcc.Store(id='selected-card-for-removal'),  # NEW - Track which card to remove
+    dcc.Store(id='deck-session-store'),  # Deck editing session state
+    dcc.Store(id='selected-card-for-removal'),  # Track which card to remove
+    dcc.Store(id='weakness-analysis-store'),  # Deck weakness analysis data
     dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True)
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
 
@@ -2633,6 +2830,18 @@ def build_commander_deck(n_clicks, commander_data, num_lands, num_ramp, num_draw
                         ])
                     ], style={'flex': '1'})
                 ], style={'display': 'flex', 'gap': '20px'})
+            ], style={
+                'backgroundColor': '#fff',
+                'padding': '16px',
+                'borderRadius': '6px',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                'marginBottom': '20px'
+            }),
+
+            # Deck Weakness Analysis
+            html.Div([
+                html.H4("Deck Composition Analysis", style={'marginBottom': '16px'}),
+                build_weakness_analysis_ui(deck_cards)
             ], style={
                 'backgroundColor': '#fff',
                 'padding': '16px',
