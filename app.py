@@ -2134,18 +2134,35 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
 
                         replacement_items.append(html.Div([
                             html.Div([
-                                html.Span(f"{i}. ", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginRight': '4px'}),
-                                html.Strong(rep_name, style={'fontSize': '12px', 'color': '#27ae60'}),
-                                html.Span(
-                                    f" {score_change:+d}",
+                                html.Div([
+                                    html.Span(f"{i}. ", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginRight': '4px'}),
+                                    html.Strong(rep_name, style={'fontSize': '12px', 'color': '#27ae60'}),
+                                    html.Span(
+                                        f" {score_change:+d}",
+                                        style={
+                                            'fontSize': '11px',
+                                            'fontWeight': 'bold',
+                                            'color': '#27ae60' if score_change > 0 else '#e74c3c',
+                                            'marginLeft': '6px'
+                                        }
+                                    )
+                                ], style={'flex': '1', 'marginBottom': '3px'}),
+                                html.Button(
+                                    '⇄ Swap',
+                                    id={'type': 'swap-card-btn', 'old': card_name, 'new': rep_name},
+                                    n_clicks=0,
                                     style={
-                                        'fontSize': '11px',
-                                        'fontWeight': 'bold',
-                                        'color': '#27ae60' if score_change > 0 else '#e74c3c',
-                                        'marginLeft': '6px'
+                                        'padding': '2px 8px',
+                                        'backgroundColor': '#27ae60',
+                                        'color': 'white',
+                                        'border': 'none',
+                                        'borderRadius': '3px',
+                                        'cursor': 'pointer',
+                                        'fontSize': '10px',
+                                        'fontWeight': 'bold'
                                     }
                                 )
-                            ], style={'marginBottom': '3px'}),
+                            ], style={'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'marginBottom': '3px'}),
                             html.Div([
                                 html.Span(f"{type_match_icon} {rep_type}", style={'fontSize': '10px', 'color': '#7f8c8d', 'marginRight': '8px'}),
                                 html.Span(cmc_text, style={'fontSize': '10px', 'color': '#95a5a6'})
@@ -3361,6 +3378,146 @@ def handle_remove_card_from_deck(n_clicks, card_name, session_data, deck_file):
         return (
             dash.no_update,
             f"❌ Error removing card: {str(e)}",
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update
+        )
+
+
+@app.callback(
+    [Output('card-graph', 'elements', allow_duplicate=True),
+     Output('status-message', 'children', allow_duplicate=True),
+     Output('unsaved-changes-indicator', 'children', allow_duplicate=True),
+     Output('unsaved-changes-indicator', 'style', allow_duplicate=True),
+     Output('deck-session-store', 'data', allow_duplicate=True),
+     Output('save-deck-button', 'style', allow_duplicate=True),
+     Output('undo-button', 'disabled', allow_duplicate=True),
+     Output('redo-button', 'disabled', allow_duplicate=True)],
+    [Input({'type': 'swap-card-btn', 'old': ALL, 'new': ALL}, 'n_clicks')],
+    [State('deck-session-store', 'data'),
+     State('current-deck-file-store', 'data')],
+    prevent_initial_call=True
+)
+def handle_card_swap(n_clicks_list, session_data, deck_file):
+    """Handle swapping one card for another (remove old, add new)"""
+    if not any(n_clicks_list) or not deck_file:
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+    # Find which button was clicked
+    ctx = callback_context
+    if not ctx.triggered:
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+    try:
+        # Parse button ID to get old and new card names
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        import json as json_lib
+        button_data = json_lib.loads(button_id)
+        old_card_name = button_data['old']
+        new_card_name = button_data['new']
+
+        print(f"[SWAP] Swapping {old_card_name} for {new_card_name}")
+
+        # Load or create session
+        session = load_or_create_session(session_data, deck_file)
+
+        # Get the new card data
+        from src.api import local_cards
+        if not local_cards.is_loaded():
+            local_cards.load_local_database()
+
+        new_card = local_cards.get_card_by_name(new_card_name)
+        if not new_card:
+            return (
+                dash.no_update,
+                f"❌ Error: Card '{new_card_name}' not found",
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update
+            )
+
+        # Convert to dict if needed
+        new_card = dict(new_card)
+
+        # Remove old card first
+        remove_result = session.remove_card(old_card_name)
+        if not remove_result['success']:
+            return (
+                dash.no_update,
+                f"❌ Error removing {old_card_name}: {remove_result.get('error', 'Unknown error')}",
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update
+            )
+
+        # Add new card
+        add_result = session.add_card(new_card)
+        if not add_result['success']:
+            return (
+                dash.no_update,
+                f"❌ Error adding {new_card_name}: {add_result.get('error', 'Unknown error')}",
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update
+            )
+
+        # Update synergies (full re-analysis for now - could optimize later)
+        print(f"[SWAP] Re-analyzing synergies for {len(session.current_deck.cards)} cards...")
+        synergies = analyze_deck_synergies(session.current_deck.cards)
+        session.current_deck.synergies = synergies
+
+        # Build new graph
+        new_elements = build_graph_elements(session.current_deck.cards, synergies)
+
+        # Show save button and unsaved indicator
+        unsaved_indicator_style = {'display': 'block', 'color': '#f39c12', 'fontStyle': 'italic'}
+        save_button_style = {
+            'padding': '8px 12px',
+            'backgroundColor': '#27ae60',
+            'color': 'white',
+            'border': 'none',
+            'cursor': 'pointer',
+            'fontSize': '14px',
+            'fontWeight': 'bold',
+            'borderRadius': '4px',
+            'marginBottom': '12px',
+            'marginLeft': '12px',
+            'display': 'inline-block'
+        }
+
+        # Update undo/redo buttons
+        undo_disabled = session.change_index < 0
+        redo_disabled = session.change_index >= len(session.change_history) - 1
+
+        return (
+            new_elements,
+            f"✅ Swapped {old_card_name} → {new_card_name}",
+            "⚠️ Unsaved changes",
+            unsaved_indicator_style,
+            session.to_dict(),
+            save_button_style,
+            undo_disabled,
+            redo_disabled
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return (
+            dash.no_update,
+            f"❌ Error swapping cards: {str(e)}",
+            dash.no_update,
+            dash.no_update,
             dash.no_update,
             dash.no_update,
             dash.no_update,
