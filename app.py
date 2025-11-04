@@ -2490,7 +2490,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             'minTemp': 1.0,
             'nodeOverlap': 100
         }
-        return base_stylesheet, dash.no_update, layout
+        return base_stylesheet, dash.no_update, layout, None
 
     stylesheet = list(base_stylesheet)
 
