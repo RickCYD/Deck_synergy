@@ -3636,7 +3636,7 @@ def handle_card_swap(n_clicks_list, session_data, deck_file):
      Output('unsaved-changes-indicator', 'children', allow_duplicate=True),
      Output('unsaved-changes-indicator', 'style', allow_duplicate=True),
      Output('save-deck-button', 'style', allow_duplicate=True),
-     Output('deck-selector', 'options'),
+     Output('deck-selector', 'options', allow_duplicate=True),
      Output('current-deck-file-store', 'data', allow_duplicate=True)],
     [Input('save-deck-button', 'n_clicks')],
     [State('deck-session-store', 'data')],
