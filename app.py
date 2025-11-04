@@ -422,6 +422,25 @@ app.layout = html.Div([
                     'marginBottom': '12px',
                     'marginLeft': '12px'
                 }
+            ),
+            html.Button(
+                '💾 Save Deck',
+                id='save-deck-button',
+                n_clicks=0,
+                style={
+                    'padding': '8px 12px',
+                    'backgroundColor': '#27ae60',
+                    'color': 'white',
+                    'border': 'none',
+                    'cursor': 'pointer',
+                    'fontSize': '14px',
+                    'fontWeight': 'bold',
+                    'borderRadius': '4px',
+                    'marginBottom': '12px',
+                    'marginLeft': '12px',
+                    'display': 'none'  # Hidden by default, shown when there are changes
+                },
+                className='save-deck-btn'
             )
         ], style={'display': 'flex', 'gap': '12px'}),
     ], style={'padding': '0 20px', 'marginTop': '16px'}),
@@ -2618,7 +2637,8 @@ def load_or_create_session(session_data, deck_file):
      Output('status-message', 'children', allow_duplicate=True),
      Output('unsaved-changes-indicator', 'children'),
      Output('unsaved-changes-indicator', 'style'),
-     Output('deck-session-store', 'data')],
+     Output('deck-session-store', 'data'),
+     Output('save-deck-button', 'style')],
     [Input({'type': 'add-card-btn', 'index': ALL}, 'n_clicks')],
     [State('deck-session-store', 'data'),
      State('current-deck-file-store', 'data'),
@@ -2629,14 +2649,14 @@ def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elem
     """Handle adding a card to the deck from recommendations"""
     ctx = callback_context
     if not ctx.triggered:
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     # Get which button was clicked
     triggered_id = ctx.triggered[0]['prop_id']
 
     # Check if any button was actually clicked (n_clicks > 0)
     if not any(n_clicks_list):
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     # Parse the card name from the button ID
     import json as json_lib
@@ -2647,7 +2667,7 @@ def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elem
         card_name = button_id['index']
     except Exception as e:
         print(f"[DEBUG] Error parsing button ID: {e}")
-        return dash.no_update, "❌ Error: Could not identify which card to add", dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, "❌ Error: Could not identify which card to add", dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     print(f"[DEBUG] Add card triggered for: {card_name}")
 
@@ -2658,6 +2678,7 @@ def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elem
         return (
             dash.no_update,
             "❌ Please load a deck first",
+            dash.no_update,
             dash.no_update,
             dash.no_update,
             dash.no_update
@@ -2672,6 +2693,7 @@ def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elem
             return (
                 dash.no_update,
                 f"❌ Could not find card: {card_name}",
+                dash.no_update,
                 dash.no_update,
                 dash.no_update,
                 dash.no_update
@@ -2698,6 +2720,7 @@ def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elem
                 f"❌ {result['error']}",
                 dash.no_update,
                 dash.no_update,
+                dash.no_update,
                 dash.no_update
             )
 
@@ -2720,6 +2743,21 @@ def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elem
         unsaved_indicator = "⚠️ Unsaved changes"
         unsaved_style = {'display': 'inline', 'color': '#f39c12', 'fontWeight': 'bold', 'marginLeft': '12px'}
 
+        # Show Save Deck button
+        save_button_style = {
+            'padding': '8px 12px',
+            'backgroundColor': '#27ae60',
+            'color': 'white',
+            'border': 'none',
+            'cursor': 'pointer',
+            'fontSize': '14px',
+            'fontWeight': 'bold',
+            'borderRadius': '4px',
+            'marginBottom': '12px',
+            'marginLeft': '12px',
+            'display': 'inline-block'  # Make visible
+        }
+
         # Serialize session
         session_dict = session.to_dict()
 
@@ -2730,7 +2768,8 @@ def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elem
             status_msg,
             unsaved_indicator,
             unsaved_style,
-            session_dict
+            session_dict,
+            save_button_style
         )
 
     except Exception as e:
@@ -2739,6 +2778,85 @@ def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elem
         return (
             dash.no_update,
             f"❌ Error adding card: {str(e)}",
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update
+        )
+
+
+@app.callback(
+    [Output('status-message', 'children', allow_duplicate=True),
+     Output('unsaved-changes-indicator', 'children', allow_duplicate=True),
+     Output('unsaved-changes-indicator', 'style', allow_duplicate=True),
+     Output('save-deck-button', 'style', allow_duplicate=True),
+     Output('deck-selector', 'options'),
+     Output('current-deck-file-store', 'data', allow_duplicate=True)],
+    [Input('save-deck-button', 'n_clicks')],
+    [State('deck-session-store', 'data')],
+    prevent_initial_call=True
+)
+def handle_save_deck(n_clicks, session_data):
+    """Save the modified deck to a file"""
+    if not n_clicks or not session_data:
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+    try:
+        # Load session
+        session = DeckEditingSession.from_dict(session_data)
+
+        # Save the deck
+        result = session.save()
+
+        if result['success']:
+            # Hide unsaved changes indicator
+            unsaved_style = {'display': 'none'}
+
+            # Hide save button
+            save_button_style = {
+                'padding': '8px 12px',
+                'backgroundColor': '#27ae60',
+                'color': 'white',
+                'border': 'none',
+                'cursor': 'pointer',
+                'fontSize': '14px',
+                'fontWeight': 'bold',
+                'borderRadius': '4px',
+                'marginBottom': '12px',
+                'marginLeft': '12px',
+                'display': 'none'
+            }
+
+            # Update deck selector with new file
+            new_deck_options = get_deck_options()
+
+            status_msg = f"✅ Deck saved: {session.current_deck.name}"
+
+            return (
+                status_msg,
+                "",
+                unsaved_style,
+                save_button_style,
+                new_deck_options,
+                result['file_path']
+            )
+        else:
+            return (
+                f"❌ {result['error']}",
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update
+            )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return (
+            f"❌ Error saving deck: {str(e)}",
+            dash.no_update,
+            dash.no_update,
             dash.no_update,
             dash.no_update,
             dash.no_update
