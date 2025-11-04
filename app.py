@@ -20,6 +20,7 @@ from src.models.deck_session import DeckEditingSession
 from src.synergy_engine.analyzer import analyze_deck_synergies
 from src.synergy_engine.incremental_analyzer import analyze_card_addition, merge_synergies, analyze_card_removal
 from src.analysis.weakness_detector import DeckWeaknessAnalyzer
+from src.analysis.impact_analyzer import RecommendationImpactAnalyzer
 from src.utils.graph_builder import build_graph_elements
 from src.utils.card_rankings import (
     calculate_weighted_degree_centrality,
@@ -1777,6 +1778,16 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             print(f"[DEBUG] Got {len(recommended_cards)} recommendations and scored {len(deck_scores)} deck cards")
             print(f"[DEBUG] Total deck synergy: {total_synergy}")
 
+            # Add impact analysis to recommendations
+            print(f"[DEBUG] Running impact analysis for recommendations...")
+            impact_analyzer = RecommendationImpactAnalyzer()
+            recommended_cards = impact_analyzer.analyze_batch_recommendations(
+                recommended_cards,
+                deck_obj.get('cards', []),
+                limit=10
+            )
+            print(f"[DEBUG] Impact analysis complete")
+
             # Build recommendations UI (detailed for side panel)
             rec_items = []
             for idx, card in enumerate(recommended_cards, 1):
@@ -1792,6 +1803,12 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 if len(oracle_text) > 200:
                     oracle_text = oracle_text[:200] + '...'
 
+                # Get impact analysis data
+                impact = card.get('impact_analysis', {})
+                impact_rating = impact.get('impact_rating', 'low')
+                impact_icon = impact_analyzer.get_impact_icon(impact_rating) if impact else ''
+                impact_color = impact_analyzer.get_impact_color(impact_rating) if impact else '#95a5a6'
+
                 # Get replacement suggestions (logic kept for future use)
                 # TODO: Implement smart single-card replacement that considers:
                 # - Card type matching (creature for creature, etc.)
@@ -1805,8 +1822,69 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                     html.Div([
                         html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
                         html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
-                        html.Span(f" ({score:.0f})", style={'fontSize': '11px', 'color': '#9b59b6', 'marginLeft': '4px'})
-                    ], style={'marginBottom': '4px'}),
+                        html.Span(f" ({score:.0f})", style={'fontSize': '11px', 'color': '#9b59b6', 'marginLeft': '4px'}),
+                        # Impact badge
+                        html.Span(
+                            f"{impact_icon} {impact_rating.upper()}",
+                            style={
+                                'fontSize': '10px',
+                                'fontWeight': 'bold',
+                                'color': 'white',
+                                'backgroundColor': impact_color,
+                                'padding': '2px 6px',
+                                'borderRadius': '3px',
+                                'marginLeft': '8px'
+                            }
+                        ) if impact else None
+                    ], style={'marginBottom': '6px', 'display': 'flex', 'alignItems': 'center'}),
+
+                    # Impact details section
+                    html.Div([
+                        # Score change
+                        html.Div([
+                            html.Span("Score: ", style={'fontSize': '11px', 'fontWeight': 'bold', 'color': '#7f8c8d'}),
+                            html.Span(
+                                f"{impact.get('before_score', 0)} → {impact.get('after_score', 0)} ",
+                                style={'fontSize': '11px', 'color': '#2c3e50'}
+                            ),
+                            html.Span(
+                                f"({impact.get('score_change', 0):+d})",
+                                style={
+                                    'fontSize': '11px',
+                                    'fontWeight': 'bold',
+                                    'color': '#27ae60' if impact.get('score_change', 0) > 0 else '#e74c3c'
+                                }
+                            )
+                        ], style={'marginBottom': '4px'}),
+
+                        # Roles filled
+                        html.Div([
+                            html.Span("Fills: ", style={'fontSize': '11px', 'fontWeight': 'bold', 'color': '#7f8c8d'}),
+                            html.Span(
+                                ', '.join(r.replace('_', ' ').title() for r in impact.get('roles_filled', [])),
+                                style={'fontSize': '11px', 'color': '#3498db'}
+                            )
+                        ], style={'marginBottom': '4px'}) if impact.get('roles_filled') else None,
+
+                        # Weaknesses addressed
+                        html.Div([
+                            html.Div("⚠️ Addresses:", style={'fontSize': '11px', 'fontWeight': 'bold', 'color': '#e74c3c', 'marginBottom': '2px'}),
+                            html.Ul([
+                                html.Li(
+                                    f"[{w['severity'].upper()}] {w['improvement']}",
+                                    style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'}
+                                )
+                                for w in impact.get('weaknesses_addressed', [])[:2]  # Show top 2
+                            ], style={'marginTop': '0px', 'marginBottom': '4px', 'paddingLeft': '16px'})
+                        ]) if impact.get('weaknesses_addressed') else None
+
+                    ], style={
+                        'backgroundColor': '#f8f9fa',
+                        'padding': '8px',
+                        'borderRadius': '4px',
+                        'marginBottom': '6px',
+                        'borderLeft': f'3px solid {impact_color}'
+                    }) if impact else None,
 
                     # Type line
                     html.Div(type_line, style={'fontSize': '11px', 'color': '#34495e', 'fontStyle': 'italic', 'marginBottom': '4px'}),
