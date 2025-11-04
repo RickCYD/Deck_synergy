@@ -735,6 +735,7 @@ app.layout = html.Div([
     dcc.Store(id='selected-commander-store'),
     dcc.Store(id='built-deck-store'),
     dcc.Store(id='deck-session-store'),  # NEW - Deck editing session state
+    dcc.Store(id='selected-card-for-removal'),  # NEW - Track which card to remove
     dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True)
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
 
@@ -1468,7 +1469,8 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
 @app.callback(
     [Output('card-graph', 'stylesheet'),
      Output('info-panel', 'children'),
-     Output('card-graph', 'layout', allow_duplicate=True)],
+     Output('card-graph', 'layout', allow_duplicate=True),
+     Output('selected-card-for-removal', 'data')],
     [Input('card-graph', 'tapNodeData'),
      Input('card-graph', 'tapEdgeData'),
      Input('active-role-filter', 'data'),
@@ -1484,7 +1486,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
     """Handle node/edge selection, role filter, recommendations, and update highlighting."""
     ctx = callback_context
     if not ctx.triggered:
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     triggered_prop = ctx.triggered[0]['prop_id']
 
@@ -1663,7 +1665,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 weakest_cards_section
             ])
 
-            return dash.no_update, recommendations_panel, dash.no_update
+            return dash.no_update, recommendations_panel, dash.no_update, dash.no_update
 
         except Exception as e:
             print(f"[DEBUG] Error generating recommendations: {e}")
@@ -1847,7 +1849,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 'nodeOverlap': 100
             }
 
-            return stylesheet, cut_panel, layout
+            return stylesheet, cut_panel, layout, node_data.get("label") if node_data else None
 
         except Exception as e:
             print(f"[DEBUG] Error analyzing cards to cut: {e}")
@@ -1990,7 +1992,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 'nodeOverlap': 100
             }
 
-            return stylesheet, top_panel, layout
+            return stylesheet, top_panel, layout, node_data.get("label") if node_data else None
 
         except Exception as e:
             print(f"[DEBUG] Error showing top cards: {e}")
@@ -2004,8 +2006,8 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
     if elements is None:
         if triggered_prop == 'active-role-filter.data':
             stylesheet = apply_role_filter_styles(get_base_stylesheet(), active_filter, role_summary, [])
-            return stylesheet, dash.no_update, dash.no_update
-        return dash.no_update, dash.no_update, dash.no_update
+            return stylesheet, dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     base_stylesheet = get_base_stylesheet()
     base_stylesheet = apply_role_filter_styles(base_stylesheet, active_filter, role_summary, elements)
@@ -2233,6 +2235,32 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 html.Ul(roles_list_items, style={'marginLeft': '20px'})
             ])
 
+        # Add Remove Card button (unless it's the commander)
+        is_commander = node_data.get('type') == 'commander'
+        if not is_commander:
+            info_children.extend([
+                html.Hr(),
+                html.Button(
+                    '🗑️ Remove from Deck',
+                    id='remove-card-button',
+                    n_clicks=0,
+                    **{'data-card-name': node_data.get('label', '')},  # Store card name
+                    style={
+                        'width': '100%',
+                        'padding': '12px',
+                        'backgroundColor': '#e74c3c',
+                        'color': 'white',
+                        'border': 'none',
+                        'borderRadius': '6px',
+                        'cursor': 'pointer',
+                        'fontSize': '14px',
+                        'fontWeight': 'bold',
+                        'marginTop': '10px',
+                        'marginBottom': '10px'
+                    }
+                )
+            ])
+
         info_children.extend([
             html.Hr(),
             html.H4(f"Synergies ({len(connected_edges)} connections):", style={'marginTop': '20px'}),
@@ -2263,7 +2291,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             'nodeOverlap': 100
         }
 
-        return stylesheet, info_panel, layout
+        return stylesheet, info_panel, layout, node_data.get("label") if node_data else None
 
     if edge_data:
         edge_id = edge_data['id']
@@ -2337,9 +2365,9 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             'nodeOverlap': 100
         }
 
-        return stylesheet, info_panel, layout
+        return stylesheet, info_panel, layout, node_data.get("label") if node_data else None
 
-    return base_stylesheet, html.Div("Click on a card or synergy edge to see details"), dash.no_update
+    return base_stylesheet, html.Div("Click on a card or synergy edge to see details"), dash.no_update, dash.no_update, None
 
 
 # ============================================================================
@@ -2778,6 +2806,117 @@ def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elem
         return (
             dash.no_update,
             f"❌ Error adding card: {str(e)}",
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update
+        )
+
+
+@app.callback(
+    [Output('card-graph', 'elements', allow_duplicate=True),
+     Output('status-message', 'children', allow_duplicate=True),
+     Output('unsaved-changes-indicator', 'children', allow_duplicate=True),
+     Output('unsaved-changes-indicator', 'style', allow_duplicate=True),
+     Output('deck-session-store', 'data', allow_duplicate=True),
+     Output('save-deck-button', 'style', allow_duplicate=True)],
+    [Input('remove-card-button', 'n_clicks')],
+    [State('selected-card-for-removal', 'data'),
+     State('deck-session-store', 'data'),
+     State('current-deck-file-store', 'data')],
+    prevent_initial_call=True
+)
+def handle_remove_card_from_deck(n_clicks, card_name, session_data, deck_file):
+    """Handle removing a card from the deck"""
+    if not n_clicks or not card_name:
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+    print(f"[DEBUG] Remove card triggered for: {card_name}")
+
+    # Load or create session
+    session = load_or_create_session(session_data, deck_file)
+
+    if not session:
+        return (
+            dash.no_update,
+            "❌ Please load a deck first",
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update
+        )
+
+    try:
+        # Remove card from session
+        result = session.remove_card(card_name)
+
+        if not result['success']:
+            return (
+                dash.no_update,
+                f"❌ {result['error']}",
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update
+            )
+
+        # OPTIMIZED: Use incremental removal
+        from src.synergy_engine.incremental_analyzer import analyze_card_removal
+
+        print(f"[DEBUG] Removing synergies for {card_name}...")
+        synergies = analyze_card_removal(card_name, session.current_deck.synergies)
+        session.current_deck.synergies = synergies
+
+        # Rebuild graph without the card
+        print(f"[DEBUG] Rebuilding graph...")
+        new_elements = build_graph_elements(
+            session.current_deck.cards,
+            synergies
+        )
+
+        # Update status
+        deck_size = result['deck_size']
+        status_msg = f"✅ Removed {card_name} from deck (Deck size: {deck_size}/100)"
+
+        # Show unsaved changes indicator
+        unsaved_indicator = "⚠️ Unsaved changes"
+        unsaved_style = {'display': 'inline', 'color': '#f39c12', 'fontWeight': 'bold', 'marginLeft': '12px'}
+
+        # Show Save Deck button
+        save_button_style = {
+            'padding': '8px 12px',
+            'backgroundColor': '#27ae60',
+            'color': 'white',
+            'border': 'none',
+            'cursor': 'pointer',
+            'fontSize': '14px',
+            'fontWeight': 'bold',
+            'borderRadius': '4px',
+            'marginBottom': '12px',
+            'marginLeft': '12px',
+            'display': 'inline-block'  # Make visible
+        }
+
+        # Serialize session
+        session_dict = session.to_dict()
+
+        print(f"[DEBUG] Card removed successfully! Deck now has {deck_size} cards")
+
+        return (
+            new_elements,
+            status_msg,
+            unsaved_indicator,
+            unsaved_style,
+            session_dict,
+            save_button_style
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return (
+            dash.no_update,
+            f"❌ Error removing card: {str(e)}",
             dash.no_update,
             dash.no_update,
             dash.no_update,
