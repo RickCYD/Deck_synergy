@@ -16,6 +16,7 @@ from src.api.archidekt import fetch_deck_from_archidekt
 from src.api.scryfall import fetch_card_details, ScryfallAPI
 from src.api import recommendations
 from src.models.deck import Deck
+from src.models.deck_session import DeckEditingSession
 from src.synergy_engine.analyzer import analyze_deck_synergies
 from src.utils.graph_builder import build_graph_elements
 from src.utils.card_rankings import (
@@ -290,7 +291,14 @@ app.layout = html.Div([
                     }
                 )
             ], style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '8px'}),
-            html.Div(id='status-message', style={'marginTop': '6px', 'color': '#7f8c8d'})
+            html.Div([
+                html.Div(id='status-message', style={'color': '#7f8c8d'}),
+                html.Div(
+                    id='unsaved-changes-indicator',
+                    children='',
+                    style={'display': 'none', 'color': '#f39c12', 'fontWeight': 'bold', 'marginLeft': '12px'}
+                )
+            ], style={'marginTop': '6px', 'display': 'flex', 'alignItems': 'center'})
         ], style={'flex': '1 1 320px', 'minWidth': '260px'}),
 
         html.Div([
@@ -706,6 +714,7 @@ app.layout = html.Div([
     dcc.Store(id='tooltip-init-store'),  # Dummy store for tooltip initialization
     dcc.Store(id='selected-commander-store'),
     dcc.Store(id='built-deck-store'),
+    dcc.Store(id='deck-session-store'),  # NEW - Deck editing session state
     dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True)
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
 
@@ -1557,7 +1566,25 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                         'padding': '6px',
                         'borderRadius': '4px',
                         'marginTop': '6px'
-                    }) if oracle_text else None
+                    }) if oracle_text else None,
+
+                    # Add to Deck button (NEW)
+                    html.Button(
+                        '➕ Add to Deck',
+                        id={'type': 'add-card-btn', 'index': card_name},
+                        n_clicks=0,
+                        style={
+                            'marginTop': '8px',
+                            'padding': '6px 12px',
+                            'backgroundColor': '#27ae60',
+                            'color': 'white',
+                            'border': 'none',
+                            'borderRadius': '4px',
+                            'cursor': 'pointer',
+                            'fontSize': '11px',
+                            'fontWeight': 'bold'
+                        }
+                    )
 
                 ], style={
                     'marginBottom': '14px',
@@ -2560,6 +2587,150 @@ def build_commander_deck(n_clicks, commander_data, num_lands, num_ramp, num_draw
         )
         error_msg = html.Span(f"Error: {str(e)}", style={'color': '#e74c3c'})
         return error_div, error_msg, None
+
+
+# ==================== DECK EDITING CALLBACKS ====================
+
+def load_or_create_session(session_data, deck_file):
+    """Load existing session or create new one from deck file"""
+    if session_data and session_data.get('current_deck'):
+        # Load existing session
+        try:
+            return DeckEditingSession.from_dict(session_data)
+        except Exception as e:
+            print(f"[DEBUG] Error loading session: {e}, creating new one")
+
+    # Create new session from deck file
+    if deck_file:
+        try:
+            deck = Deck.load(deck_file)
+            return DeckEditingSession(deck)
+        except Exception as e:
+            print(f"[DEBUG] Error loading deck: {e}")
+            return None
+
+    return None
+
+
+@app.callback(
+    [Output('card-graph', 'elements', allow_duplicate=True),
+     Output('status-message', 'children', allow_duplicate=True),
+     Output('unsaved-changes-indicator', 'children'),
+     Output('unsaved-changes-indicator', 'style'),
+     Output('deck-session-store', 'data')],
+    [Input({'type': 'add-card-btn', 'index': ALL}, 'n_clicks')],
+    [State('deck-session-store', 'data'),
+     State('current-deck-file-store', 'data'),
+     State('card-graph', 'elements')],
+    prevent_initial_call=True
+)
+def handle_add_card_to_deck(n_clicks_list, session_data, deck_file, current_elements):
+    """Handle adding a card to the deck from recommendations"""
+    ctx = callback_context
+    if not ctx.triggered:
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+    # Get which button was clicked
+    triggered_id = ctx.triggered[0]['prop_id']
+
+    # Check if any button was actually clicked (n_clicks > 0)
+    if not any(n_clicks_list):
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+    # Parse the card name from the button ID
+    import json as json_lib
+    try:
+        # Extract the id dict from the triggered prop
+        id_str = triggered_id.split('.')[0]
+        button_id = json_lib.loads(id_str)
+        card_name = button_id['index']
+    except Exception as e:
+        print(f"[DEBUG] Error parsing button ID: {e}")
+        return dash.no_update, "❌ Error: Could not identify which card to add", dash.no_update, dash.no_update, dash.no_update
+
+    print(f"[DEBUG] Add card triggered for: {card_name}")
+
+    # Load or create session
+    session = load_or_create_session(session_data, deck_file)
+
+    if not session:
+        return (
+            dash.no_update,
+            "❌ Please load a deck first",
+            dash.no_update,
+            dash.no_update,
+            dash.no_update
+        )
+
+    # Fetch full card details from Scryfall
+    try:
+        print(f"[DEBUG] Fetching card details for: {card_name}")
+        card_data = fetch_card_details(card_name)
+
+        if not card_data:
+            return (
+                dash.no_update,
+                f"❌ Could not find card: {card_name}",
+                dash.no_update,
+                dash.no_update,
+                dash.no_update
+            )
+
+        # Add card to session
+        result = session.add_card(card_data)
+
+        if not result['success']:
+            return (
+                dash.no_update,
+                f"❌ {result['error']}",
+                dash.no_update,
+                dash.no_update,
+                dash.no_update
+            )
+
+        # Re-analyze synergies for the updated deck
+        print(f"[DEBUG] Re-analyzing synergies for {len(session.current_deck.cards)} cards...")
+        synergies = analyze_deck_synergies(session.current_deck.cards)
+        session.current_deck.synergies = synergies
+
+        # Rebuild graph with new card
+        print(f"[DEBUG] Rebuilding graph...")
+        new_elements = build_graph_elements(
+            session.current_deck.cards,
+            synergies
+        )
+
+        # Update status
+        deck_size = result['deck_size']
+        status_msg = f"✅ Added {card_name} to deck (Deck size: {deck_size}/100)"
+
+        # Show unsaved changes indicator
+        unsaved_indicator = "⚠️ Unsaved changes"
+        unsaved_style = {'display': 'inline', 'color': '#f39c12', 'fontWeight': 'bold', 'marginLeft': '12px'}
+
+        # Serialize session
+        session_dict = session.to_dict()
+
+        print(f"[DEBUG] Card added successfully! Deck now has {deck_size} cards")
+
+        return (
+            new_elements,
+            status_msg,
+            unsaved_indicator,
+            unsaved_style,
+            session_dict
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return (
+            dash.no_update,
+            f"❌ Error adding card: {str(e)}",
+            dash.no_update,
+            dash.no_update,
+            dash.no_update
+        )
 
 
 if __name__ == '__main__':
