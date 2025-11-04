@@ -441,8 +441,62 @@ app.layout = html.Div([
                     'display': 'none'  # Hidden by default, shown when there are changes
                 },
                 className='save-deck-btn'
+            ),
+            html.Button(
+                '↶ Undo',
+                id='undo-button',
+                n_clicks=0,
+                disabled=True,
+                style={
+                    'padding': '8px 12px',
+                    'backgroundColor': '#95a5a6',
+                    'color': 'white',
+                    'border': 'none',
+                    'cursor': 'pointer',
+                    'fontSize': '14px',
+                    'fontWeight': 'bold',
+                    'borderRadius': '4px',
+                    'marginBottom': '12px',
+                    'marginLeft': '12px'
+                }
+            ),
+            html.Button(
+                '↷ Redo',
+                id='redo-button',
+                n_clicks=0,
+                disabled=True,
+                style={
+                    'padding': '8px 12px',
+                    'backgroundColor': '#95a5a6',
+                    'color': 'white',
+                    'border': 'none',
+                    'cursor': 'pointer',
+                    'fontSize': '14px',
+                    'fontWeight': 'bold',
+                    'borderRadius': '4px',
+                    'marginBottom': '12px',
+                    'marginLeft': '12px'
+                }
+            ),
+            html.Button(
+                '🗑️ Discard Changes',
+                id='discard-changes-button',
+                n_clicks=0,
+                style={
+                    'padding': '8px 12px',
+                    'backgroundColor': '#e74c3c',
+                    'color': 'white',
+                    'border': 'none',
+                    'cursor': 'pointer',
+                    'fontSize': '14px',
+                    'fontWeight': 'bold',
+                    'borderRadius': '4px',
+                    'marginBottom': '12px',
+                    'marginLeft': '12px',
+                    'display': 'none'  # Hidden by default, shown when there are changes
+                }
             )
-        ], style={'display': 'flex', 'gap': '12px'}),
+        ], style={'display': 'flex', 'gap': '12px', 'flexWrap': 'wrap'}),
     ], style={'padding': '0 20px', 'marginTop': '16px'}),
 
     # Tabbed content: Synergy Graph and Mana Simulation
@@ -3000,6 +3054,151 @@ def handle_save_deck(n_clicks, session_data):
             dash.no_update,
             dash.no_update
         )
+
+
+@app.callback(
+    [Output('card-graph', 'elements', allow_duplicate=True),
+     Output('status-message', 'children', allow_duplicate=True),
+     Output('deck-session-store', 'data', allow_duplicate=True),
+     Output('undo-button', 'disabled'),
+     Output('redo-button', 'disabled')],
+    [Input('undo-button', 'n_clicks'),
+     Input('redo-button', 'n_clicks')],
+    [State('deck-session-store', 'data')],
+    prevent_initial_call=True
+)
+def handle_undo_redo(undo_clicks, redo_clicks, session_data):
+    """Handle undo/redo operations"""
+    ctx = callback_context
+    if not ctx.triggered or not session_data:
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    try:
+        session = DeckEditingSession.from_dict(session_data)
+
+        if button_id == 'undo-button':
+            result = session.undo()
+            action = "Undo"
+        else:  # redo-button
+            result = session.redo()
+            action = "Redo"
+
+        if not result['success']:
+            return dash.no_update, f"⚠️ {result['error']}", dash.no_update, dash.no_update, dash.no_update
+
+        # Full re-analysis after undo/redo (necessary since we don't know what changed)
+        print(f"[DEBUG] Re-analyzing deck after {action}...")
+        synergies = analyze_deck_synergies(session.current_deck.cards)
+        session.current_deck.synergies = synergies
+
+        # Rebuild graph
+        new_elements = build_graph_elements(
+            session.current_deck.cards,
+            synergies
+        )
+
+        status_msg = f"✅ {action} successful (Deck size: {result['deck_size']}/100)"
+
+        # Update button states
+        undo_disabled = not session.can_undo()
+        redo_disabled = not session.can_redo()
+
+        session_dict = session.to_dict()
+
+        return (
+            new_elements,
+            status_msg,
+            session_dict,
+            undo_disabled,
+            redo_disabled
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return (
+            dash.no_update,
+            f"❌ Error: {str(e)}",
+            dash.no_update,
+            dash.no_update,
+            dash.no_update
+        )
+
+
+@app.callback(
+    [Output('card-graph', 'elements', allow_duplicate=True),
+     Output('status-message', 'children', allow_duplicate=True),
+     Output('unsaved-changes-indicator', 'children', allow_duplicate=True),
+     Output('unsaved-changes-indicator', 'style', allow_duplicate=True),
+     Output('deck-session-store', 'data', allow_duplicate=True),
+     Output('save-deck-button', 'style', allow_duplicate=True),
+     Output('discard-changes-button', 'style'),
+     Output('undo-button', 'disabled', allow_duplicate=True),
+     Output('redo-button', 'disabled', allow_duplicate=True)],
+    [Input('discard-changes-button', 'n_clicks')],
+    [State('deck-session-store', 'data')],
+    prevent_initial_call=True
+)
+def handle_discard_changes(n_clicks, session_data):
+    """Discard all changes and revert to original deck"""
+    if not n_clicks or not session_data:
+        return tuple([dash.no_update] * 9)
+
+    try:
+        session = DeckEditingSession.from_dict(session_data)
+        result = session.discard_changes()
+
+        if not result['success']:
+            return tuple([dash.no_update] * 8) + (f"⚠️ {result.get('error', 'Unknown error')}",)
+
+        # Re-analyze original deck
+        synergies = analyze_deck_synergies(session.current_deck.cards)
+        session.current_deck.synergies = synergies
+
+        # Rebuild graph
+        new_elements = build_graph_elements(
+            session.current_deck.cards,
+            synergies
+        )
+
+        # Hide indicators and buttons
+        unsaved_style = {'display': 'none'}
+        save_button_style = {
+            'padding': '8px 12px',
+            'backgroundColor': '#27ae60',
+            'color': 'white',
+            'border': 'none',
+            'cursor': 'pointer',
+            'fontSize': '14px',
+            'fontWeight': 'bold',
+            'borderRadius': '4px',
+            'marginBottom': '12px',
+            'marginLeft': '12px',
+            'display': 'none'
+        }
+        discard_button_style = dict(save_button_style)
+        discard_button_style['backgroundColor'] = '#e74c3c'
+
+        session_dict = session.to_dict()
+
+        return (
+            new_elements,
+            "✅ All changes discarded",
+            "",
+            unsaved_style,
+            session_dict,
+            save_button_style,
+            discard_button_style,
+            True,  # Disable undo
+            True   # Disable redo
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return tuple([dash.no_update] * 8) + (f"❌ Error: {str(e)}",)
 
 
 if __name__ == '__main__':
