@@ -19,7 +19,6 @@ from src.models.deck import Deck
 from src.models.deck_session import DeckEditingSession
 from src.synergy_engine.analyzer import analyze_deck_synergies
 from src.synergy_engine.incremental_analyzer import analyze_card_addition, merge_synergies, analyze_card_removal
-from src.synergy_engine import embedding_analyzer
 from src.analysis.weakness_detector import DeckWeaknessAnalyzer
 from src.analysis.impact_analyzer import RecommendationImpactAnalyzer
 from src.analysis.replacement_analyzer import ReplacementAnalyzer
@@ -49,10 +48,6 @@ cyto.load_extra_layouts()
 # Load recommendation engine at startup
 print("Loading recommendation engine...")
 recommendations.load_recommendation_engine()
-
-# Load embedding analyzer at startup (optional - will show warning if embeddings not available)
-print("Loading embedding analyzer...")
-embedding_analyzer.load_embedding_analyzer()
 
 # Get initial deck list
 def get_deck_options():
@@ -700,28 +695,7 @@ app.layout = html.Div([
                 }
             )
         ], style={'display': 'flex', 'gap': '12px', 'flexWrap': 'wrap'}),
-
-        # Embedding Mode Switch
-        html.Div([
-            html.Label([
-                html.Span('Synergy Mode: ', style={'fontWeight': 'bold', 'marginRight': '8px'}),
-                dcc.RadioItems(
-                    id='synergy-mode-switch',
-                    options=[
-                        {'label': ' Rule-Based', 'value': 'rules'},
-                        {'label': ' AI Embeddings', 'value': 'embeddings'}
-                    ],
-                    value='rules',
-                    inline=True,
-                    style={'display': 'inline-block'}
-                ),
-            ], style={'display': 'flex', 'alignItems': 'center'}),
-            html.Div(
-                id='synergy-mode-status',
-                style={'fontSize': '11px', 'color': '#7f8c8d', 'marginTop': '4px', 'fontStyle': 'italic'}
-            )
-        ], style={'marginLeft': 'auto', 'paddingRight': '20px'}),
-    ], style={'padding': '0 20px', 'marginTop': '16px', 'display': 'flex', 'alignItems': 'center'}),
+    ], style={'padding': '0 20px', 'marginTop': '16px'}),
 
     # Tabbed content: Synergy Graph and Mana Simulation
     dcc.Tabs(id='main-tabs', value='synergy', children=[
@@ -1015,7 +989,6 @@ app.layout = html.Div([
     dcc.Store(id='deck-session-store'),  # Deck editing session state
     dcc.Store(id='selected-card-for-removal'),  # Track which card to remove
     dcc.Store(id='weakness-analysis-store'),  # Deck weakness analysis data
-    dcc.Store(id='synergy-mode-store', data='rules'),  # 'rules' or 'embeddings'
     dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True)
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
 
@@ -1199,39 +1172,17 @@ def clear_status_message(n_intervals):
     return "", True  # Clear message and disable interval
 
 
-# Callback for synergy mode switch
-@app.callback(
-    [Output('synergy-mode-store', 'data'),
-     Output('synergy-mode-status', 'children')],
-    Input('synergy-mode-switch', 'value'),
-    prevent_initial_call=True
-)
-def update_synergy_mode(mode):
-    """Update synergy mode and show status"""
-    if mode == 'embeddings':
-        if embedding_analyzer.is_loaded():
-            status = "Using AI embeddings for semantic similarity"
-            return mode, status
-        else:
-            status = "⚠️ Embeddings not available. Run: python scripts/generate_embeddings.py"
-            return 'rules', status  # Fall back to rules mode
-    else:
-        status = "Using rule-based synergy detection"
-        return mode, status
-
-
 # Callback to update graph when deck is selected
 @app.callback(
     [Output('card-graph', 'elements'),
      Output('current-deck-file-store', 'data'),
      Output('role-filter-data', 'data')],
-    [Input('deck-selector', 'value'),
-     Input('synergy-mode-store', 'data')],
+    [Input('deck-selector', 'value')],
     prevent_initial_call=True
 )
-def update_graph(deck_file, synergy_mode):
+def update_graph(deck_file):
     """Update graph visualization when a deck is selected"""
-    print(f"\n[UPDATE GRAPH] Called with deck_file: {deck_file}, synergy_mode: {synergy_mode}")
+    print(f"\n[UPDATE GRAPH] Called with deck_file: {deck_file}")
 
     if not deck_file:
         print("[UPDATE GRAPH] No deck file provided, using dash.no_update to preserve current state")
@@ -1258,17 +1209,10 @@ def update_graph(deck_file, synergy_mode):
             assign_roles_to_cards(cards)
         role_summary = summarize_roles(cards)
 
-        # Build graph elements based on synergy mode
-        print(f"[UPDATE GRAPH] Building graph elements using {synergy_mode} mode...")
-
-        if synergy_mode == 'embeddings' and embedding_analyzer.is_loaded():
-            # Use embedding-based graph
-            elements = embedding_analyzer.build_embedding_graph(cards, min_similarity=0.6)
-            print(f"[UPDATE GRAPH] Built {len(elements)} embedding-based graph elements")
-        else:
-            # Use rule-based graph
-            elements = build_graph_elements(deck_data)
-            print(f"[UPDATE GRAPH] Built {len(elements)} rule-based graph elements")
+        # Build graph elements using rule-based approach
+        print(f"[UPDATE GRAPH] Building graph elements...")
+        elements = build_graph_elements(deck_data)
+        print(f"[UPDATE GRAPH] Built {len(elements)} graph elements")
 
         print(f"[UPDATE GRAPH] SUCCESS - Graph updated!")
 
@@ -1789,11 +1733,10 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
      Input('view-top-cards-button', 'n_clicks')],
     [State('card-graph', 'elements'),
      State('role-filter-data', 'data'),
-     State('current-deck-file-store', 'data'),
-     State('synergy-mode-store', 'data')],
+     State('current-deck-file-store', 'data')],
     prevent_initial_call=True
 )
-def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks, top_clicks, elements, role_summary, deck_file, synergy_mode):
+def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks, top_clicks, elements, role_summary, deck_file):
     """Handle node/edge selection, role filter, recommendations, and update highlighting."""
     ctx = callback_context
     if not ctx.triggered:
@@ -1823,38 +1766,18 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                     commander_colors = card.get('color_identity', [])
                     break
 
-            # Get recommendations based on synergy mode
-            print(f"[DEBUG] Generating recommendations using {synergy_mode} mode for {len(deck_obj.get('cards', []))} cards, colors={commander_colors}")
+            # Get recommendations using rule-based approach
+            print(f"[DEBUG] Generating recommendations for {len(deck_obj.get('cards', []))} cards, colors={commander_colors}")
 
-            if synergy_mode == 'embeddings' and embedding_analyzer.is_loaded():
-                # Use embedding-based recommendations
-                recommended_cards = embedding_analyzer.get_deck_recommendations(
-                    deck_cards=deck_obj.get('cards', []),
-                    available_cards=None,  # All cards in embeddings
-                    limit=10
-                )
-                deck_scores = embedding_analyzer.score_deck_cards(deck_obj.get('cards', []))
-                total_synergy = {
-                    'total_score': sum(c['synergy_score'] for c in deck_scores),
-                    'average_score': sum(c['synergy_score'] for c in deck_scores) / len(deck_scores) if deck_scores else 0,
-                    'card_count': len(deck_scores)
-                }
-                # Convert embedding format to match UI expectations
-                for card in recommended_cards:
-                    card['recommendation_score'] = card.get('average_similarity', 0) * 100  # Scale for display
-                    card['synergy_reasons'] = [f"Similar to {syn['with']} ({syn['similarity']:.3f})"
-                                              for syn in card.get('top_synergies', [])]
-            else:
-                # Use rule-based recommendations
-                rec_result = recommendations.get_recommendations(
-                    deck_cards=deck_obj.get('cards', []),
-                    color_identity=commander_colors,
-                    limit=10,
-                    include_deck_scores=True  # Score deck cards too
-                )
-                recommended_cards = rec_result.get('recommendations', [])
-                deck_scores = rec_result.get('deck_scores', [])
-                total_synergy = rec_result.get('total_deck_synergy', {})
+            rec_result = recommendations.get_recommendations(
+                deck_cards=deck_obj.get('cards', []),
+                color_identity=commander_colors,
+                limit=10,
+                include_deck_scores=True  # Score deck cards too
+            )
+            recommended_cards = rec_result.get('recommendations', [])
+            deck_scores = rec_result.get('deck_scores', [])
+            total_synergy = rec_result.get('total_deck_synergy', {})
 
             print(f"[DEBUG] Got {len(recommended_cards)} recommendations and scored {len(deck_scores)} deck cards")
             print(f"[DEBUG] Total deck synergy: {total_synergy}")
@@ -2101,49 +2024,41 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
 
             cards = deck_obj.get('cards', [])
 
-            # Calculate synergy scores based on mode
-            print(f"[DEBUG] Calculating cards to cut using {synergy_mode} mode")
+            # Calculate synergy scores using rule-based approach
+            print(f"[DEBUG] Calculating cards to cut using rule-based scoring")
 
-            if synergy_mode == 'embeddings' and embedding_analyzer.is_loaded():
-                # Use embedding-based scoring
-                scored_cards = embedding_analyzer.score_deck_cards(cards)
-                # Convert to dict format for compatibility
-                card_scores = {card['name']: card['synergy_score'] for card in scored_cards}
-                bottom_cards = [(card['name'], card['synergy_score']) for card in scored_cards[:10]]
+            synergies = deck_obj.get('synergies', [])
+            card_scores = {}
+
+            # Handle synergies as dict (canonical format) or list (legacy)
+            if isinstance(synergies, dict):
+                synergy_list = list(synergies.values())
             else:
-                # Use rule-based scoring
-                synergies = deck_obj.get('synergies', [])
-                card_scores = {}
+                synergy_list = synergies
 
-                # Handle synergies as dict (canonical format) or list (legacy)
-                if isinstance(synergies, dict):
-                    synergy_list = list(synergies.values())
-                else:
-                    synergy_list = synergies
+            for card in cards:
+                card_name = card.get('name')
+                if not card_name:
+                    continue
 
-                for card in cards:
-                    card_name = card.get('name')
-                    if not card_name:
-                        continue
+                # Skip lands - they don't have strategic synergies
+                card_type = card.get('type_line', '').lower()
+                if '//' not in card_type and 'land' in card_type:
+                    continue
 
-                    # Skip lands - they don't have strategic synergies
-                    card_type = card.get('type_line', '').lower()
-                    if '//' not in card_type and 'land' in card_type:
-                        continue
+                # Count synergies involving this card
+                score = 0
+                for synergy in synergy_list:
+                    # Handle both dict and other data structures
+                    if isinstance(synergy, dict):
+                        if card_name in [synergy.get('card1'), synergy.get('card2')]:
+                            score += synergy.get('total_weight', 1.0)
 
-                    # Count synergies involving this card
-                    score = 0
-                    for synergy in synergy_list:
-                        # Handle both dict and other data structures
-                        if isinstance(synergy, dict):
-                            if card_name in [synergy.get('card1'), synergy.get('card2')]:
-                                score += synergy.get('total_weight', 1.0)
+                card_scores[card_name] = score
 
-                    card_scores[card_name] = score
-
-                # Get bottom 10 cards (least synergistic)
-                sorted_cards = sorted(card_scores.items(), key=lambda x: x[1])
-                bottom_cards = sorted_cards[:10]
+            # Get bottom 10 cards (least synergistic)
+            sorted_cards = sorted(card_scores.items(), key=lambda x: x[1])
+            bottom_cards = sorted_cards[:10]
 
             # Calculate deck statistics for context
             if card_scores:
@@ -2420,21 +2335,11 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
 
             cards = deck_obj.get('cards', [])
 
-            # Get top 10 cards by synergy ranking based on mode
-            print(f"[DEBUG] Getting top cards using {synergy_mode} mode")
+            # Get top 10 cards by synergy ranking using rule-based approach
+            print(f"[DEBUG] Getting top cards using rule-based ranking")
 
-            if synergy_mode == 'embeddings' and embedding_analyzer.is_loaded():
-                # Use embedding-based scoring
-                scored_cards = embedding_analyzer.score_deck_cards(cards)
-                # Get highest scoring cards (reverse order)
-                top_scored = sorted(scored_cards, key=lambda x: x['synergy_score'], reverse=True)[:10]
-                # Convert to format expected by UI
-                top_cards = [{'name': card['name'], 'total_synergy': card['synergy_score']}
-                           for card in top_scored]
-            else:
-                # Use rule-based ranking
-                rankings_summary = get_deck_rankings_summary(deck_obj, top_n=10)
-                top_cards = rankings_summary.get('top_cards', [])
+            rankings_summary = get_deck_rankings_summary(deck_obj, top_n=10)
+            top_cards = rankings_summary.get('top_cards', [])
 
             # Build top cards UI
             top_items = []
