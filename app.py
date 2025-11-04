@@ -21,6 +21,7 @@ from src.synergy_engine.analyzer import analyze_deck_synergies
 from src.synergy_engine.incremental_analyzer import analyze_card_addition, merge_synergies, analyze_card_removal
 from src.analysis.weakness_detector import DeckWeaknessAnalyzer
 from src.analysis.impact_analyzer import RecommendationImpactAnalyzer
+from src.analysis.replacement_analyzer import ReplacementAnalyzer
 from src.utils.graph_builder import build_graph_elements
 from src.utils.card_rankings import (
     calculate_weighted_degree_centrality,
@@ -2058,16 +2059,43 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 avg_synergy = 0
                 max_synergy = 0
 
-            # Get bottom 10 cards (least synergistic)
-            sorted_cards = sorted(card_scores.items(), key=lambda x: x[1])
-            bottom_cards = sorted_cards[:10]
+            # Use smart replacement analysis
+            print(f"[DEBUG] Running smart replacement analysis...")
+            deck_scores_list = [{'name': name, 'synergy_score': score} for name, score in card_scores.items()]
 
-            # Build cards-to-cut UI
+            replacement_analyzer = ReplacementAnalyzer()
+            replacement_candidates = replacement_analyzer.identify_replacement_candidates(
+                cards,
+                deck_scores_list,
+                limit=10
+            )
+            print(f"[DEBUG] Found {len(replacement_candidates)} replacement candidates")
+
+            # Get recommendations to use as replacement pool
+            commander_colors = []
+            for card in cards:
+                if card.get('is_commander', False):
+                    commander_colors = card.get('color_identity', [])
+                    break
+
+            rec_result = recommendations.get_recommendations(
+                deck_cards=cards,
+                color_identity=commander_colors,
+                limit=20,
+                include_deck_scores=False
+            )
+            replacement_pool = rec_result.get('recommendations', [])
+            print(f"[DEBUG] Replacement pool has {len(replacement_pool)} cards")
+
+            # Build cards-to-cut UI with smart replacements
             cut_items = []
-            for idx, (card_name, score) in enumerate(bottom_cards, 1):
-                # Find full card data
-                card_data = next((c for c in cards if c.get('name') == card_name), {})
-
+            for idx, candidate in enumerate(replacement_candidates, 1):
+                card_data = candidate['card']
+                card_name = card_data.get('name')
+                score = candidate['synergy_score']
+                priority = candidate['replacement_priority']
+                reasons = candidate['reasons']
+                suggested_role = candidate['suggested_role']
                 type_line = card_data.get('type_line', '')
                 mana_cost = card_data.get('mana_cost', '')
                 oracle_text = card_data.get('oracle_text', '')
@@ -2077,21 +2105,90 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 if len(oracle_text) > 200:
                     oracle_text = oracle_text[:200] + '...'
 
-                # Determine reason with meaningful context
-                reasons = []
-                if score == 0:
-                    reasons.append("No synergies detected")
-                else:
-                    # Show absolute score with deck context
-                    reasons.append(f"Synergy score: {score:.1f} (deck avg: {avg_synergy:.1f}, max: {max_synergy:.1f})")
+                # Priority color
+                priority_color = {'high': '#e74c3c', 'medium': '#f39c12', 'low': '#3498db'}.get(priority, '#95a5a6')
+                priority_icon = {'high': '🔴', 'medium': '🟡', 'low': '🔵'}.get(priority, '⚪')
+
+                # Find suggested replacements
+                replacements = replacement_analyzer.find_replacements(
+                    card_data,
+                    cards,
+                    replacement_pool,
+                    limit=3
+                )
+
+                # Build replacement suggestions UI
+                replacement_section = None
+                if replacements:
+                    replacement_items = []
+                    for i, rep in enumerate(replacements, 1):
+                        rep_card = rep['card']
+                        rep_name = rep_card.get('name')
+                        rep_type = rep_card.get('type_line', '')
+                        rep_cmc = rep_card.get('cmc', 0)
+                        net_impact = rep['net_impact']
+                        score_change = net_impact['score_change']
+
+                        type_match_icon = "✓" if rep['type_match'] else "•"
+                        cmc_text = f"CMC {rep_cmc}" if rep['cmc_diff'] == 0 else f"CMC {rep_cmc} (±{rep['cmc_diff']})"
+
+                        replacement_items.append(html.Div([
+                            html.Div([
+                                html.Span(f"{i}. ", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginRight': '4px'}),
+                                html.Strong(rep_name, style={'fontSize': '12px', 'color': '#27ae60'}),
+                                html.Span(
+                                    f" {score_change:+d}",
+                                    style={
+                                        'fontSize': '11px',
+                                        'fontWeight': 'bold',
+                                        'color': '#27ae60' if score_change > 0 else '#e74c3c',
+                                        'marginLeft': '6px'
+                                    }
+                                )
+                            ], style={'marginBottom': '3px'}),
+                            html.Div([
+                                html.Span(f"{type_match_icon} {rep_type}", style={'fontSize': '10px', 'color': '#7f8c8d', 'marginRight': '8px'}),
+                                html.Span(cmc_text, style={'fontSize': '10px', 'color': '#95a5a6'})
+                            ], style={'marginBottom': '2px'})
+                        ], style={
+                            'padding': '6px 8px',
+                            'marginBottom': '4px',
+                            'backgroundColor': '#f0fff4',
+                            'borderRadius': '3px',
+                            'borderLeft': '2px solid #27ae60'
+                        }))
+
+                    replacement_section = html.Div([
+                        html.Div("💡 Suggested Replacements:", style={
+                            'fontSize': '11px',
+                            'fontWeight': 'bold',
+                            'color': '#27ae60',
+                            'marginTop': '8px',
+                            'marginBottom': '6px'
+                        }),
+                        html.Div(replacement_items)
+                    ])
 
                 cut_items.append(html.Div([
-                    # Card name and score
+                    # Card name, score, and priority
                     html.Div([
                         html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
                         html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
-                        html.Span(f" ({score:.1f})", style={'fontSize': '11px', 'color': '#e74c3c', 'marginLeft': '4px'})
-                    ], style={'marginBottom': '4px'}),
+                        html.Span(f" ({score:.1f})" if score else "", style={'fontSize': '11px', 'color': '#e74c3c', 'marginLeft': '4px'}),
+                        # Priority badge
+                        html.Span(
+                            f"{priority_icon} {priority.upper()}",
+                            style={
+                                'fontSize': '10px',
+                                'fontWeight': 'bold',
+                                'color': 'white',
+                                'backgroundColor': priority_color,
+                                'padding': '2px 6px',
+                                'borderRadius': '3px',
+                                'marginLeft': '8px'
+                            }
+                        )
+                    ], style={'marginBottom': '6px', 'display': 'flex', 'alignItems': 'center'}),
 
                     # Type line
                     html.Div(type_line, style={'fontSize': '11px', 'color': '#34495e', 'fontStyle': 'italic', 'marginBottom': '4px'}),
@@ -2120,40 +2217,46 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                         'padding': '6px',
                         'borderRadius': '4px',
                         'marginTop': '6px'
-                    }) if oracle_text else None
+                    }) if oracle_text else None,
+
+                    # Replacement suggestions
+                    replacement_section
 
                 ], style={
                     'marginBottom': '14px',
                     'paddingBottom': '14px',
                     'borderBottom': '2px solid #ecf0f1',
                     'paddingLeft': '4px',
-                    'borderLeft': '3px solid #e74c3c'
+                    'borderLeft': f'3px solid {priority_color}'
                 }))
 
             cut_panel = html.Div([
-                html.H4("✂️ Cards to Cut", style={'marginBottom': '12px', 'color': '#e74c3c', 'fontSize': '16px'}),
-                html.P("These cards have the lowest synergy with the rest of your deck:", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginBottom': '12px'}),
+                html.H4("✂️ Smart Card Replacements", style={'marginBottom': '12px', 'color': '#e74c3c', 'fontSize': '16px'}),
+                html.P("These cards could be upgraded for better deck synergy:", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginBottom': '12px'}),
                 html.Div(cut_items)
             ])
 
             # Create stylesheet highlighting low-synergy cards in red
             stylesheet = list(get_base_stylesheet())
-            bottom_card_names = [name for name, _ in bottom_cards]
+            replacement_card_names = [c['card']['name'] for c in replacement_candidates]
 
-            # Highlight low-synergy cards in red
-            for card_name in bottom_card_names:
+            # Highlight replacement candidates
+            for candidate in replacement_candidates:
+                card_name = candidate['card']['name']
+                priority = candidate['replacement_priority']
+                priority_color = {'high': '#e74c3c', 'medium': '#f39c12', 'low': '#3498db'}.get(priority, '#95a5a6')
                 stylesheet.append({
                     'selector': f'node[label = "{card_name}"]',
                     'style': {
-                        'border-color': '#e74c3c',
+                        'border-color': priority_color,
                         'border-width': '6px',
-                        'background-color': '#e74c3c'
+                        'background-color': priority_color
                     }
                 })
 
             # Dim other cards
             for card in cards:
-                if card.get('name') not in bottom_card_names:
+                if card.get('name') not in replacement_card_names:
                     stylesheet.append({
                         'selector': f'node[label = "{card.get("name")}"]',
                         'style': {
