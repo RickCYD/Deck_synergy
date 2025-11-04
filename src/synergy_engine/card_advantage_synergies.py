@@ -213,6 +213,41 @@ def detect_tutor_combo_synergies(card1: Dict, card2: Dict) -> List[Dict]:
         elif tutor_type == 'land' and 'land' in card2_type:
             can_find = True
 
+        # Check CMC restrictions (transmute, etc.)
+        if can_find:
+            for restriction in tutor1['restrictions']:
+                if restriction == 'cmc_exact_match':
+                    # Transmute: must match tutor's CMC exactly
+                    tutor_cmc = card1.get('cmc', 0)
+                    target_cmc = card2.get('cmc', 0)
+                    if tutor_cmc != target_cmc:
+                        can_find = False
+                        break
+
+        # Check power/toughness restrictions if applicable
+        if can_find and tutor_type == 'creature':
+            for restriction in tutor1['restrictions']:
+                if restriction.startswith('power_restriction_'):
+                    max_power = int(restriction.split('_')[-1])
+                    card2_power = card2.get('power', '')
+                    if card2_power and card2_power != '*':
+                        try:
+                            if int(card2_power) > max_power:
+                                can_find = False
+                                break
+                        except (ValueError, TypeError):
+                            pass  # If power can't be converted, skip restriction
+                elif restriction.startswith('toughness_restriction_'):
+                    max_toughness = int(restriction.split('_')[-1])
+                    card2_toughness = card2.get('toughness', '')
+                    if card2_toughness and card2_toughness != '*':
+                        try:
+                            if int(card2_toughness) > max_toughness:
+                                can_find = False
+                                break
+                        except (ValueError, TypeError):
+                            pass  # If toughness can't be converted, skip restriction
+
         if can_find:
             strength = 0.5  # Base synergy for any tutor target
 

@@ -104,10 +104,27 @@ def create_card_node(card: Dict) -> Dict:
     secondary_border = get_secondary_border_color(colors)
     is_multicolor = len(colors) >= 2
 
-    # Get image URLs - use art_crop if available, fallback to normal
+    # Get image URLs
+    # image_url = full card image (normal size)
+    # art_crop_url = just the artwork (for graph background)
     image_uris = card.get('image_uris') or {}
-    art_crop_url = image_uris.get('art_crop', '') or image_uris.get('normal', '') or ''
-    image_url = image_uris.get('normal', '') or ''
+
+    # Debug first card
+    if card_name == "Wight of the Reliquary":
+        print(f"\n[DEBUG GRAPH] ===== CARD DEBUG =====")
+        print(f"[DEBUG GRAPH] Card: {card_name}")
+        print(f"[DEBUG GRAPH] Has 'image_uris' key: {'image_uris' in card}")
+        if 'image_uris' in card:
+            print(f"[DEBUG GRAPH] image_uris value: {card['image_uris']}")
+            print(f"[DEBUG GRAPH] image_uris type: {type(card['image_uris'])}")
+        print(f"[DEBUG GRAPH] =====================\n")
+
+    image_url = image_uris.get('normal', '') or image_uris.get('large', '') or ''
+    art_crop_url = image_uris.get('art_crop', '') or image_url or ''
+
+    if card_name == "Wight of the Reliquary":
+        print(f"[DEBUG GRAPH] image_url result: '{image_url}'")
+        print(f"[DEBUG GRAPH] art_crop_url result: '{art_crop_url}'")
 
     # Create node data - ensure no None values that could break Cytoscape
     node_data = {

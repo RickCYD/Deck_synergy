@@ -60,10 +60,9 @@ def create_minimal_cards():
             # Mana production (for ramp detection)
             'produced_mana': card.get('produced_mana', []),
 
-            # Visualization (for graph display)
-            'image_uris': {
-                'art_crop': card.get('image_uris', {}).get('art_crop')
-            } if card.get('image_uris') else None
+            # Visualization (for graph display and card preview)
+            # Include all image formats: normal (full card), large, png, art_crop, border_crop, small
+            'image_uris': card.get('image_uris', {})
         }
         minimal_cards.append(minimal)
 

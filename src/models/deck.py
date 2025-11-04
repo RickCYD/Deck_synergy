@@ -191,6 +191,23 @@ class Deck:
 
         return synergies
 
+    def copy(self) -> 'Deck':
+        """
+        Create a deep copy of the deck
+
+        Returns:
+            New Deck instance with copied data
+        """
+        import copy as copy_module
+
+        return Deck(
+            deck_id=self.deck_id,
+            name=self.name,
+            cards=copy_module.deepcopy(self.cards),
+            synergies=copy_module.deepcopy(self.synergies),
+            metadata=copy_module.deepcopy(self.metadata)
+        )
+
     def get_deck_statistics(self) -> Dict:
         """
         Calculate deck statistics
