@@ -1522,6 +1522,12 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 card_roles = card.get('roles', [])
                 fills_text = ", ".join([role.replace('_', ' ').title() for role in card_roles[:3]]) if card_roles else "General Synergy"
 
+                # Get detailed synergy information
+                synergy_details = card.get('synergy_details', {})
+                synergy_partners = synergy_details.get('synergy_partners', {})
+                combo_partners = synergy_details.get('combo_partners', [])
+                tag_explanations = synergy_details.get('tag_explanations', {})
+
                 rec_items.append(html.Div([
                     # Card name and score
                     html.Div([
@@ -1597,14 +1603,89 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                         'borderLeft': '2px solid #e67e22'
                     }) if smart_replacements else None,
 
-                    # Synergy reasons
+                    # Enhanced synergy reasons with specific partners
                     html.Div([
-                        html.Strong("Why?", style={'fontSize': '11px', 'color': '#16a085'}),
-                        html.Ul([
-                            html.Li(reason, style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'})
+                        html.Strong("Why?", style={'fontSize': '11px', 'color': '#16a085', 'marginBottom': '4px', 'display': 'block'}),
+
+                        # Build synergy reason items with partner details
+                        *[
+                            html.Div([
+                                # Main synergy reason
+                                html.Div(reason, style={
+                                    'fontSize': '10px',
+                                    'color': '#555',
+                                    'fontWeight': '600',
+                                    'marginBottom': '2px'
+                                }),
+
+                                # Show specific synergy partners
+                                html.Div([
+                                    html.Div([
+                                        html.Span("● ", style={
+                                            'color': '#27ae60' if partner[1] == 'strong' else '#f39c12' if partner[1] == 'medium' else '#95a5a6',
+                                            'fontSize': '10px',
+                                            'fontWeight': 'bold'
+                                        }),
+                                        html.Span(partner[0], style={
+                                            'fontSize': '9px',
+                                            'color': '#2c3e50'
+                                        })
+                                    ], style={'marginLeft': '12px', 'marginBottom': '1px'})
+                                    # Find partners for tags in this reason
+                                    for tag_key, partners in synergy_partners.items()
+                                    for partner in partners[:3]  # Top 3 partners
+                                    if tag_explanations.get(tag_key, '') in reason
+                                ]) if synergy_partners else None
+                            ], style={'marginBottom': '8px'})
                             for reason in synergy_reasons[:3]  # Top 3 reasons
-                        ], style={'marginTop': '2px', 'marginBottom': '6px', 'paddingLeft': '16px'})
-                    ] if synergy_reasons else None),
+                        ],
+
+                        # Combo detection
+                        html.Div([
+                            html.Div([
+                                html.Strong("💥 Combos: ", style={'fontSize': '10px', 'color': '#e74c3c'})
+                            ], style={'marginTop': '6px', 'marginBottom': '4px'}),
+                            html.Div([
+                                html.Div([
+                                    html.Span(f"→ {combo[1]}: ", style={
+                                        'fontSize': '9px',
+                                        'color': '#e74c3c',
+                                        'fontWeight': 'bold'
+                                    }),
+                                    html.Span(", ".join(combo[0][:2]), style={
+                                        'fontSize': '9px',
+                                        'color': '#2c3e50'
+                                    }),
+                                    html.Br(),
+                                    html.Span(combo[2], style={
+                                        'fontSize': '8px',
+                                        'color': '#7f8c8d',
+                                        'fontStyle': 'italic',
+                                        'marginLeft': '12px'
+                                    })
+                                ], style={'marginBottom': '4px'})
+                                for combo in combo_partners[:2]  # Top 2 combos
+                            ])
+                        ], style={
+                            'backgroundColor': '#fff5f5',
+                            'padding': '6px',
+                            'borderRadius': '4px',
+                            'borderLeft': '2px solid #e74c3c',
+                            'marginTop': '6px'
+                        }) if combo_partners else None,
+
+                        # Synergy strength legend
+                        html.Div([
+                            html.Span("● Strong", style={'fontSize': '7px', 'color': '#27ae60', 'marginRight': '6px'}),
+                            html.Span("● Medium", style={'fontSize': '7px', 'color': '#f39c12', 'marginRight': '6px'}),
+                            html.Span("● Weak", style={'fontSize': '7px', 'color': '#95a5a6'})
+                        ], style={
+                            'marginTop': '6px',
+                            'paddingTop': '6px',
+                            'borderTop': '1px solid #ecf0f1'
+                        }) if synergy_partners else None
+
+                    ], style={'marginTop': '2px', 'marginBottom': '6px'}) if synergy_reasons else None,
 
                     # Oracle text
                     html.Div(oracle_text, style={

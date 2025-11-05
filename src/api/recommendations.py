@@ -521,10 +521,18 @@ class RecommendationEngine:
         recommendations = []
         for idx in top_indices:
             card = self.cards[idx]
+            # Get detailed synergy information
+            detailed_synergy = self._get_detailed_synergy_info(
+                card,
+                deck_cards,
+                deck_tags,
+                deck_roles
+            )
             recommendations.append({
                 **card,
                 'recommendation_score': card_scores[idx],
-                'synergy_reasons': self._explain_synergy(card, deck_tags, deck_roles)
+                'synergy_reasons': self._explain_synergy(card, deck_tags, deck_roles),
+                'synergy_details': detailed_synergy  # NEW: Detailed info for tooltips
             })
 
         result = {'recommendations': recommendations}
@@ -976,6 +984,137 @@ class RecommendationEngine:
 
         # Card must not have any colors outside the identity
         return card_colors.issubset(allowed_colors)
+
+    def _get_detailed_synergy_info(
+        self,
+        card: Dict,
+        deck_cards: List[Dict],
+        deck_tags: Counter,
+        deck_roles: Counter
+    ) -> Dict:
+        """
+        Generate detailed synergy information including specific card partners
+
+        Returns:
+            Dict with synergy details including partners and strength
+        """
+        card_tags = set(card.get('synergy_tags', []))
+        card_roles = set(card.get('roles', []))
+        card_name = card.get('name', '')
+
+        # Track synergy partners by tag
+        synergy_partners = {}  # tag -> [(card_name, strength, reason)]
+        combo_partners = []  # [(card_names, combo_type, description)]
+
+        # Tag explanations
+        tag_explanations = {
+            'has_etb': 'Has ETB abilities',
+            'flicker': 'Can flicker/blink creatures',
+            'sacrifice_outlet': 'Sacrifice outlet',
+            'death_trigger': 'Triggers on creature death',
+            'token_gen': 'Generates tokens',
+            'card_draw': 'Draws cards',
+            'ramp': 'Ramps mana',
+            'mill': 'Mills cards',
+            'self_mill': 'Self-mill effect',
+            'graveyard': 'Graveyard interaction',
+            'removal': 'Removes threats',
+            'protection': 'Protects permanents',
+            'counters': '+1/+1 counters theme',
+            'untap_others': 'Untaps other permanents',
+            'tribal_payoff': 'Tribal synergy payoff',
+            'equipment': 'Equipment card',
+            'equipment_matters': 'Equipment synergy',
+            'artifact_synergy': 'Artifact synergy',
+            'recursion': 'Recursion effects',
+            'trigger_doubler': 'Doubles triggers',
+        }
+
+        # Find specific synergy partners
+        for tag in card_tags:
+            if tag in deck_tags and tag in tag_explanations:
+                partners = []
+
+                # Find cards with matching or complementary tags
+                for deck_card in deck_cards:
+                    deck_card_name = deck_card.get('name', '')
+                    if deck_card_name == card_name:
+                        continue
+
+                    # Get preprocessed data
+                    preprocessed = self.cards_by_name.get(deck_card_name)
+                    if not preprocessed:
+                        continue
+
+                    deck_card_tags = set(preprocessed.get('synergy_tags', []))
+
+                    # Direct tag overlap
+                    if tag in deck_card_tags:
+                        strength = 'medium'
+                        reason = f"Both have {tag}"
+                        partners.append((deck_card_name, strength, reason))
+
+                    # Complementary tags (enabler + payoff)
+                    complementary_map = {
+                        'has_etb': 'flicker',
+                        'flicker': 'has_etb',
+                        'token_gen': 'sacrifice_outlet',
+                        'sacrifice_outlet': 'token_gen',
+                        'death_trigger': 'sacrifice_outlet',
+                        'graveyard': 'recursion',
+                        'self_mill': 'graveyard',
+                        'equipment': 'equipment_matters',
+                        'equipment_matters': 'equipment',
+                        'attack_trigger': 'trigger_doubler',
+                        'trigger_doubler': 'attack_trigger',
+                    }
+
+                    if tag in complementary_map:
+                        complement = complementary_map[tag]
+                        if complement in deck_card_tags:
+                            strength = 'strong'
+                            reason = f"Complementary: {tag} + {complement}"
+                            partners.append((deck_card_name, strength, reason))
+
+                # Sort by strength and limit to top 5
+                strength_order = {'strong': 0, 'medium': 1, 'weak': 2}
+                partners.sort(key=lambda x: strength_order.get(x[1], 3))
+                synergy_partners[tag] = partners[:5]
+
+        # Detect 2-card combos
+        combo_patterns = [
+            (['has_etb', 'flicker'], 'ETB Loop', 'Infinite ETB triggers'),
+            (['token_gen', 'sacrifice_outlet', 'death_trigger'], 'Aristocrats', 'Token sacrifice value engine'),
+            (['graveyard', 'recursion', 'self_mill'], 'Graveyard Loop', 'Recurring threats from graveyard'),
+            (['equipment', 'equipment_matters'], 'Voltron', 'Equipment synergy'),
+            (['trigger_doubler', 'attack_trigger'], 'Trigger Amplifier', 'Double attack triggers'),
+        ]
+
+        for pattern_tags, combo_type, description in combo_patterns:
+            # Check if card has any tags from pattern
+            if any(tag in card_tags for tag in pattern_tags):
+                # Find partners that complete the pattern
+                for deck_card in deck_cards:
+                    deck_card_name = deck_card.get('name', '')
+                    if deck_card_name == card_name:
+                        continue
+
+                    preprocessed = self.cards_by_name.get(deck_card_name)
+                    if not preprocessed:
+                        continue
+
+                    deck_card_tags = set(preprocessed.get('synergy_tags', []))
+
+                    # Check if together they form the combo
+                    combined_tags = card_tags | deck_card_tags
+                    if all(tag in combined_tags for tag in pattern_tags[:2]):  # 2-card combo
+                        combo_partners.append(([deck_card_name], combo_type, description))
+
+        return {
+            'synergy_partners': synergy_partners,
+            'combo_partners': combo_partners[:3],  # Top 3 combos
+            'tag_explanations': tag_explanations
+        }
 
     def _explain_synergy(
         self,
