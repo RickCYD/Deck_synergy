@@ -187,6 +187,187 @@ class RecommendationEngine:
 
         return scored_cards
 
+    def _find_smart_replacements(
+        self,
+        recommendation: Dict,
+        deck_cards: List[Dict],
+        deck_scores: List[Dict],
+        max_replacements: int = 3
+    ) -> List[Dict]:
+        """
+        Find smart replacement candidates for a recommendation
+
+        Considers:
+        - Card type matching (creature → creature, instant → instant)
+        - Mana curve balance (prefer similar CMC)
+        - Role coverage (don't replace last removal spell)
+        - Score improvement
+
+        Args:
+            recommendation: The recommended card
+            deck_cards: Current deck
+            deck_scores: Scored deck cards (sorted by score, weakest first)
+            max_replacements: Maximum number of replacements to suggest
+
+        Returns:
+            List of replacement suggestions with metadata
+        """
+        rec_type = recommendation.get('type_line', '').lower()
+        rec_cmc = recommendation.get('cmc', 0)
+        rec_roles = set(recommendation.get('roles', []))
+        rec_score = recommendation.get('recommendation_score', 0)
+
+        # Extract card types from type line
+        def get_card_types(type_line: str) -> Set[str]:
+            """Extract main card types from type line"""
+            type_line = type_line.lower()
+            types = set()
+
+            # Check for main types
+            if 'creature' in type_line:
+                types.add('creature')
+            if 'instant' in type_line:
+                types.add('instant')
+            if 'sorcery' in type_line:
+                types.add('sorcery')
+            if 'artifact' in type_line:
+                types.add('artifact')
+            if 'enchantment' in type_line:
+                types.add('enchantment')
+            if 'planeswalker' in type_line:
+                types.add('planeswalker')
+            if 'land' in type_line:
+                types.add('land')
+
+            return types
+
+        rec_types = get_card_types(rec_type)
+
+        # Count role coverage in deck
+        role_counts = Counter()
+        for card in deck_cards:
+            preprocessed = self.cards_by_name.get(card.get('name'))
+            if preprocessed:
+                for role in preprocessed.get('roles', []):
+                    role_counts[role] += 1
+
+        # Count CMC distribution
+        cmc_counts = Counter()
+        for card in deck_cards:
+            cmc = card.get('cmc', 0)
+            if cmc is not None:
+                cmc_counts[int(cmc)] += 1
+
+        # Score each potential replacement
+        replacement_candidates = []
+
+        for deck_card in deck_scores:
+            # Get full card data
+            card_name = deck_card['name']
+            full_card = next((c for c in deck_cards if c.get('name') == card_name), None)
+            if not full_card:
+                continue
+
+            preprocessed = self.cards_by_name.get(card_name)
+            if not preprocessed:
+                continue
+
+            card_type = deck_card.get('type_line', '').lower()
+            card_cmc = full_card.get('cmc', 0)
+            card_roles = set(preprocessed.get('roles', []))
+            card_score = deck_card['synergy_score']
+
+            # Skip if not an improvement
+            if card_score >= rec_score:
+                continue
+
+            card_types = get_card_types(card_type)
+
+            # Calculate type matching score (0-100)
+            type_overlap = len(rec_types & card_types)
+            type_score = (type_overlap / max(len(rec_types), 1)) * 100
+
+            # Skip if no type overlap at all (don't replace creature with instant)
+            if type_overlap == 0 and rec_types and card_types:
+                continue
+
+            # Calculate CMC similarity score (0-100)
+            cmc_diff = abs(rec_cmc - card_cmc)
+            cmc_score = max(0, 100 - (cmc_diff * 20))  # -20 points per CMC difference
+
+            # Check role coverage - penalize if removing last of a critical role
+            role_coverage_penalty = 0
+            critical_roles = {'removal', 'board_wipe', 'card_draw', 'ramp'}
+            for role in card_roles:
+                if role in critical_roles:
+                    count_in_deck = role_counts.get(role, 0)
+                    if count_in_deck <= 2:  # Last 1-2 cards with this role
+                        role_coverage_penalty += 50  # Heavy penalty
+                    elif count_in_deck <= 4:
+                        role_coverage_penalty += 25  # Moderate penalty
+
+            # Calculate role synergy score (0-100)
+            role_overlap = len(rec_roles & card_roles)
+            role_score = (role_overlap / max(len(rec_roles | card_roles), 1)) * 100
+
+            # Check mana curve balance - penalize if this CMC slot is already thin
+            curve_penalty = 0
+            cmc_count = cmc_counts.get(int(card_cmc), 0)
+            if cmc_count <= 2:
+                curve_penalty = 30  # Penalty for removing from thin CMC slot
+            elif cmc_count <= 4:
+                curve_penalty = 15
+
+            # Calculate overall replacement quality score
+            quality_score = (
+                type_score * 0.35 +  # Type matching is most important
+                cmc_score * 0.20 +    # CMC similarity
+                role_score * 0.20 +   # Role overlap
+                (100 - role_coverage_penalty) * 0.15 +  # Role coverage protection
+                (100 - curve_penalty) * 0.10   # Curve balance
+            )
+
+            # Calculate net score improvement
+            score_improvement = rec_score - card_score
+
+            replacement_candidates.append({
+                'name': card_name,
+                'type_line': card_type,
+                'cmc': card_cmc,
+                'current_score': card_score,
+                'quality_score': quality_score,
+                'score_improvement': score_improvement,
+                'type_match': type_overlap > 0,
+                'cmc_diff': cmc_diff,
+                'role_overlap': role_overlap,
+                'removes_critical_role': role_coverage_penalty > 0,
+                'thins_curve': curve_penalty > 0,
+                'match_reasons': []
+            })
+
+        # Sort by quality score (best matches first)
+        replacement_candidates.sort(key=lambda x: x['quality_score'], reverse=True)
+
+        # Add match reasons for top candidates
+        for candidate in replacement_candidates[:max_replacements]:
+            reasons = []
+            if candidate['type_match']:
+                reasons.append(f"Same card type")
+            if candidate['cmc_diff'] <= 1:
+                reasons.append(f"Similar CMC ({candidate['cmc']:.0f})")
+            if candidate['role_overlap'] > 0:
+                reasons.append(f"Shares {candidate['role_overlap']} roles")
+            if candidate['score_improvement'] > 20:
+                reasons.append(f"Large improvement (+{candidate['score_improvement']:.0f})")
+            if candidate['removes_critical_role']:
+                reasons.append(f"⚠️ Removes critical role")
+            if candidate['thins_curve']:
+                reasons.append(f"⚠️ Thins mana curve")
+
+            candidate['match_reasons'] = reasons
+
+        return replacement_candidates[:max_replacements]
+
     def get_recommendations(
         self,
         deck_cards: List[Dict],
@@ -294,22 +475,11 @@ class RecommendationEngine:
             total_synergy = self.calculate_total_deck_synergy(deck_cards, exclude_lands=True, exclude_sideboard=True)
             result['total_deck_synergy'] = total_synergy
 
-            # Add replacement suggestions to recommendations
-            # Find weakest cards in deck
-            weakest_threshold = deck_scores[len(deck_scores) // 3]['synergy_score'] if deck_scores else 0
-
+            # Add smart replacement suggestions to recommendations
             # Get current total deck synergy score
             current_total_score = total_synergy.get('total_score', 0)
 
             for rec in recommendations:
-                rec_score = rec['recommendation_score']
-                # Find cards in deck that this recommendation would be better than
-                worse_cards = [dc for dc in deck_scores if dc['synergy_score'] < rec_score and dc['synergy_score'] < weakest_threshold]
-                if worse_cards:
-                    rec['could_replace'] = worse_cards[:3]  # Top 3 replacement candidates
-                else:
-                    rec['could_replace'] = []
-
                 # Calculate score improvement if this card is added to the deck
                 # Create a temporary deck with this card added
                 temp_deck = deck_cards + [{
@@ -335,6 +505,15 @@ class RecommendationEngine:
                 rec['score_before'] = current_total_score
                 rec['score_after'] = new_total_score
                 rec['score_change'] = score_improvement
+
+                # Find smart replacement candidates
+                smart_replacements = self._find_smart_replacements(
+                    rec,
+                    deck_cards,
+                    deck_scores,
+                    max_replacements=3
+                )
+                rec['smart_replacements'] = smart_replacements
 
         return result
 

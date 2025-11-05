@@ -1515,13 +1515,8 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 if len(oracle_text) > 200:
                     oracle_text = oracle_text[:200] + '...'
 
-                # Get replacement suggestions (logic kept for future use)
-                # TODO: Implement smart single-card replacement that considers:
-                # - Card type matching (creature for creature, etc.)
-                # - Mana curve balance
-                # - Strategy alignment (voltron vs midrange vs combo)
-                # - Before/after total deck synergy comparison
-                could_replace = card.get('could_replace', [])
+                # Get smart replacement suggestions
+                smart_replacements = card.get('smart_replacements', [])
 
                 # Get roles for this card to show what it fills
                 card_roles = card.get('roles', [])
@@ -1564,9 +1559,43 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                         html.Span(f"CMC: {cmc}", style={'fontSize': '11px', 'color': '#95a5a6'})
                     ], style={'marginBottom': '6px'}),
 
-                    # Replacement suggestions - HIDDEN FOR NOW
-                    # Will be re-enabled once we implement smart card-type-aware replacement logic
-                    # html.Div([...]) if could_replace else None,
+                    # Smart replacement suggestions
+                    html.Div([
+                        html.Div([
+                            html.Span("🔄 ", style={'fontSize': '11px'}),
+                            html.Strong("Best Replacements:", style={'fontSize': '11px', 'color': '#e67e22'})
+                        ], style={'marginBottom': '4px'}),
+                        html.Div([
+                            html.Div([
+                                # Replacement card name and score
+                                html.Div([
+                                    html.Span(f"• ", style={'color': '#e67e22', 'fontWeight': 'bold'}),
+                                    html.Span(
+                                        f"{replacement['name']}",
+                                        style={'fontSize': '10px', 'color': '#2c3e50', 'fontWeight': 'bold'}
+                                    ),
+                                    html.Span(
+                                        f" ({replacement['current_score']:.0f} → {score:.0f})",
+                                        style={'fontSize': '9px', 'color': '#27ae60', 'marginLeft': '4px'}
+                                    )
+                                ], style={'marginBottom': '2px'}),
+                                # Match reasons
+                                html.Div([
+                                    html.Span(
+                                        ", ".join(replacement.get('match_reasons', [])[:2]),
+                                        style={'fontSize': '9px', 'color': '#7f8c8d', 'fontStyle': 'italic', 'marginLeft': '12px'}
+                                    )
+                                ]) if replacement.get('match_reasons') else None
+                            ], style={'marginBottom': '4px'})
+                            for replacement in smart_replacements[:2]  # Show top 2 replacements
+                        ], style={'paddingLeft': '8px'})
+                    ], style={
+                        'backgroundColor': '#fff9f5',
+                        'padding': '6px',
+                        'borderRadius': '4px',
+                        'marginBottom': '6px',
+                        'borderLeft': '2px solid #e67e22'
+                    }) if smart_replacements else None,
 
                     # Synergy reasons
                     html.Div([
