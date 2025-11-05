@@ -402,7 +402,7 @@ def is_commander_playable(card: Dict) -> bool:
     Filter out cards not legal/relevant in Commander
 
     Excludes:
-    - Non-Commander legal cards
+    - Non-Commander legal cards (checks legalities.commander if available)
     - Tokens
     - Basic lands (too generic)
     - Conspiracies, schemes, vanguards
@@ -410,20 +410,36 @@ def is_commander_playable(card: Dict) -> bool:
     type_line = card.get('type_line', '').lower()
     name = card.get('name', '').lower()
 
+    # PRIMARY CHECK: Verify Commander legality from Scryfall data (if available)
+    # This catches playtest cards, banned cards, and format-restricted cards
+    legalities = card.get('legalities', {})
+
+    # If legalities data is available, use it for strict filtering
+    if legalities:
+        commander_legal = legalities.get('commander', 'not_legal')
+        # Only allow cards that are explicitly "legal" or "restricted" in Commander
+        # Exclude: "not_legal", "banned", and missing legalities
+        if commander_legal not in ['legal', 'restricted']:
+            return False
+
+    # SECONDARY CHECKS: Additional filtering for edge cases
+    # (These apply whether or not legalities data is available)
+
     # Exclude tokens
     if 'token' in type_line:
         return False
 
-    # Exclude basic lands
+    # Exclude basic lands (too generic for recommendations)
     if 'basic land' in type_line:
         return False
 
-    # Exclude special card types
+    # Exclude special card types not used in normal Commander games
     exclude_types = ['conspiracy', 'scheme', 'vanguard', 'phenomenon', 'plane']
     if any(t in type_line for t in exclude_types):
         return False
 
     # Exclude silver-bordered / un-set cards (heuristic: unusual punctuation)
+    # Note: Some un-set cards may be legal, but legalities check catches those
     if '?' in name or '!' in name:
         return False
 
