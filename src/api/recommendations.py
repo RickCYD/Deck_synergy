@@ -298,6 +298,9 @@ class RecommendationEngine:
             # Find weakest cards in deck
             weakest_threshold = deck_scores[len(deck_scores) // 3]['synergy_score'] if deck_scores else 0
 
+            # Get current total deck synergy score
+            current_total_score = total_synergy.get('total_score', 0)
+
             for rec in recommendations:
                 rec_score = rec['recommendation_score']
                 # Find cards in deck that this recommendation would be better than
@@ -306,6 +309,32 @@ class RecommendationEngine:
                     rec['could_replace'] = worse_cards[:3]  # Top 3 replacement candidates
                 else:
                     rec['could_replace'] = []
+
+                # Calculate score improvement if this card is added to the deck
+                # Create a temporary deck with this card added
+                temp_deck = deck_cards + [{
+                    'name': rec.get('name'),
+                    'type_line': rec.get('type_line', ''),
+                    'synergy_tags': rec.get('synergy_tags', []),
+                    'roles': rec.get('roles', []),
+                    'board': 'mainboard'
+                }]
+
+                # Calculate total synergy with the new card
+                new_total_synergy = self.calculate_total_deck_synergy(
+                    temp_deck,
+                    exclude_lands=True,
+                    exclude_sideboard=True
+                )
+                new_total_score = new_total_synergy.get('total_score', 0)
+
+                # Calculate the improvement
+                score_improvement = new_total_score - current_total_score
+
+                # Add to recommendation
+                rec['score_before'] = current_total_score
+                rec['score_after'] = new_total_score
+                rec['score_change'] = score_improvement
 
         return result
 

@@ -1506,6 +1506,11 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 synergy_reasons = card.get('synergy_reasons', [])
                 cmc = card.get('cmc', 0)
 
+                # Get score change information
+                score_before = card.get('score_before', 0)
+                score_after = card.get('score_after', 0)
+                score_change = card.get('score_change', 0)
+
                 # Truncate oracle text if too long
                 if len(oracle_text) > 200:
                     oracle_text = oracle_text[:200] + '...'
@@ -1518,12 +1523,36 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 # - Before/after total deck synergy comparison
                 could_replace = card.get('could_replace', [])
 
+                # Get roles for this card to show what it fills
+                card_roles = card.get('roles', [])
+                fills_text = ", ".join([role.replace('_', ' ').title() for role in card_roles[:3]]) if card_roles else "General Synergy"
+
                 rec_items.append(html.Div([
                     # Card name and score
                     html.Div([
                         html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
                         html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
                         html.Span(f" ({score:.0f})", style={'fontSize': '11px', 'color': '#9b59b6', 'marginLeft': '4px'})
+                    ], style={'marginBottom': '4px'}),
+
+                    # Score change display
+                    html.Div([
+                        html.Span("Score: ", style={'fontSize': '11px', 'color': '#7f8c8d'}),
+                        html.Span(f"{score_before:.0f} → {score_after:.0f} ", style={'fontSize': '11px', 'color': '#2c3e50', 'fontWeight': 'bold'}),
+                        html.Span(
+                            f"(+{score_change:.0f})" if score_change >= 0 else f"({score_change:.0f})",
+                            style={
+                                'fontSize': '11px',
+                                'color': '#27ae60' if score_change > 0 else '#e74c3c',
+                                'fontWeight': 'bold'
+                            }
+                        )
+                    ], style={'marginBottom': '4px'}),
+
+                    # Fills display
+                    html.Div([
+                        html.Span("Fills: ", style={'fontSize': '11px', 'color': '#7f8c8d', 'fontWeight': 'bold'}),
+                        html.Span(fills_text, style={'fontSize': '11px', 'color': '#16a085'})
                     ], style={'marginBottom': '4px'}),
 
                     # Type line
