@@ -706,7 +706,75 @@ app.layout = html.Div([
     dcc.Store(id='tooltip-init-store'),  # Dummy store for tooltip initialization
     dcc.Store(id='selected-commander-store'),
     dcc.Store(id='built-deck-store'),
-    dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True)
+    dcc.Store(id='card-images-store'),  # Store for card images (recommended cards, etc.)
+    dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True),
+
+    # Modal for displaying full card images
+    html.Div(
+        id='card-image-modal',
+        n_clicks=0,
+        children=[
+            html.Div(
+                id='card-image-modal-content',
+                children=[
+                    html.Div(
+                        html.Button(
+                            '×',
+                            id='close-card-modal',
+                            n_clicks=0,
+                            style={
+                                'position': 'absolute',
+                                'top': '10px',
+                                'right': '10px',
+                                'fontSize': '28px',
+                                'fontWeight': 'bold',
+                                'color': '#fff',
+                                'backgroundColor': 'transparent',
+                                'border': 'none',
+                                'cursor': 'pointer',
+                                'padding': '0 8px',
+                                'zIndex': 1001,
+                                'textShadow': '0 0 3px rgba(0,0,0,0.8)'
+                            }
+                        ),
+                        style={'position': 'relative'}
+                    ),
+                    html.Img(
+                        id='card-image-modal-img',
+                        style={
+                            'maxWidth': '90vw',
+                            'maxHeight': '90vh',
+                            'borderRadius': '12px',
+                            'boxShadow': '0 8px 32px rgba(0,0,0,0.5)',
+                            'cursor': 'default'
+                        },
+                        n_clicks=0
+                    )
+                ],
+                style={
+                    'position': 'relative',
+                    'display': 'flex',
+                    'flexDirection': 'column',
+                    'alignItems': 'center',
+                    'justifyContent': 'center',
+                    'pointerEvents': 'auto'
+                }
+            )
+        ],
+        style={
+            'display': 'none',
+            'position': 'fixed',
+            'zIndex': 1000,
+            'left': 0,
+            'top': 0,
+            'width': '100%',
+            'height': '100%',
+            'backgroundColor': 'rgba(0,0,0,0.85)',
+            'alignItems': 'center',
+            'justifyContent': 'center',
+            'cursor': 'pointer'
+        }
+    )
 ], style={'backgroundColor': '#f5f5f5', 'minHeight': '100vh'})
 
 
@@ -1277,16 +1345,19 @@ def update_layout(layout_name):
 @app.callback(
     [Output('card-graph', 'stylesheet', allow_duplicate=True),
      Output('card-graph', 'layout', allow_duplicate=True),
-     Output('card-graph', 'elements', allow_duplicate=True)],
+     Output('card-graph', 'elements', allow_duplicate=True),
+     Output('info-panel', 'children', allow_duplicate=True),
+     Output('card-images-store', 'data', allow_duplicate=True)],
     Input('view-top-cards-button', 'n_clicks'),
     [State('current-deck-file-store', 'data'),
-     State('card-graph', 'elements')],
+     State('card-graph', 'elements'),
+     State('card-images-store', 'data')],
     prevent_initial_call=True
 )
-def view_top_cards_in_graph(n_clicks, deck_file, elements):
+def view_top_cards_in_graph(n_clicks, deck_file, elements, current_card_images):
     """Reorganize graph to highlight and center top 5 cards"""
     if not deck_file or not elements:
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     try:
         # Load deck data
@@ -1409,6 +1480,97 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
                         }
                     })
 
+        # Build top cards info panel
+        cards = deck_data.get('cards', [])
+        top_cards = rankings_summary.get('top_cards', [])
+
+        top_items = []
+        for idx, card_info in enumerate(top_cards, 1):
+            card_name = card_info.get('name', 'Unknown')
+            rank_score = card_info.get('total_synergy', 0)
+
+            # Find full card data
+            card_data = next((c for c in cards if c.get('name') == card_name), {})
+
+            type_line = card_data.get('type_line', '')
+            mana_cost = card_data.get('mana_cost', '')
+            oracle_text = card_data.get('oracle_text', '')
+            cmc = card_data.get('cmc', 0)
+
+            # Truncate oracle text
+            if len(oracle_text) > 200:
+                oracle_text = oracle_text[:200] + '...'
+
+            top_items.append(html.Div([
+                # Card name and score
+                html.Div([
+                    html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
+                    html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
+                    html.Span(f" ({rank_score:.1f})", style={'fontSize': '11px', 'color': '#2ecc71', 'marginLeft': '4px'}),
+                    html.Button(
+                        '🔍',
+                        id={'type': 'view-card-image', 'index': card_name},
+                        n_clicks=0,
+                        style={
+                            'marginLeft': '6px',
+                            'fontSize': '12px',
+                            'padding': '1px 5px',
+                            'backgroundColor': '#ecf0f1',
+                            'border': 'none',
+                            'borderRadius': '3px',
+                            'cursor': 'pointer',
+                            'verticalAlign': 'middle',
+                            'lineHeight': '1.2',
+                            'opacity': '0.7',
+                            'transition': 'opacity 0.2s'
+                        },
+                        title='View full card image'
+                    )
+                ], style={'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center'}),
+
+                # Type line
+                html.Div(type_line, style={'fontSize': '11px', 'color': '#34495e', 'fontStyle': 'italic', 'marginBottom': '4px'}),
+
+                # Mana cost and CMC
+                html.Div([
+                    html.Span(mana_cost if mana_cost else '—', style={'fontSize': '12px', 'color': '#7f8c8d', 'marginRight': '8px'}),
+                    html.Span(f"CMC: {cmc}", style={'fontSize': '11px', 'color': '#95a5a6'})
+                ], style={'marginBottom': '6px'}),
+
+                # Why it's a top card
+                html.Div([
+                    html.Strong("Why top card?", style={'fontSize': '11px', 'color': '#27ae60'}),
+                    html.Ul([
+                        html.Li(f"High synergy centrality (rank {idx})", style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'}),
+                        html.Li(f"Synergy score: {rank_score:.1f}", style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'})
+                    ], style={'marginTop': '2px', 'marginBottom': '6px', 'paddingLeft': '16px'})
+                ]),
+
+                # Oracle text
+                html.Div(oracle_text, style={
+                    'fontSize': '10px',
+                    'color': '#7f8c8d',
+                    'fontStyle': 'italic',
+                    'backgroundColor': '#f8f9fa',
+                    'padding': '6px',
+                    'borderRadius': '4px',
+                    'marginTop': '6px'
+                }) if oracle_text else None
+
+            ], style={
+                'marginBottom': '14px',
+                'paddingBottom': '14px',
+                'borderBottom': '2px solid #ecf0f1',
+                'paddingLeft': '4px',
+                'borderLeft': '3px solid #2ecc71'
+            }))
+
+        top_panel = html.Div([
+            html.H4("⭐ Top Cards", style={'marginBottom': '12px', 'color': '#2ecc71', 'fontSize': '16px'}),
+            html.P("These cards have the highest synergy with the rest of your deck:", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginBottom': '12px'}),
+            html.Div(top_items)
+        ])
+
         # Use cose layout with optimized parameters for top cards view
         # The top cards will still be visually prominent due to size/color
         layout = {
@@ -1427,11 +1589,11 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
             'nodeOverlap': 100
         }
 
-        return base_stylesheet, layout, dash.no_update
+        return base_stylesheet, layout, dash.no_update, top_panel, dash.no_update
 
     except Exception as e:
         print(f"Error highlighting top cards: {e}")
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
 
 
@@ -1439,23 +1601,24 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements):
 @app.callback(
     [Output('card-graph', 'stylesheet'),
      Output('info-panel', 'children'),
-     Output('card-graph', 'layout', allow_duplicate=True)],
+     Output('card-graph', 'layout', allow_duplicate=True),
+     Output('card-images-store', 'data')],
     [Input('card-graph', 'tapNodeData'),
      Input('card-graph', 'tapEdgeData'),
      Input('active-role-filter', 'data'),
      Input('get-recommendations-button', 'n_clicks'),
-     Input('cards-to-cut-button', 'n_clicks'),
-     Input('view-top-cards-button', 'n_clicks')],
+     Input('cards-to-cut-button', 'n_clicks')],
     [State('card-graph', 'elements'),
      State('role-filter-data', 'data'),
-     State('current-deck-file-store', 'data')],
+     State('current-deck-file-store', 'data'),
+     State('card-images-store', 'data')],
     prevent_initial_call=True
 )
-def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks, top_clicks, elements, role_summary, deck_file):
+def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks, elements, role_summary, deck_file, current_card_images):
     """Handle node/edge selection, role filter, recommendations, and update highlighting."""
     ctx = callback_context
     if not ctx.triggered:
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     triggered_prop = ctx.triggered[0]['prop_id']
 
@@ -1467,7 +1630,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             return dash.no_update, html.Div([
                 html.P("⚠️ Please load a deck first before getting recommendations.",
                        style={'color': '#e74c3c', 'padding': '16px', 'textAlign': 'center'})
-            ]), dash.no_update
+            ]), dash.no_update, dash.no_update
 
         # Load deck from file and generate recommendations
         try:
@@ -1506,55 +1669,44 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 synergy_reasons = card.get('synergy_reasons', [])
                 cmc = card.get('cmc', 0)
 
-                # Get score change information
-                score_before = card.get('score_before', 0)
-                score_after = card.get('score_after', 0)
-                score_change = card.get('score_change', 0)
-
                 # Truncate oracle text if too long
                 if len(oracle_text) > 200:
                     oracle_text = oracle_text[:200] + '...'
 
-                # Get smart replacement suggestions
-                smart_replacements = card.get('smart_replacements', [])
-
-                # Get roles for this card to show what it fills
-                card_roles = card.get('roles', [])
-                fills_text = ", ".join([role.replace('_', ' ').title() for role in card_roles[:3]]) if card_roles else "General Synergy"
-
-                # Get detailed synergy information
-                synergy_details = card.get('synergy_details', {})
-                synergy_partners = synergy_details.get('synergy_partners', {})
-                combo_partners = synergy_details.get('combo_partners', [])
-                tag_explanations = synergy_details.get('tag_explanations', {})
+                # Get replacement suggestions (logic kept for future use)
+                # TODO: Implement smart single-card replacement that considers:
+                # - Card type matching (creature for creature, etc.)
+                # - Mana curve balance
+                # - Strategy alignment (voltron vs midrange vs combo)
+                # - Before/after total deck synergy comparison
+                could_replace = card.get('could_replace', [])
 
                 rec_items.append(html.Div([
                     # Card name and score
                     html.Div([
                         html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
                         html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
-                        html.Span(f" ({score:.0f})", style={'fontSize': '11px', 'color': '#9b59b6', 'marginLeft': '4px'})
-                    ], style={'marginBottom': '4px'}),
-
-                    # Score change display
-                    html.Div([
-                        html.Span("Score: ", style={'fontSize': '11px', 'color': '#7f8c8d'}),
-                        html.Span(f"{score_before:.0f} → {score_after:.0f} ", style={'fontSize': '11px', 'color': '#2c3e50', 'fontWeight': 'bold'}),
-                        html.Span(
-                            f"(+{score_change:.0f})" if score_change >= 0 else f"({score_change:.0f})",
+                        html.Span(f" ({score:.0f})", style={'fontSize': '11px', 'color': '#9b59b6', 'marginLeft': '4px'}),
+                        html.Button(
+                            '🔍',
+                            id={'type': 'view-card-image', 'index': card_name},
+                            n_clicks=0,
                             style={
-                                'fontSize': '11px',
-                                'color': '#27ae60' if score_change > 0 else '#e74c3c',
-                                'fontWeight': 'bold'
-                            }
+                                'marginLeft': '6px',
+                                'fontSize': '12px',
+                                'padding': '1px 5px',
+                                'backgroundColor': '#ecf0f1',
+                                'border': 'none',
+                                'borderRadius': '3px',
+                                'cursor': 'pointer',
+                                'verticalAlign': 'middle',
+                                'lineHeight': '1.2',
+                                'opacity': '0.7',
+                                'transition': 'opacity 0.2s'
+                            },
+                            title='View full card image'
                         )
-                    ], style={'marginBottom': '4px'}),
-
-                    # Fills display
-                    html.Div([
-                        html.Span("Fills: ", style={'fontSize': '11px', 'color': '#7f8c8d', 'fontWeight': 'bold'}),
-                        html.Span(fills_text, style={'fontSize': '11px', 'color': '#16a085'})
-                    ], style={'marginBottom': '4px'}),
+                    ], style={'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center'}),
 
                     # Type line
                     html.Div(type_line, style={'fontSize': '11px', 'color': '#34495e', 'fontStyle': 'italic', 'marginBottom': '4px'}),
@@ -1565,127 +1717,18 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                         html.Span(f"CMC: {cmc}", style={'fontSize': '11px', 'color': '#95a5a6'})
                     ], style={'marginBottom': '6px'}),
 
-                    # Smart replacement suggestions
+                    # Replacement suggestions - HIDDEN FOR NOW
+                    # Will be re-enabled once we implement smart card-type-aware replacement logic
+                    # html.Div([...]) if could_replace else None,
+
+                    # Synergy reasons
                     html.Div([
-                        html.Div([
-                            html.Span("🔄 ", style={'fontSize': '11px'}),
-                            html.Strong("Best Replacements:", style={'fontSize': '11px', 'color': '#e67e22'})
-                        ], style={'marginBottom': '4px'}),
-                        html.Div([
-                            html.Div([
-                                # Replacement card name and score
-                                html.Div([
-                                    html.Span(f"• ", style={'color': '#e67e22', 'fontWeight': 'bold'}),
-                                    html.Span(
-                                        f"{replacement['name']}",
-                                        style={'fontSize': '10px', 'color': '#2c3e50', 'fontWeight': 'bold'}
-                                    ),
-                                    html.Span(
-                                        f" ({replacement['current_score']:.0f} → {score:.0f})",
-                                        style={'fontSize': '9px', 'color': '#27ae60', 'marginLeft': '4px'}
-                                    )
-                                ], style={'marginBottom': '2px'}),
-                                # Match reasons
-                                html.Div([
-                                    html.Span(
-                                        ", ".join(replacement.get('match_reasons', [])[:2]),
-                                        style={'fontSize': '9px', 'color': '#7f8c8d', 'fontStyle': 'italic', 'marginLeft': '12px'}
-                                    )
-                                ]) if replacement.get('match_reasons') else None
-                            ], style={'marginBottom': '4px'})
-                            for replacement in smart_replacements[:2]  # Show top 2 replacements
-                        ], style={'paddingLeft': '8px'})
-                    ], style={
-                        'backgroundColor': '#fff9f5',
-                        'padding': '6px',
-                        'borderRadius': '4px',
-                        'marginBottom': '6px',
-                        'borderLeft': '2px solid #e67e22'
-                    }) if smart_replacements else None,
-
-                    # Enhanced synergy reasons with specific partners
-                    html.Div([
-                        html.Strong("Why?", style={'fontSize': '11px', 'color': '#16a085', 'marginBottom': '4px', 'display': 'block'}),
-
-                        # Build synergy reason items with partner details
-                        *[
-                            html.Div([
-                                # Main synergy reason
-                                html.Div(reason, style={
-                                    'fontSize': '10px',
-                                    'color': '#555',
-                                    'fontWeight': '600',
-                                    'marginBottom': '2px'
-                                }),
-
-                                # Show specific synergy partners
-                                html.Div([
-                                    html.Div([
-                                        html.Span("● ", style={
-                                            'color': '#27ae60' if partner[1] == 'strong' else '#f39c12' if partner[1] == 'medium' else '#95a5a6',
-                                            'fontSize': '10px',
-                                            'fontWeight': 'bold'
-                                        }),
-                                        html.Span(partner[0], style={
-                                            'fontSize': '9px',
-                                            'color': '#2c3e50'
-                                        })
-                                    ], style={'marginLeft': '12px', 'marginBottom': '1px'})
-                                    # Find partners for tags in this reason
-                                    for tag_key, partners in synergy_partners.items()
-                                    for partner in partners[:3]  # Top 3 partners
-                                    if tag_explanations.get(tag_key, '') in reason
-                                ]) if synergy_partners else None
-                            ], style={'marginBottom': '8px'})
+                        html.Strong("Why?", style={'fontSize': '11px', 'color': '#16a085'}),
+                        html.Ul([
+                            html.Li(reason, style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'})
                             for reason in synergy_reasons[:3]  # Top 3 reasons
-                        ],
-
-                        # Combo detection
-                        html.Div([
-                            html.Div([
-                                html.Strong("💥 Combos: ", style={'fontSize': '10px', 'color': '#e74c3c'})
-                            ], style={'marginTop': '6px', 'marginBottom': '4px'}),
-                            html.Div([
-                                html.Div([
-                                    html.Span(f"→ {combo[1]}: ", style={
-                                        'fontSize': '9px',
-                                        'color': '#e74c3c',
-                                        'fontWeight': 'bold'
-                                    }),
-                                    html.Span(", ".join(combo[0][:2]), style={
-                                        'fontSize': '9px',
-                                        'color': '#2c3e50'
-                                    }),
-                                    html.Br(),
-                                    html.Span(combo[2], style={
-                                        'fontSize': '8px',
-                                        'color': '#7f8c8d',
-                                        'fontStyle': 'italic',
-                                        'marginLeft': '12px'
-                                    })
-                                ], style={'marginBottom': '4px'})
-                                for combo in combo_partners[:2]  # Top 2 combos
-                            ])
-                        ], style={
-                            'backgroundColor': '#fff5f5',
-                            'padding': '6px',
-                            'borderRadius': '4px',
-                            'borderLeft': '2px solid #e74c3c',
-                            'marginTop': '6px'
-                        }) if combo_partners else None,
-
-                        # Synergy strength legend
-                        html.Div([
-                            html.Span("● Strong", style={'fontSize': '7px', 'color': '#27ae60', 'marginRight': '6px'}),
-                            html.Span("● Medium", style={'fontSize': '7px', 'color': '#f39c12', 'marginRight': '6px'}),
-                            html.Span("● Weak", style={'fontSize': '7px', 'color': '#95a5a6'})
-                        ], style={
-                            'marginTop': '6px',
-                            'paddingTop': '6px',
-                            'borderTop': '1px solid #ecf0f1'
-                        }) if synergy_partners else None
-
-                    ], style={'marginTop': '2px', 'marginBottom': '6px'}) if synergy_reasons else None,
+                        ], style={'marginTop': '2px', 'marginBottom': '6px', 'paddingLeft': '16px'})
+                    ] if synergy_reasons else None),
 
                     # Oracle text
                     html.Div(oracle_text, style={
@@ -1715,8 +1758,27 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 for i, weak_card in enumerate(weakest_cards, 1):
                     weakest_items.append(html.Li([
                         html.Span(f"{weak_card['name']}", style={'fontWeight': 'bold', 'color': '#e74c3c'}),
-                        html.Span(f" ({weak_card['synergy_score']:.0f})", style={'color': '#95a5a6', 'fontSize': '10px', 'marginLeft': '4px'})
-                    ], style={'fontSize': '11px', 'marginBottom': '4px'}))
+                        html.Span(f" ({weak_card['synergy_score']:.0f})", style={'color': '#95a5a6', 'fontSize': '10px', 'marginLeft': '4px'}),
+                        html.Button(
+                            '🔍',
+                            id={'type': 'view-card-image', 'index': weak_card['name']},
+                            n_clicks=0,
+                            style={
+                                'marginLeft': '6px',
+                                'fontSize': '11px',
+                                'padding': '1px 4px',
+                                'backgroundColor': '#ecf0f1',
+                                'border': 'none',
+                                'borderRadius': '3px',
+                                'cursor': 'pointer',
+                                'verticalAlign': 'middle',
+                                'lineHeight': '1.2',
+                                'opacity': '0.7',
+                                'transition': 'opacity 0.2s'
+                            },
+                            title='View full card image'
+                        )
+                    ], style={'fontSize': '11px', 'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center'}))
 
                 weakest_cards_section = html.Div([
                     html.H5("⚠️ Weakest Cards in Your Deck", style={'marginTop': '20px', 'marginBottom': '8px', 'color': '#e74c3c', 'fontSize': '14px'}),
@@ -1755,14 +1817,59 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 weakest_cards_section
             ])
 
-            return dash.no_update, recommendations_panel, dash.no_update
+            # Extract image URLs from recommended cards for the modal
+            card_images = current_card_images or {}
+            print(f"[DEBUG RECS] Starting with {len(card_images)} images in store")
+            for card in recommended_cards:
+                card_name = card.get('name')
+                if card_name:
+                    # Try multiple sources for image URL
+                    image_url = None
+
+                    # First try image_uris dict (full card data from Scryfall)
+                    image_uris = card.get('image_uris', {})
+                    if isinstance(image_uris, dict) and image_uris:
+                        image_url = image_uris.get('large') or image_uris.get('normal') or image_uris.get('png')
+
+                    # If no full image, fetch from Scryfall API
+                    if not image_url:
+                        try:
+                            print(f"[DEBUG RECS] Fetching full card image from Scryfall for '{card_name}'")
+                            import requests
+                            import time
+
+                            # Search for card by exact name
+                            search_url = f"https://api.scryfall.com/cards/named?exact={requests.utils.quote(card_name)}"
+                            response = requests.get(search_url, timeout=5)
+
+                            if response.status_code == 200:
+                                card_data = response.json()
+                                image_uris_full = card_data.get('image_uris', {})
+                                image_url = image_uris_full.get('large') or image_uris_full.get('normal') or image_uris_full.get('png')
+                                print(f"[DEBUG RECS]   ✓ Fetched from Scryfall: {image_url[:60] if image_url else 'None'}...")
+                                time.sleep(0.1)  # Rate limit: 10 requests/second
+                            else:
+                                print(f"[DEBUG RECS]   ✗ Scryfall API returned status {response.status_code}")
+                        except Exception as e:
+                            print(f"[DEBUG RECS]   ✗ Error fetching from Scryfall: {e}")
+
+                    print(f"[DEBUG RECS] Card '{card_name}': final image_url={image_url[:60] if image_url else None}...")
+
+                    if image_url:
+                        card_images[card_name] = image_url
+                        print(f"[DEBUG RECS]   ✓ Added to store")
+                    else:
+                        print(f"[DEBUG RECS]   ✗ No image URL found")
+
+            print(f"[DEBUG RECS] Final card_images has {len(card_images)} images: {list(card_images.keys())}")
+            return dash.no_update, recommendations_panel, dash.no_update, card_images
 
         except Exception as e:
             print(f"[DEBUG] Error generating recommendations: {e}")
             return dash.no_update, html.Div([
                 html.P(f"⚠️ Error: {str(e)}",
                        style={'color': '#e74c3c', 'padding': '16px', 'fontSize': '12px'})
-            ]), dash.no_update
+            ]), dash.no_update, dash.no_update
 
     # Handle cards-to-cut button click
     if triggered_prop == 'cards-to-cut-button.n_clicks':
@@ -1772,7 +1879,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             return dash.no_update, html.Div([
                 html.P("⚠️ Please load a deck first before analyzing cards to cut.",
                        style={'color': '#e74c3c', 'padding': '16px', 'textAlign': 'center'})
-            ]), dash.no_update
+            ]), dash.no_update, dash.no_update
 
         # Load deck from file
         try:
@@ -1851,8 +1958,27 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                     html.Div([
                         html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
                         html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
-                        html.Span(f" ({score:.1f})", style={'fontSize': '11px', 'color': '#e74c3c', 'marginLeft': '4px'})
-                    ], style={'marginBottom': '4px'}),
+                        html.Span(f" ({score:.1f})", style={'fontSize': '11px', 'color': '#e74c3c', 'marginLeft': '4px'}),
+                        html.Button(
+                            '🔍',
+                            id={'type': 'view-card-image', 'index': card_name},
+                            n_clicks=0,
+                            style={
+                                'marginLeft': '6px',
+                                'fontSize': '12px',
+                                'padding': '1px 5px',
+                                'backgroundColor': '#ecf0f1',
+                                'border': 'none',
+                                'borderRadius': '3px',
+                                'cursor': 'pointer',
+                                'verticalAlign': 'middle',
+                                'lineHeight': '1.2',
+                                'opacity': '0.7',
+                                'transition': 'opacity 0.2s'
+                            },
+                            title='View full card image'
+                        )
+                    ], style={'marginBottom': '4px', 'display': 'flex', 'alignItems': 'center'}),
 
                     # Type line
                     html.Div(type_line, style={'fontSize': '11px', 'color': '#34495e', 'fontStyle': 'italic', 'marginBottom': '4px'}),
@@ -1939,7 +2065,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 'nodeOverlap': 100
             }
 
-            return stylesheet, cut_panel, layout
+            return stylesheet, cut_panel, layout, dash.no_update
 
         except Exception as e:
             print(f"[DEBUG] Error analyzing cards to cut: {e}")
@@ -1948,156 +2074,13 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             return dash.no_update, html.Div([
                 html.P(f"⚠️ Error: {str(e)}",
                        style={'color': '#e74c3c', 'padding': '16px', 'fontSize': '12px'})
-            ]), dash.no_update
-
-    # Handle view-top-cards button click
-    if triggered_prop == 'view-top-cards-button.n_clicks':
-        print(f"[DEBUG] View top cards triggered, deck_file={deck_file}")
-
-        if not deck_file:
-            return dash.no_update, html.Div([
-                html.P("⚠️ Please load a deck first.",
-                       style={'color': '#e74c3c', 'padding': '16px', 'textAlign': 'center'})
-            ]), dash.no_update
-
-        # Load deck from file
-        try:
-            with open(deck_file, 'r') as f:
-                deck_obj = json.load(f)
-
-            cards = deck_obj.get('cards', [])
-
-            # Get top 10 cards by synergy ranking
-            rankings_summary = get_deck_rankings_summary(deck_obj, top_n=10)
-            top_cards = rankings_summary.get('top_cards', [])
-
-            # Build top cards UI
-            top_items = []
-            for idx, card_info in enumerate(top_cards, 1):
-                card_name = card_info.get('name', 'Unknown')
-                rank_score = card_info.get('total_synergy', 0)
-
-                # Find full card data
-                card_data = next((c for c in cards if c.get('name') == card_name), {})
-
-                type_line = card_data.get('type_line', '')
-                mana_cost = card_data.get('mana_cost', '')
-                oracle_text = card_data.get('oracle_text', '')
-                cmc = card_data.get('cmc', 0)
-
-                # Truncate oracle text
-                if len(oracle_text) > 200:
-                    oracle_text = oracle_text[:200] + '...'
-
-                top_items.append(html.Div([
-                    # Card name and score
-                    html.Div([
-                        html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
-                        html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
-                        html.Span(f" ({rank_score:.1f})", style={'fontSize': '11px', 'color': '#2ecc71', 'marginLeft': '4px'})
-                    ], style={'marginBottom': '4px'}),
-
-                    # Type line
-                    html.Div(type_line, style={'fontSize': '11px', 'color': '#34495e', 'fontStyle': 'italic', 'marginBottom': '4px'}),
-
-                    # Mana cost and CMC
-                    html.Div([
-                        html.Span(mana_cost if mana_cost else '—', style={'fontSize': '12px', 'color': '#7f8c8d', 'marginRight': '8px'}),
-                        html.Span(f"CMC: {cmc}", style={'fontSize': '11px', 'color': '#95a5a6'})
-                    ], style={'marginBottom': '6px'}),
-
-                    # Why it's a top card
-                    html.Div([
-                        html.Strong("Why top card?", style={'fontSize': '11px', 'color': '#27ae60'}),
-                        html.Ul([
-                            html.Li(f"High synergy centrality (rank {idx})", style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'}),
-                            html.Li(f"Synergy score: {rank_score:.1f}", style={'fontSize': '10px', 'color': '#555', 'marginBottom': '2px'})
-                        ], style={'marginTop': '2px', 'marginBottom': '6px', 'paddingLeft': '16px'})
-                    ]),
-
-                    # Oracle text
-                    html.Div(oracle_text, style={
-                        'fontSize': '10px',
-                        'color': '#7f8c8d',
-                        'fontStyle': 'italic',
-                        'backgroundColor': '#f8f9fa',
-                        'padding': '6px',
-                        'borderRadius': '4px',
-                        'marginTop': '6px'
-                    }) if oracle_text else None
-
-                ], style={
-                    'marginBottom': '14px',
-                    'paddingBottom': '14px',
-                    'borderBottom': '2px solid #ecf0f1',
-                    'paddingLeft': '4px',
-                    'borderLeft': '3px solid #2ecc71'
-                }))
-
-            top_panel = html.Div([
-                html.H4("⭐ Top Cards", style={'marginBottom': '12px', 'color': '#2ecc71', 'fontSize': '16px'}),
-                html.P("These cards have the highest synergy with the rest of your deck:", style={'fontSize': '11px', 'color': '#7f8c8d', 'marginBottom': '12px'}),
-                html.Div(top_items)
-            ])
-
-            # Create stylesheet highlighting top cards in green
-            stylesheet = list(get_base_stylesheet())
-            top_card_names = [card['name'] for card in top_cards]
-
-            # Highlight top cards in green
-            for card_name in top_card_names:
-                stylesheet.append({
-                    'selector': f'node[label = "{card_name}"]',
-                    'style': {
-                        'border-color': '#2ecc71',
-                        'border-width': '6px',
-                        'background-color': '#2ecc71'
-                    }
-                })
-
-            # Dim other cards
-            for card in cards:
-                if card.get('name') not in top_card_names:
-                    stylesheet.append({
-                        'selector': f'node[label = "{card.get("name")}"]',
-                        'style': {
-                            'opacity': 0.3
-                        }
-                    })
-
-            # Create layout to highlight top cards
-            layout = {
-                'name': 'cose',
-                'animate': True,
-                'animationDuration': 1000,
-                'nodeRepulsion': 35000,
-                'idealEdgeLength': 250,
-                'edgeElasticity': 120,
-                'nestingFactor': 0.1,
-                'gravity': 3,
-                'numIter': 2500,
-                'initialTemp': 600,
-                'coolingFactor': 0.95,
-                'minTemp': 1.0,
-                'nodeOverlap': 100
-            }
-
-            return stylesheet, top_panel, layout
-
-        except Exception as e:
-            print(f"[DEBUG] Error showing top cards: {e}")
-            import traceback
-            traceback.print_exc()
-            return dash.no_update, html.Div([
-                html.P(f"⚠️ Error: {str(e)}",
-                       style={'color': '#e74c3c', 'padding': '16px', 'fontSize': '12px'})
-            ]), dash.no_update
+            ]), dash.no_update, dash.no_update
 
     if elements is None:
         if triggered_prop == 'active-role-filter.data':
             stylesheet = apply_role_filter_styles(get_base_stylesheet(), active_filter, role_summary, [])
-            return stylesheet, dash.no_update, dash.no_update
-        return dash.no_update, dash.no_update, dash.no_update
+            return stylesheet, dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     base_stylesheet = get_base_stylesheet()
     base_stylesheet = apply_role_filter_styles(base_stylesheet, active_filter, role_summary, elements)
@@ -2119,7 +2102,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             'minTemp': 1.0,
             'nodeOverlap': 100
         }
-        return base_stylesheet, dash.no_update, layout
+        return base_stylesheet, dash.no_update, layout, dash.no_update
 
     stylesheet = list(base_stylesheet)
 
@@ -2237,13 +2220,33 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 html.Details([
                     html.Summary([
                         html.Strong(f"↔ {other_card}"),
-                        html.Span(f" (Strength: {weight:.2f})", style={'color': '#7f8c8d'})
+                        html.Span(f" (Strength: {weight:.2f})", style={'color': '#7f8c8d', 'marginRight': '8px'}),
+                        html.Button(
+                            '🔍',
+                            id={'type': 'view-card-image', 'index': other_card},
+                            n_clicks=0,
+                            style={
+                                'fontSize': '12px',
+                                'padding': '1px 5px',
+                                'backgroundColor': '#ecf0f1',
+                                'border': 'none',
+                                'borderRadius': '3px',
+                                'cursor': 'pointer',
+                                'verticalAlign': 'middle',
+                                'lineHeight': '1.2',
+                                'opacity': '0.7',
+                                'transition': 'opacity 0.2s'
+                            },
+                            title='View full card image'
+                        )
                     ], style={
                         'cursor': 'pointer',
                         'padding': '8px',
                         'backgroundColor': '#ecf0f1',
                         'borderRadius': '4px',
-                        'marginBottom': '5px'
+                        'marginBottom': '5px',
+                        'display': 'flex',
+                        'alignItems': 'center'
                     }),
                     html.Div(
                         synergy_details if synergy_details else [
@@ -2355,7 +2358,7 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             'nodeOverlap': 100
         }
 
-        return stylesheet, info_panel, layout
+        return stylesheet, info_panel, layout, dash.no_update
 
     if edge_data:
         edge_id = edge_data['id']
@@ -2429,9 +2432,9 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             'nodeOverlap': 100
         }
 
-        return stylesheet, info_panel, layout
+        return stylesheet, info_panel, layout, dash.no_update
 
-    return base_stylesheet, html.Div("Click on a card or synergy edge to see details"), dash.no_update
+    return base_stylesheet, html.Div("Click on a card or synergy edge to see details"), dash.no_update, dash.no_update
 
 
 # ============================================================================
@@ -2699,6 +2702,119 @@ def build_commander_deck(n_clicks, commander_data, num_lands, num_ramp, num_draw
         )
         error_msg = html.Span(f"Error: {str(e)}", style={'color': '#e74c3c'})
         return error_div, error_msg, None
+
+
+# Callback to handle card image modal
+@app.callback(
+    [Output('card-image-modal', 'style'),
+     Output('card-image-modal-img', 'src')],
+    [Input({'type': 'view-card-image', 'index': ALL}, 'n_clicks'),
+     Input('close-card-modal', 'n_clicks'),
+     Input('card-image-modal', 'n_clicks'),
+     Input('card-image-modal-img', 'n_clicks')],
+    [State('card-image-modal', 'style'),
+     State({'type': 'view-card-image', 'index': ALL}, 'id'),
+     State('current-deck-file-store', 'data'),
+     State('card-images-store', 'data')]
+)
+def toggle_card_image_modal(view_clicks_list, close_clicks, modal_clicks, img_clicks, current_style, button_ids, deck_file, card_images_store):
+    """Toggle the card image modal when view icon is clicked"""
+    ctx = callback_context
+
+    if not ctx.triggered:
+        return dash.no_update, dash.no_update
+
+    triggered_id = ctx.triggered[0]['prop_id']
+    print(f"[DEBUG MODAL] Triggered: {triggered_id}")
+    print(f"[DEBUG MODAL] Deck file from store: {deck_file}")
+    print(f"[DEBUG MODAL] card_images_store type: {type(card_images_store)}, value: {card_images_store}")
+    if card_images_store:
+        print(f"[DEBUG MODAL] card_images_store has {len(card_images_store)} images: {list(card_images_store.keys())}")
+
+    # Close modal when clicking the close button or background
+    if 'close-card-modal' in triggered_id or 'card-image-modal.n_clicks' in triggered_id:
+        print("[DEBUG MODAL] Closing modal")
+        modal_style = current_style.copy()
+        modal_style['display'] = 'none'
+        return modal_style, ""
+
+    # Don't close when clicking the image itself
+    if 'card-image-modal-img' in triggered_id:
+        print("[DEBUG MODAL] Clicked on image, ignoring")
+        return dash.no_update, dash.no_update
+
+    # Open modal with card image
+    if 'view-card-image' in triggered_id:
+        print("[DEBUG MODAL] View card image button clicked")
+
+        if not deck_file:
+            print("[DEBUG MODAL] No deck file in store")
+            return dash.no_update, dash.no_update
+
+        # Check if any button was actually clicked (n_clicks > 0)
+        clicked_indices = [i for i, clicks in enumerate(view_clicks_list) if clicks and clicks > 0]
+        print(f"[DEBUG MODAL] Clicked indices: {clicked_indices}")
+
+        if clicked_indices:
+            # Get the last clicked button
+            clicked_idx = clicked_indices[-1]
+
+            # Extract card name from button id
+            if clicked_idx < len(button_ids):
+                card_name = button_ids[clicked_idx]['index']
+                print(f"[DEBUG MODAL] Card name: {card_name}")
+
+                # First check if image is in the card-images-store (for recommended cards)
+                image_url = None
+                if card_images_store and card_name in card_images_store:
+                    image_url = card_images_store[card_name]
+                    print(f"[DEBUG MODAL] Found image in store: {image_url}")
+
+                # If not in store, try loading from deck file
+                if not image_url and deck_file:
+                    try:
+                        if os.path.exists(deck_file):
+                            print(f"[DEBUG MODAL] Loading deck from: {deck_file}")
+                            with open(deck_file, 'r') as f:
+                                deck_obj = json.load(f)
+
+                            cards = deck_obj.get('cards', [])
+                            card_data = next((c for c in cards if c.get('name') == card_name), None)
+                            print(f"[DEBUG MODAL] Card data found in deck: {card_data is not None}")
+
+                            if card_data:
+                                # Try multiple image sources in order of preference
+                                image_uris = card_data.get('image_uris', {})
+                                if isinstance(image_uris, dict):
+                                    image_url = image_uris.get('large') or image_uris.get('normal') or image_uris.get('png')
+
+                                # Fallback to direct image_url field
+                                if not image_url:
+                                    image_url = card_data.get('image_url')
+
+                                # Last resort: art_crop_url
+                                if not image_url:
+                                    image_url = card_data.get('art_crop_url')
+
+                                print(f"[DEBUG MODAL] Image URL from deck: {image_url}")
+                        else:
+                            print(f"[DEBUG MODAL] Deck file doesn't exist: {deck_file}")
+
+                    except Exception as e:
+                        print(f"[DEBUG MODAL] Error loading card image from deck: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+                # Open modal if we found an image
+                if image_url:
+                    modal_style = current_style.copy()
+                    modal_style['display'] = 'flex'
+                    print("[DEBUG MODAL] Opening modal with image")
+                    return modal_style, image_url
+                else:
+                    print(f"[DEBUG MODAL] No image URL found for card '{card_name}'")
+
+    return dash.no_update, dash.no_update
 
 
 if __name__ == '__main__':
