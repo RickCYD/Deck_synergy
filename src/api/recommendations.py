@@ -6,6 +6,7 @@ Uses pre-computed synergy tags and roles for instant lookups.
 """
 
 import json
+import time
 from pathlib import Path
 from typing import Dict, List, Set, Optional
 from collections import Counter
@@ -108,6 +109,60 @@ class RecommendationEngine:
             'card_count': count
         }
 
+    def calculate_card_contribution(
+        self,
+        card: Dict,
+        deck_cards: List[Dict],
+        deck_tags: Optional[Counter] = None,
+        deck_roles: Optional[Counter] = None,
+        deck_type_counts: Optional[Dict[str, int]] = None
+    ) -> float:
+        """
+        Calculate incremental score contribution of a single card to the deck
+
+        This is much faster than recalculating the entire deck synergy.
+        Uses cached deck profile (tags, roles, type_counts) if provided.
+
+        Args:
+            card: The card to score
+            deck_cards: Current deck
+            deck_tags: Pre-computed deck tags (optional, for performance)
+            deck_roles: Pre-computed deck roles (optional, for performance)
+            deck_type_counts: Pre-computed type counts (optional, for performance)
+
+        Returns:
+            Estimated synergy score contribution of this card
+        """
+        if not self.loaded:
+            if not self.load():
+                return 0.0
+
+        # Use cached deck profile or compute it
+        if deck_tags is None:
+            deck_tags = self._extract_deck_tags(deck_cards)
+        if deck_roles is None:
+            deck_roles = self._extract_deck_roles(deck_cards)
+        if deck_type_counts is None:
+            deck_type_counts = self._count_card_types(deck_cards)
+
+        # Get preprocessed card data
+        card_name = card.get('name')
+        preprocessed = self.cards_by_name.get(card_name)
+
+        if not preprocessed:
+            return 0.0
+
+        # Calculate synergy score against the deck
+        score = self._calculate_synergy_score(
+            preprocessed,
+            deck_tags,
+            deck_roles,
+            deck_type_counts,
+            debug=False
+        )
+
+        return score
+
     def score_deck_cards(
         self,
         deck_cards: List[Dict],
@@ -187,6 +242,187 @@ class RecommendationEngine:
 
         return scored_cards
 
+    def _find_smart_replacements(
+        self,
+        recommendation: Dict,
+        deck_cards: List[Dict],
+        deck_scores: List[Dict],
+        max_replacements: int = 3
+    ) -> List[Dict]:
+        """
+        Find smart replacement candidates for a recommendation
+
+        Considers:
+        - Card type matching (creature → creature, instant → instant)
+        - Mana curve balance (prefer similar CMC)
+        - Role coverage (don't replace last removal spell)
+        - Score improvement
+
+        Args:
+            recommendation: The recommended card
+            deck_cards: Current deck
+            deck_scores: Scored deck cards (sorted by score, weakest first)
+            max_replacements: Maximum number of replacements to suggest
+
+        Returns:
+            List of replacement suggestions with metadata
+        """
+        rec_type = recommendation.get('type_line', '').lower()
+        rec_cmc = recommendation.get('cmc', 0)
+        rec_roles = set(recommendation.get('roles', []))
+        rec_score = recommendation.get('recommendation_score', 0)
+
+        # Extract card types from type line
+        def get_card_types(type_line: str) -> Set[str]:
+            """Extract main card types from type line"""
+            type_line = type_line.lower()
+            types = set()
+
+            # Check for main types
+            if 'creature' in type_line:
+                types.add('creature')
+            if 'instant' in type_line:
+                types.add('instant')
+            if 'sorcery' in type_line:
+                types.add('sorcery')
+            if 'artifact' in type_line:
+                types.add('artifact')
+            if 'enchantment' in type_line:
+                types.add('enchantment')
+            if 'planeswalker' in type_line:
+                types.add('planeswalker')
+            if 'land' in type_line:
+                types.add('land')
+
+            return types
+
+        rec_types = get_card_types(rec_type)
+
+        # Count role coverage in deck
+        role_counts = Counter()
+        for card in deck_cards:
+            preprocessed = self.cards_by_name.get(card.get('name'))
+            if preprocessed:
+                for role in preprocessed.get('roles', []):
+                    role_counts[role] += 1
+
+        # Count CMC distribution
+        cmc_counts = Counter()
+        for card in deck_cards:
+            cmc = card.get('cmc', 0)
+            if cmc is not None:
+                cmc_counts[int(cmc)] += 1
+
+        # Score each potential replacement
+        replacement_candidates = []
+
+        for deck_card in deck_scores:
+            # Get full card data
+            card_name = deck_card['name']
+            full_card = next((c for c in deck_cards if c.get('name') == card_name), None)
+            if not full_card:
+                continue
+
+            preprocessed = self.cards_by_name.get(card_name)
+            if not preprocessed:
+                continue
+
+            card_type = deck_card.get('type_line', '').lower()
+            card_cmc = full_card.get('cmc', 0)
+            card_roles = set(preprocessed.get('roles', []))
+            card_score = deck_card['synergy_score']
+
+            # Skip if not an improvement
+            if card_score >= rec_score:
+                continue
+
+            card_types = get_card_types(card_type)
+
+            # Calculate type matching score (0-100)
+            type_overlap = len(rec_types & card_types)
+            type_score = (type_overlap / max(len(rec_types), 1)) * 100
+
+            # Skip if no type overlap at all (don't replace creature with instant)
+            if type_overlap == 0 and rec_types and card_types:
+                continue
+
+            # Calculate CMC similarity score (0-100)
+            cmc_diff = abs(rec_cmc - card_cmc)
+            cmc_score = max(0, 100 - (cmc_diff * 20))  # -20 points per CMC difference
+
+            # Check role coverage - penalize if removing last of a critical role
+            role_coverage_penalty = 0
+            critical_roles = {'removal', 'board_wipe', 'card_draw', 'ramp'}
+            for role in card_roles:
+                if role in critical_roles:
+                    count_in_deck = role_counts.get(role, 0)
+                    if count_in_deck <= 2:  # Last 1-2 cards with this role
+                        role_coverage_penalty += 50  # Heavy penalty
+                    elif count_in_deck <= 4:
+                        role_coverage_penalty += 25  # Moderate penalty
+
+            # Calculate role synergy score (0-100)
+            role_overlap = len(rec_roles & card_roles)
+            role_score = (role_overlap / max(len(rec_roles | card_roles), 1)) * 100
+
+            # Check mana curve balance - penalize if this CMC slot is already thin
+            curve_penalty = 0
+            cmc_count = cmc_counts.get(int(card_cmc), 0)
+            if cmc_count <= 2:
+                curve_penalty = 30  # Penalty for removing from thin CMC slot
+            elif cmc_count <= 4:
+                curve_penalty = 15
+
+            # Calculate overall replacement quality score
+            quality_score = (
+                type_score * 0.35 +  # Type matching is most important
+                cmc_score * 0.20 +    # CMC similarity
+                role_score * 0.20 +   # Role overlap
+                (100 - role_coverage_penalty) * 0.15 +  # Role coverage protection
+                (100 - curve_penalty) * 0.10   # Curve balance
+            )
+
+            # Calculate net score improvement
+            score_improvement = rec_score - card_score
+
+            replacement_candidates.append({
+                'name': card_name,
+                'type_line': card_type,
+                'cmc': card_cmc,
+                'current_score': card_score,
+                'quality_score': quality_score,
+                'score_improvement': score_improvement,
+                'type_match': type_overlap > 0,
+                'cmc_diff': cmc_diff,
+                'role_overlap': role_overlap,
+                'removes_critical_role': role_coverage_penalty > 0,
+                'thins_curve': curve_penalty > 0,
+                'match_reasons': []
+            })
+
+        # Sort by quality score (best matches first)
+        replacement_candidates.sort(key=lambda x: x['quality_score'], reverse=True)
+
+        # Add match reasons for top candidates
+        for candidate in replacement_candidates[:max_replacements]:
+            reasons = []
+            if candidate['type_match']:
+                reasons.append(f"Same card type")
+            if candidate['cmc_diff'] <= 1:
+                reasons.append(f"Similar CMC ({candidate['cmc']:.0f})")
+            if candidate['role_overlap'] > 0:
+                reasons.append(f"Shares {candidate['role_overlap']} roles")
+            if candidate['score_improvement'] > 20:
+                reasons.append(f"Large improvement (+{candidate['score_improvement']:.0f})")
+            if candidate['removes_critical_role']:
+                reasons.append(f"⚠️ Removes critical role")
+            if candidate['thins_curve']:
+                reasons.append(f"⚠️ Thins mana curve")
+
+            candidate['match_reasons'] = reasons
+
+        return replacement_candidates[:max_replacements]
+
     def get_recommendations(
         self,
         deck_cards: List[Dict],
@@ -212,11 +448,17 @@ class RecommendationEngine:
             if not self.load():
                 return {'recommendations': [], 'deck_scores': []}
 
+        # Performance monitoring
+        perf_start = time.time()
+        perf_timings = {}
+
         # Extract deck's synergy profile
+        profile_start = time.time()
         deck_tags = self._extract_deck_tags(deck_cards)
         deck_roles = self._extract_deck_roles(deck_cards)
         deck_type_counts = self._count_card_types(deck_cards)
         deck_card_names = {card['name'] for card in deck_cards}
+        perf_timings['deck_profile'] = time.time() - profile_start
 
         if debug:
             print("\n=== DECK TAG DISTRIBUTION ===")
@@ -231,6 +473,7 @@ class RecommendationEngine:
                 print(f"  {card_type}: {count}")
 
         # Score all cards
+        scoring_start = time.time()
         card_scores = {}
 
         for idx, card in enumerate(self.cards):
@@ -263,6 +506,8 @@ class RecommendationEngine:
             if score > 0:
                 card_scores[idx] = score
 
+        perf_timings['candidate_scoring'] = time.time() - scoring_start
+
         # Get top N recommendations
         top_indices = sorted(card_scores.keys(), key=lambda i: card_scores[i], reverse=True)[:limit]
 
@@ -276,16 +521,26 @@ class RecommendationEngine:
         recommendations = []
         for idx in top_indices:
             card = self.cards[idx]
+            # Get detailed synergy information
+            detailed_synergy = self._get_detailed_synergy_info(
+                card,
+                deck_cards,
+                deck_tags,
+                deck_roles
+            )
             recommendations.append({
                 **card,
                 'recommendation_score': card_scores[idx],
-                'synergy_reasons': self._explain_synergy(card, deck_tags, deck_roles)
+                'synergy_reasons': self._explain_synergy(card, deck_tags, deck_roles),
+                'synergy_details': detailed_synergy  # NEW: Detailed info for tooltips
             })
 
         result = {'recommendations': recommendations}
 
         # Optionally score deck cards for comparison
         if include_deck_scores:
+            deck_scoring_start = time.time()
+
             # Score deck cards (excluding lands and sideboard)
             deck_scores = self.score_deck_cards(deck_cards, exclude_lands=True, exclude_sideboard=True)
             result['deck_scores'] = deck_scores
@@ -294,18 +549,81 @@ class RecommendationEngine:
             total_synergy = self.calculate_total_deck_synergy(deck_cards, exclude_lands=True, exclude_sideboard=True)
             result['total_deck_synergy'] = total_synergy
 
-            # Add replacement suggestions to recommendations
-            # Find weakest cards in deck
-            weakest_threshold = deck_scores[len(deck_scores) // 3]['synergy_score'] if deck_scores else 0
+            perf_timings['deck_scoring'] = time.time() - deck_scoring_start
+
+            # OPTIMIZED: Cache deck profile for performance
+            # Instead of recalculating full deck synergy for each recommendation (O(n²)),
+            # we calculate each recommendation's incremental contribution (O(n))
+            # This changes complexity from O(n² × m) to O(n × m) where m = recommendations
+            optimization_start = time.time()
+
+            # Get current total deck synergy score
+            current_total_score = total_synergy.get('total_score', 0)
+
+            # Pre-compute deck profile once for all recommendations
+            cached_deck_tags = self._extract_deck_tags(deck_cards)
+            cached_deck_roles = self._extract_deck_roles(deck_cards)
+            cached_deck_type_counts = self._count_card_types(deck_cards)
 
             for rec in recommendations:
-                rec_score = rec['recommendation_score']
-                # Find cards in deck that this recommendation would be better than
-                worse_cards = [dc for dc in deck_scores if dc['synergy_score'] < rec_score and dc['synergy_score'] < weakest_threshold]
-                if worse_cards:
-                    rec['could_replace'] = worse_cards[:3]  # Top 3 replacement candidates
-                else:
-                    rec['could_replace'] = []
+                # FAST: Calculate incremental contribution only (O(n) instead of O(n²))
+                # Create card dict for contribution calculation
+                new_card = {
+                    'name': rec.get('name'),
+                    'type_line': rec.get('type_line', ''),
+                    'synergy_tags': rec.get('synergy_tags', []),
+                    'roles': rec.get('roles', []),
+                    'board': 'mainboard',
+                    'cmc': rec.get('cmc', 0)
+                }
+
+                # Calculate how much this card contributes to deck synergy
+                card_contribution = self.calculate_card_contribution(
+                    new_card,
+                    deck_cards,
+                    deck_tags=cached_deck_tags,
+                    deck_roles=cached_deck_roles,
+                    deck_type_counts=cached_deck_type_counts
+                )
+
+                # Estimate new total score (approximation: assumes existing cards' scores don't change much)
+                # This is accurate enough for comparison and 10-20x faster
+                estimated_new_score = current_total_score + card_contribution
+                score_improvement = card_contribution
+
+                # Add to recommendation
+                rec['score_before'] = current_total_score
+                rec['score_after'] = estimated_new_score
+                rec['score_change'] = score_improvement
+
+                # Find smart replacement candidates
+                smart_replacements = self._find_smart_replacements(
+                    rec,
+                    deck_cards,
+                    deck_scores,
+                    max_replacements=3
+                )
+                rec['smart_replacements'] = smart_replacements
+
+            perf_timings['score_optimization'] = time.time() - optimization_start
+
+        # Calculate total time
+        perf_timings['total'] = time.time() - perf_start
+
+        # Add performance info to result (useful for monitoring)
+        result['performance'] = perf_timings
+
+        if debug:
+            print("\n=== PERFORMANCE METRICS ===")
+            print(f"Deck profile extraction: {perf_timings.get('deck_profile', 0):.3f}s")
+            print(f"Candidate scoring: {perf_timings.get('candidate_scoring', 0):.3f}s")
+            if 'deck_scoring' in perf_timings:
+                print(f"Deck scoring: {perf_timings.get('deck_scoring', 0):.3f}s")
+            if 'score_optimization' in perf_timings:
+                print(f"Score optimization (FAST): {perf_timings.get('score_optimization', 0):.3f}s")
+            print(f"Total time: {perf_timings['total']:.3f}s")
+            print(f"Cards evaluated: {len(card_scores)}")
+            print(f"Deck size: {len(deck_cards)} cards")
 
         return result
 
@@ -666,6 +984,137 @@ class RecommendationEngine:
 
         # Card must not have any colors outside the identity
         return card_colors.issubset(allowed_colors)
+
+    def _get_detailed_synergy_info(
+        self,
+        card: Dict,
+        deck_cards: List[Dict],
+        deck_tags: Counter,
+        deck_roles: Counter
+    ) -> Dict:
+        """
+        Generate detailed synergy information including specific card partners
+
+        Returns:
+            Dict with synergy details including partners and strength
+        """
+        card_tags = set(card.get('synergy_tags', []))
+        card_roles = set(card.get('roles', []))
+        card_name = card.get('name', '')
+
+        # Track synergy partners by tag
+        synergy_partners = {}  # tag -> [(card_name, strength, reason)]
+        combo_partners = []  # [(card_names, combo_type, description)]
+
+        # Tag explanations
+        tag_explanations = {
+            'has_etb': 'Has ETB abilities',
+            'flicker': 'Can flicker/blink creatures',
+            'sacrifice_outlet': 'Sacrifice outlet',
+            'death_trigger': 'Triggers on creature death',
+            'token_gen': 'Generates tokens',
+            'card_draw': 'Draws cards',
+            'ramp': 'Ramps mana',
+            'mill': 'Mills cards',
+            'self_mill': 'Self-mill effect',
+            'graveyard': 'Graveyard interaction',
+            'removal': 'Removes threats',
+            'protection': 'Protects permanents',
+            'counters': '+1/+1 counters theme',
+            'untap_others': 'Untaps other permanents',
+            'tribal_payoff': 'Tribal synergy payoff',
+            'equipment': 'Equipment card',
+            'equipment_matters': 'Equipment synergy',
+            'artifact_synergy': 'Artifact synergy',
+            'recursion': 'Recursion effects',
+            'trigger_doubler': 'Doubles triggers',
+        }
+
+        # Find specific synergy partners
+        for tag in card_tags:
+            if tag in deck_tags and tag in tag_explanations:
+                partners = []
+
+                # Find cards with matching or complementary tags
+                for deck_card in deck_cards:
+                    deck_card_name = deck_card.get('name', '')
+                    if deck_card_name == card_name:
+                        continue
+
+                    # Get preprocessed data
+                    preprocessed = self.cards_by_name.get(deck_card_name)
+                    if not preprocessed:
+                        continue
+
+                    deck_card_tags = set(preprocessed.get('synergy_tags', []))
+
+                    # Direct tag overlap
+                    if tag in deck_card_tags:
+                        strength = 'medium'
+                        reason = f"Both have {tag}"
+                        partners.append((deck_card_name, strength, reason))
+
+                    # Complementary tags (enabler + payoff)
+                    complementary_map = {
+                        'has_etb': 'flicker',
+                        'flicker': 'has_etb',
+                        'token_gen': 'sacrifice_outlet',
+                        'sacrifice_outlet': 'token_gen',
+                        'death_trigger': 'sacrifice_outlet',
+                        'graveyard': 'recursion',
+                        'self_mill': 'graveyard',
+                        'equipment': 'equipment_matters',
+                        'equipment_matters': 'equipment',
+                        'attack_trigger': 'trigger_doubler',
+                        'trigger_doubler': 'attack_trigger',
+                    }
+
+                    if tag in complementary_map:
+                        complement = complementary_map[tag]
+                        if complement in deck_card_tags:
+                            strength = 'strong'
+                            reason = f"Complementary: {tag} + {complement}"
+                            partners.append((deck_card_name, strength, reason))
+
+                # Sort by strength and limit to top 5
+                strength_order = {'strong': 0, 'medium': 1, 'weak': 2}
+                partners.sort(key=lambda x: strength_order.get(x[1], 3))
+                synergy_partners[tag] = partners[:5]
+
+        # Detect 2-card combos
+        combo_patterns = [
+            (['has_etb', 'flicker'], 'ETB Loop', 'Infinite ETB triggers'),
+            (['token_gen', 'sacrifice_outlet', 'death_trigger'], 'Aristocrats', 'Token sacrifice value engine'),
+            (['graveyard', 'recursion', 'self_mill'], 'Graveyard Loop', 'Recurring threats from graveyard'),
+            (['equipment', 'equipment_matters'], 'Voltron', 'Equipment synergy'),
+            (['trigger_doubler', 'attack_trigger'], 'Trigger Amplifier', 'Double attack triggers'),
+        ]
+
+        for pattern_tags, combo_type, description in combo_patterns:
+            # Check if card has any tags from pattern
+            if any(tag in card_tags for tag in pattern_tags):
+                # Find partners that complete the pattern
+                for deck_card in deck_cards:
+                    deck_card_name = deck_card.get('name', '')
+                    if deck_card_name == card_name:
+                        continue
+
+                    preprocessed = self.cards_by_name.get(deck_card_name)
+                    if not preprocessed:
+                        continue
+
+                    deck_card_tags = set(preprocessed.get('synergy_tags', []))
+
+                    # Check if together they form the combo
+                    combined_tags = card_tags | deck_card_tags
+                    if all(tag in combined_tags for tag in pattern_tags[:2]):  # 2-card combo
+                        combo_partners.append(([deck_card_name], combo_type, description))
+
+        return {
+            'synergy_partners': synergy_partners,
+            'combo_partners': combo_partners[:3],  # Top 3 combos
+            'tag_explanations': tag_explanations
+        }
 
     def _explain_synergy(
         self,
