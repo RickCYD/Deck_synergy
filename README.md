@@ -30,10 +30,11 @@ An intelligent web application for analyzing and visualizing Magic: The Gatherin
 - **Mana Curve Simulation**: Statistical analysis of mana consistency
 
 ### Advanced Features
+- **⚡ Verified Combo Detection**: Integrates with Commander Spellbook's 40,000+ combo database
 - **Local Card Cache**: 34,000+ cards cached for instant loading
 - **Tutor Validation**: Respects CMC, power, toughness restrictions
 - **Trigger Detection**: Recognizes attack, death, cast, and other triggers
-- **Combo Detection**: Identifies infinite combos and synergy chains
+- **Combo Explanations**: Step-by-step combo walkthroughs with prerequisites and results
 
 ## 🚀 Quick Start
 
@@ -104,6 +105,36 @@ git push heroku main
 - Check mana curve simulation results
 - Review total deck synergy score
 
+### 5. Discover Verified Combos ⚡ NEW!
+- **Automatic Detection**: Combos are detected when you load a deck
+- **Visual Indicators**: Golden/orange edges connect combo pieces in the graph
+- **Combo Badge**: Look for the ⚡ COMBO badge in synergy details
+- **Full Explanations**: See combo results, prerequisites, and step-by-step instructions
+- **Commander Spellbook Link**: Click through to see the combo on the official database
+
+Example combo display:
+```
+⚡ COMBO
+
+🃏 All Combo Pieces: Basalt Monolith, Rings of Brighthearth
+
+🎯 Results:
+  • Infinite colorless mana
+
+📋 Prerequisites:
+  • Both permanents on the battlefield
+  • {3} available
+
+🔄 Steps:
+  1. Activate Basalt Monolith's untap ability...
+  2. Rings triggers, pay {2} to copy...
+  3. Resolve for infinite mana
+
+🔗 View on Commander Spellbook
+```
+
+For more details, see [COMBO_DETECTION.md](docs/COMBO_DETECTION.md)
+
 ## 🏗️ Project Structure
 
 ```
@@ -117,13 +148,16 @@ Deck_synergy/
 │   │   ├── archidekt.py           # Archidekt API integration
 │   │   ├── scryfall.py            # Scryfall API integration
 │   │   ├── local_cards.py         # Local card cache management
-│   │   └── recommendations.py     # Card recommendation engine
+│   │   ├── recommendations.py     # Card recommendation engine
+│   │   └── commander_spellbook.py # ⚡ Commander Spellbook combo API
 │   │
 │   ├── models/
-│   │   └── deck.py                # Deck data model
+│   │   ├── deck.py                # Deck data model
+│   │   └── combo.py               # ⚡ Combo data models
 │   │
 │   ├── synergy_engine/
 │   │   ├── analyzer.py            # Main synergy analysis orchestrator
+│   │   ├── combo_detector.py      # ⚡ Verified combo detection
 │   │   ├── etb_synergies.py       # ETB/flicker synergies
 │   │   ├── token_synergies.py     # Token generation/sacrifice
 │   │   ├── equipment_synergies.py # Equipment/voltron synergies

@@ -186,6 +186,9 @@ def create_synergy_edge(synergy_key: str, synergy_data: Dict) -> Dict:
 
     weight = synergy_data.get('total_weight', 1.0)
 
+    # Check if this is a verified combo
+    has_verified_combo = synergy_data.get('has_verified_combo', False)
+
     edge_data = {
         'id': edge_id or f"edge_{hash(synergy_key)}",
         'source': card1 or 'Unknown',
@@ -198,12 +201,20 @@ def create_synergy_edge(synergy_key: str, synergy_data: Dict) -> Dict:
 
         # Synergy details
         'synergies': synergy_data.get('synergies') or {},
-        'synergy_count': synergy_data.get('synergy_count') or 0
+        'synergy_count': synergy_data.get('synergy_count') or 0,
+
+        # Combo flag
+        'has_verified_combo': has_verified_combo
     }
+
+    # Add special class for combo edges
+    edge_classes = 'synergy-edge'
+    if has_verified_combo:
+        edge_classes += ' verified-combo'
 
     return {
         'data': edge_data,
-        'classes': 'synergy-edge'
+        'classes': edge_classes
     }
 
 

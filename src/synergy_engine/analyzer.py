@@ -8,6 +8,14 @@ from itertools import combinations
 from .rules import ALL_RULES, clear_damage_classification_cache
 from .categories import get_category_weight
 
+# Import combo detector (with graceful fallback if API unavailable)
+try:
+    from .combo_detector import combo_detector
+    COMBO_DETECTION_ENABLED = True
+except ImportError:
+    COMBO_DETECTION_ENABLED = False
+    print("Warning: Combo detection not available (missing dependencies)")
+
 
 def analyze_card_pair(card1: Dict, card2: Dict) -> List[Dict]:
     """
@@ -182,7 +190,88 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
     print(f"  Found {len(synergy_dict)} synergies above threshold ({min_synergy_threshold})")
     print(f"  Total synergy connections: {sum(s['synergy_count'] for s in synergy_dict.values())}")
 
+    # Add verified combos from Commander Spellbook
+    if COMBO_DETECTION_ENABLED:
+        try:
+            print("\nDetecting verified combos from Commander Spellbook...")
+            combo_synergies = detect_verified_combos(cards)
+            merged_count = merge_combo_synergies(synergy_dict, combo_synergies)
+            if merged_count > 0:
+                print(f"  ✓ Added {merged_count} verified combo synergies")
+        except Exception as e:
+            print(f"  Warning: Combo detection failed: {e}")
+
     return synergy_dict
+
+
+def detect_verified_combos(cards: List[Dict]) -> Dict[str, Dict]:
+    """
+    Detect verified combos using Commander Spellbook database
+
+    Args:
+        cards: List of card dictionaries
+
+    Returns:
+        Dictionary of combo synergies in the same format as analyze_deck_synergies
+    """
+    if not COMBO_DETECTION_ENABLED:
+        return {}
+
+    try:
+        combo_synergies = combo_detector.get_combo_synergies(cards)
+        return combo_synergies
+    except Exception as e:
+        print(f"Error detecting combos: {e}")
+        return {}
+
+
+def merge_combo_synergies(synergy_dict: Dict[str, Dict], combo_synergies: Dict[str, Dict]) -> int:
+    """
+    Merge combo synergies into the existing synergy dictionary
+
+    Args:
+        synergy_dict: Existing synergy dictionary (modified in place)
+        combo_synergies: Combo synergies to merge
+
+    Returns:
+        Number of combo synergies added
+    """
+    merged_count = 0
+
+    for key, combo_data in combo_synergies.items():
+        if key in synergy_dict:
+            # Edge already exists, add combo synergy to it
+            existing = synergy_dict[key]
+
+            # Add combo synergies to the combo category
+            if 'combo' not in existing['synergies']:
+                existing['synergies']['combo'] = []
+
+            existing['synergies']['combo'].extend(combo_data['synergies'])
+
+            # Update total weight (combos have high weight)
+            existing['total_weight'] = round(
+                existing['total_weight'] + combo_data['total_weight'],
+                2
+            )
+            existing['synergy_count'] += len(combo_data['synergies'])
+
+            # Mark as verified combo
+            existing['has_verified_combo'] = True
+        else:
+            # Create new edge for combo
+            synergy_dict[key] = {
+                'card1': combo_data['card1'],
+                'card2': combo_data['card2'],
+                'total_weight': combo_data['total_weight'],
+                'synergies': organize_synergies_by_category(combo_data['synergies']),
+                'synergy_count': len(combo_data['synergies']),
+                'has_verified_combo': True
+            }
+
+        merged_count += 1
+
+    return merged_count
 
 
 def get_top_synergies(synergy_dict: Dict, top_n: int = 10) -> List[Tuple[str, Dict]]:

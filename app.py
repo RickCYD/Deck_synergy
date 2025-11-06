@@ -178,6 +178,19 @@ def get_base_stylesheet() -> List[Dict[str, Any]]:
                 'line-color': '#c0392b',  # Dark red
                 'width': 5
             }
+        },
+        # Verified combo edges - special styling
+        {
+            'selector': 'edge.verified-combo',
+            'style': {
+                'line-color': '#f39c12',  # Golden/orange for combos
+                'width': 5,
+                'line-style': 'solid',
+                'target-arrow-shape': 'triangle',
+                'target-arrow-color': '#f39c12',
+                'opacity': 0.9,
+                'z-index': 100  # Bring combos to front
+            }
         }
     ]
 
@@ -2203,42 +2216,165 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             for category, synergy_list in synergies.items():
                 if not synergy_list:
                     continue
+
+                # Check if this category contains verified combos
+                category_items = []
+                for syn in synergy_list:
+                    syn_name = syn.get('name', 'Synergy')
+                    syn_desc = syn.get('description', 'N/A')
+                    syn_value = syn.get('value', syn.get('strength', 0))
+
+                    # Special rendering for verified combos
+                    if syn.get('subcategory') == 'verified_combo':
+                        # Build detailed combo explanation
+                        combo_details = []
+
+                        # Add combo results
+                        combo_results = syn.get('combo_results', [])
+                        if combo_results:
+                            combo_details.append(
+                                html.Div([
+                                    html.Strong('🎯 Results: ', style={'color': '#27ae60'}),
+                                    html.Ul([html.Li(result) for result in combo_results[:5]]),
+                                ], style={'marginTop': '5px'})
+                            )
+
+                        # Add combo prerequisites
+                        combo_prereqs = syn.get('combo_prerequisites', [])
+                        if combo_prereqs:
+                            combo_details.append(
+                                html.Div([
+                                    html.Strong('📋 Prerequisites: ', style={'color': '#e74c3c'}),
+                                    html.Ul([html.Li(prereq) for prereq in combo_prereqs[:5]]),
+                                ], style={'marginTop': '5px'})
+                            )
+
+                        # Add combo steps
+                        combo_steps = syn.get('combo_steps', [])
+                        if combo_steps:
+                            # Filter out empty steps
+                            valid_steps = [step for step in combo_steps if step.strip()]
+                            if valid_steps:
+                                combo_details.append(
+                                    html.Div([
+                                        html.Strong('🔄 Steps: ', style={'color': '#3498db'}),
+                                        html.Ol([html.Li(step) for step in valid_steps[:10]]),
+                                    ], style={'marginTop': '5px'})
+                                )
+
+                        # Add permalink
+                        combo_permalink = syn.get('combo_permalink')
+                        if combo_permalink:
+                            combo_details.append(
+                                html.Div([
+                                    html.A(
+                                        '🔗 View on Commander Spellbook',
+                                        href=combo_permalink,
+                                        target='_blank',
+                                        style={'color': '#3498db', 'textDecoration': 'none', 'fontWeight': 'bold'}
+                                    )
+                                ], style={'marginTop': '10px'})
+                            )
+
+                        # All cards in combo
+                        all_pieces = syn.get('combo_all_pieces', [])
+                        if len(all_pieces) > 2:
+                            combo_details.insert(0,
+                                html.Div([
+                                    html.Strong('🃏 All Combo Pieces: ', style={'color': '#9b59b6'}),
+                                    html.Span(', '.join(all_pieces))
+                                ], style={'marginTop': '5px', 'marginBottom': '10px'})
+                            )
+
+                        category_items.append(
+                            html.Li([
+                                html.Strong(f"{syn_name}: ", style={'color': '#f39c12'}),
+                                html.Span('⚡ ', style={'fontSize': '16px'}),
+                                f"{syn_desc} ",
+                                html.Span(f"(+{syn_value})", style={'color': '#27ae60', 'fontWeight': 'bold'}),
+                                html.Div(
+                                    combo_details,
+                                    style={
+                                        'marginTop': '10px',
+                                        'marginLeft': '15px',
+                                        'padding': '10px',
+                                        'backgroundColor': '#fff9e6',
+                                        'borderLeft': '3px solid #f39c12',
+                                        'borderRadius': '4px'
+                                    }
+                                )
+                            ])
+                        )
+                    else:
+                        # Normal synergy rendering
+                        category_items.append(
+                            html.Li([
+                                html.Strong(f"{syn_name}: "),
+                                f"{syn_desc} ",
+                                html.Span(f"(+{syn_value})", style={'color': '#27ae60', 'fontWeight': 'bold'})
+                            ])
+                        )
+
                 synergy_details.append(
                     html.Div([
                         html.Strong(category.replace('_', ' ').title() + ':', style={'color': '#3498db'}),
-                        html.Ul([
-                            html.Li([
-                                html.Strong(f"{syn.get('name', 'Synergy')}: "),
-                                f"{syn.get('description', 'N/A')} ",
-                                html.Span(f"(+{syn.get('value', syn.get('strength', 0))})", style={'color': '#27ae60', 'fontWeight': 'bold'})
-                            ]) for syn in synergy_list
-                        ], style={'marginLeft': '10px', 'marginTop': '5px'})
+                        html.Ul(category_items, style={'marginLeft': '10px', 'marginTop': '5px'})
                     ], style={'marginBottom': '10px'})
                 )
 
+            # Check if this is a verified combo
+            has_verified_combo = edge_data.get('has_verified_combo', False)
+
+            # Build summary elements
+            summary_elements = [
+                html.Strong(f"↔ {other_card}"),
+                html.Span(f" (Strength: {weight:.2f})", style={'color': '#7f8c8d', 'marginRight': '8px'}),
+            ]
+
+            # Add combo badge if verified combo
+            if has_verified_combo:
+                summary_elements.append(
+                    html.Span(
+                        '⚡ COMBO',
+                        style={
+                            'backgroundColor': '#f39c12',
+                            'color': 'white',
+                            'padding': '2px 6px',
+                            'borderRadius': '3px',
+                            'fontSize': '10px',
+                            'fontWeight': 'bold',
+                            'marginRight': '8px',
+                            'verticalAlign': 'middle'
+                        },
+                        title='Verified combo from Commander Spellbook'
+                    )
+                )
+
+            summary_elements.append(
+                html.Button(
+                    '🔍',
+                    id={'type': 'view-card-image', 'index': other_card},
+                    n_clicks=0,
+                    style={
+                        'fontSize': '12px',
+                        'padding': '1px 5px',
+                        'backgroundColor': '#ecf0f1',
+                        'border': 'none',
+                        'borderRadius': '3px',
+                        'cursor': 'pointer',
+                        'verticalAlign': 'middle',
+                        'lineHeight': '1.2',
+                        'opacity': '0.7',
+                        'transition': 'opacity 0.2s'
+                    },
+                    title='View full card image'
+                )
+            )
+
             synergy_items.append(
                 html.Details([
-                    html.Summary([
-                        html.Strong(f"↔ {other_card}"),
-                        html.Span(f" (Strength: {weight:.2f})", style={'color': '#7f8c8d', 'marginRight': '8px'}),
-                        html.Button(
-                            '🔍',
-                            id={'type': 'view-card-image', 'index': other_card},
-                            n_clicks=0,
-                            style={
-                                'fontSize': '12px',
-                                'padding': '1px 5px',
-                                'backgroundColor': '#ecf0f1',
-                                'border': 'none',
-                                'borderRadius': '3px',
-                                'cursor': 'pointer',
-                                'verticalAlign': 'middle',
-                                'lineHeight': '1.2',
-                                'opacity': '0.7',
-                                'transition': 'opacity 0.2s'
-                            },
-                            title='View full card image'
-                        )
+                    html.Summary(
+                        summary_elements
                     ], style={
                         'cursor': 'pointer',
                         'padding': '8px',
