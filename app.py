@@ -333,6 +333,18 @@ app.layout = html.Div([
             )
         ], style={'flex': '1 1 220px', 'minWidth': '220px'}),
 
+        html.Div([
+            html.Label("Search Cards:", style={'fontWeight': 'bold', 'marginBottom': '6px'}),
+            dcc.Dropdown(
+                id='card-search-dropdown',
+                options=[],
+                placeholder='Type at least 3 letters...',
+                searchable=True,
+                clearable=True,
+                style={'width': '100%'}
+            )
+        ], style={'flex': '1 1 220px', 'minWidth': '220px'}),
+
 
         html.Div([
             dcc.Dropdown(
@@ -803,6 +815,8 @@ app.layout = html.Div([
     dcc.Store(id='selected-commander-store'),
     dcc.Store(id='built-deck-store'),
     dcc.Store(id='card-images-store'),  # Store for card images (recommended cards, etc.)
+    dcc.Store(id='card-list-store'),  # Store for card names in current deck
+    dcc.Store(id='selected-card-highlight'),  # Store for selected card from search
     dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True),
 
     # Modal for displaying full card images
@@ -1067,7 +1081,8 @@ def clear_status_message(n_intervals):
 @app.callback(
     [Output('card-graph', 'elements'),
      Output('current-deck-file-store', 'data'),
-     Output('role-filter-data', 'data')],
+     Output('role-filter-data', 'data'),
+     Output('card-list-store', 'data')],
     Input('deck-selector', 'value'),
     prevent_initial_call=True
 )
@@ -1077,7 +1092,7 @@ def update_graph(deck_file):
 
     if not deck_file:
         print("[UPDATE GRAPH] No deck file provided, using dash.no_update to preserve current state")
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     try:
         # Check if file exists before trying to load
@@ -1085,7 +1100,7 @@ def update_graph(deck_file):
         if not Path(deck_file).exists():
             print(f"[UPDATE GRAPH] WARNING: Deck file does not exist: {deck_file}")
             print(f"[UPDATE GRAPH] Using dash.no_update to preserve current state")
-            return dash.no_update, dash.no_update, dash.no_update
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
         # Load deck data
         print(f"[UPDATE GRAPH] Loading deck from file: {deck_file}")
@@ -1104,9 +1119,13 @@ def update_graph(deck_file):
         print(f"[UPDATE GRAPH] Building graph elements...")
         elements = build_graph_elements(deck_data)
         print(f"[UPDATE GRAPH] Built {len(elements)} graph elements")
+
+        # Extract card names for search
+        card_names = sorted([card.get('name') for card in cards if card.get('name')])
+        print(f"[UPDATE GRAPH] Extracted {len(card_names)} card names for search")
         print(f"[UPDATE GRAPH] SUCCESS - Graph updated!")
 
-        return elements, deck_file, role_summary
+        return elements, deck_file, role_summary, card_names
 
     except Exception as e:
         import traceback
@@ -1114,7 +1133,7 @@ def update_graph(deck_file):
         print(f"\n[UPDATE GRAPH ERROR] Failed to update graph!")
         print(f"[UPDATE GRAPH ERROR] Error: {e}")
         print(f"[UPDATE GRAPH ERROR] Full traceback:\n{error_details}")
-        return [], None, {}
+        return [], None, {}, []
 
 
 @app.callback(
@@ -1268,6 +1287,60 @@ def set_active_role_filter(role_clicks, clear_click, role_ids, current_filter):
 def reset_role_filter_on_deck_change(_):
     """Clear the role filter whenever a new deck is selected."""
     return None
+
+
+# Card search callbacks
+@app.callback(
+    [Output('card-search-dropdown', 'options'),
+     Output('card-search-dropdown', 'value')],
+    [Input('card-search-dropdown', 'search_value'),
+     Input('deck-selector', 'value')],
+    State('card-list-store', 'data'),
+    prevent_initial_call=False
+)
+def update_card_search_options(search_value, deck_file, card_names):
+    """Update search dropdown options based on search input (after 3 letters)."""
+    ctx = callback_context
+    if not ctx.triggered:
+        return [], None
+
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    # If deck changed, clear the dropdown
+    if trigger_id == 'deck-selector':
+        return [], None
+
+    # Only show options if search has 3+ characters
+    if not search_value or len(search_value) < 3:
+        return [], None
+
+    if not card_names:
+        return [], None
+
+    # Filter card names that match the search
+    search_lower = search_value.lower()
+    matching_cards = [
+        {'label': name, 'value': name}
+        for name in card_names
+        if search_lower in name.lower()
+    ]
+
+    # Limit to first 20 results
+    matching_cards = matching_cards[:20]
+
+    return matching_cards, dash.no_update
+
+
+@app.callback(
+    Output('selected-card-highlight', 'data'),
+    Input('card-search-dropdown', 'value'),
+    prevent_initial_call=True
+)
+def set_selected_card(card_name):
+    """Store the selected card from search to trigger highlighting."""
+    if not card_name:
+        return None
+    return card_name
 
 
 # Simulation callback: runs Monte Carlo and updates outputs
@@ -1762,20 +1835,38 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements, current_card_images):
      Input('card-graph', 'tapEdgeData'),
      Input('active-role-filter', 'data'),
      Input('get-recommendations-button', 'n_clicks'),
-     Input('cards-to-cut-button', 'n_clicks')],
+     Input('cards-to-cut-button', 'n_clicks'),
+     Input('selected-card-highlight', 'data')],
     [State('card-graph', 'elements'),
      State('role-filter-data', 'data'),
      State('current-deck-file-store', 'data'),
      State('card-images-store', 'data')],
     prevent_initial_call=True
 )
-def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks, elements, role_summary, deck_file, current_card_images):
+def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks, selected_card, elements, role_summary, deck_file, current_card_images):
     """Handle node/edge selection, role filter, recommendations, and update highlighting."""
     ctx = callback_context
     if not ctx.triggered:
         return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     triggered_prop = ctx.triggered[0]['prop_id']
+
+    # Handle card selection from search
+    if triggered_prop == 'selected-card-highlight.data' and selected_card:
+        # Find the node data for this card
+        card_node = None
+        for element in elements:
+            if 'source' not in element.get('data', {}):  # It's a node
+                if element['data'].get('id') == selected_card:
+                    card_node = element['data']
+                    break
+
+        if card_node:
+            # Treat it like a tap on the node
+            node_data = card_node
+            # Continue to the node selection handling below
+        else:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     # Handle recommendations button click
     if triggered_prop == 'get-recommendations-button.n_clicks':
