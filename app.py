@@ -462,6 +462,42 @@ app.layout = html.Div([
 
                     # Floating Filter Chips (Top-Right Overlay)
                     html.Div([
+                        # Synergy Type Filter (New)
+                        html.Div([
+                            html.Label("Show Synergies:", style={
+                                'fontSize': '12px',
+                                'fontWeight': 'bold',
+                                'color': '#2c3e50',
+                                'marginBottom': '4px',
+                                'display': 'block'
+                            }),
+                            dcc.RadioItems(
+                                id='synergy-type-filter',
+                                options=[
+                                    {'label': ' Both', 'value': 'both'},
+                                    {'label': ' 2-Way Only', 'value': 'two_way'},
+                                    {'label': ' 3-Way Only', 'value': 'three_way'}
+                                ],
+                                value='both',
+                                inline=True,
+                                style={
+                                    'fontSize': '11px',
+                                    'color': '#34495e'
+                                },
+                                labelStyle={
+                                    'marginRight': '10px',
+                                    'cursor': 'pointer'
+                                }
+                            )
+                        ], style={
+                            'backgroundColor': 'rgba(255,255,255,0.95)',
+                            'backdropFilter': 'blur(10px)',
+                            'padding': '8px 12px',
+                            'borderRadius': '6px',
+                            'boxShadow': '0 2px 8px rgba(0,0,0,0.12)',
+                            'marginBottom': '8px'
+                        }),
+
                         html.Div(
                             id='role-score-cards-container',
                             children=[],
@@ -3439,6 +3475,51 @@ def select_card_from_search(n_clicks_list, current_stylesheet, current_deck_file
     })
 
     return card_name, new_stylesheet
+
+
+@app.callback(
+    Output('card-graph', 'elements', allow_duplicate=True),
+    [Input('synergy-type-filter', 'value'),
+     Input('current-deck-file-store', 'data')],
+    prevent_initial_call='initial_duplicate'
+)
+def filter_synergies_by_type(synergy_filter, current_deck_file):
+    """Filter graph edges based on synergy type selection (2-way, 3-way, or both)"""
+    if not current_deck_file:
+        return dash.no_update
+
+    try:
+        # Load deck data
+        with open(current_deck_file, 'r') as f:
+            deck_data = json.load(f)
+
+        # Build full graph elements
+        elements = build_graph_elements(deck_data)
+
+        # Filter based on selection
+        if synergy_filter == 'two_way':
+            # Keep nodes and only 2-way edges
+            filtered_elements = [
+                el for el in elements
+                if el.get('group') == 'nodes' or not el.get('data', {}).get('is_three_way', False)
+            ]
+            print(f"[SYNERGY FILTER] Showing 2-way only: {len(filtered_elements)} elements")
+        elif synergy_filter == 'three_way':
+            # Keep nodes and only 3-way edges
+            filtered_elements = [
+                el for el in elements
+                if el.get('group') == 'nodes' or el.get('data', {}).get('is_three_way', False)
+            ]
+            print(f"[SYNERGY FILTER] Showing 3-way only: {len(filtered_elements)} elements")
+        else:  # both
+            filtered_elements = elements
+            print(f"[SYNERGY FILTER] Showing both: {len(filtered_elements)} elements")
+
+        return filtered_elements
+
+    except Exception as e:
+        print(f"[SYNERGY FILTER] Error: {e}")
+        return dash.no_update
 
 
 if __name__ == '__main__':
