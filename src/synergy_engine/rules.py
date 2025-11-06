@@ -1137,10 +1137,20 @@ def detect_cheat_big_spells(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'\bcascade\b',
         r'costs.*less to cast',
         r'cost.*less',
-        r'put.*onto the battlefield',  # For permanents
+        r'put.*creature.*onto the battlefield',  # FIXED: Specify creatures, not lands
+        r'put.*artifact.*onto the battlefield',  # FIXED: Specify artifacts
+        r'put.*enchantment.*onto the battlefield',  # FIXED: Specify enchantments
         r'affinity',
         r'convoke',
         r'delve'
+    ]
+
+    # CRITICAL FIX: Exclude land ramp patterns (these are NOT cheat effects)
+    ramp_patterns = [
+        r'search.*library.*land',
+        r'put.*land.*onto the battlefield',
+        r'basic land.*onto the battlefield',
+        r'land card.*onto the battlefield'
     ]
 
     # High CMC threshold
@@ -1152,7 +1162,9 @@ def detect_cheat_big_spells(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_cmc = card2.get('cmc', 0)
 
     # Check if card1 cheats and card2 is expensive
-    card1_cheats = any(re.search(pattern, card1_text) for pattern in cheat_patterns)
+    # CRITICAL FIX: Exclude ramp spells from cheat detection
+    card1_cheats = any(re.search(pattern, card1_text) for pattern in cheat_patterns) and \
+                   not any(re.search(pattern, card1_text) for pattern in ramp_patterns)
 
     if card1_cheats and card2_cmc >= HIGH_CMC:
         cmc_diff = card2_cmc - 3  # Assume average cheat cost is 3
@@ -1166,7 +1178,9 @@ def detect_cheat_big_spells(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_cheats = any(re.search(pattern, card2_text) for pattern in cheat_patterns)
+    # CRITICAL FIX: Exclude ramp spells from cheat detection
+    card2_cheats = any(re.search(pattern, card2_text) for pattern in cheat_patterns) and \
+                   not any(re.search(pattern, card2_text) for pattern in ramp_patterns)
 
     if card2_cheats and card1_cmc >= HIGH_CMC:
         cmc_diff = card1_cmc - 3
@@ -1407,6 +1421,15 @@ def detect_token_anthems(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'put.*token.*onto the battlefield'
     ]
 
+    # CRITICAL FIX: Patterns that indicate tokens go to OPPONENT (exclude these)
+    opponent_token_patterns = [
+        r'opponent.*creates?.*token',
+        r'target opponent.*creates?',
+        r'its controller creates?.*token',
+        r'defending player creates?.*token',
+        r'each opponent creates?.*token'
+    ]
+
     # Global buff patterns (positive only - exclude negative effects)
     buff_patterns = [
         r'creatures you control get \+\d+/\+\d+',
@@ -1426,7 +1449,9 @@ def detect_token_anthems(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_text = card2.get('oracle_text', '').lower()
 
     # Check if card1 makes tokens and card2 buffs
-    card1_makes_tokens = any(re.search(pattern, card1_text) for pattern in token_patterns)
+    # CRITICAL FIX: Exclude cards that give tokens to opponents
+    card1_makes_tokens = any(re.search(pattern, card1_text) for pattern in token_patterns) and \
+                         not any(re.search(pattern, card1_text) for pattern in opponent_token_patterns)
     card2_buffs = any(re.search(pattern, card2_text) for pattern in buff_patterns)
     card2_is_negative = any(re.search(pattern, card2_text) for pattern in negative_patterns)
 
@@ -1440,7 +1465,9 @@ def detect_token_anthems(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_makes_tokens = any(re.search(pattern, card2_text) for pattern in token_patterns)
+    # CRITICAL FIX: Exclude cards that give tokens to opponents
+    card2_makes_tokens = any(re.search(pattern, card2_text) for pattern in token_patterns) and \
+                         not any(re.search(pattern, card2_text) for pattern in opponent_token_patterns)
     card1_buffs = any(re.search(pattern, card1_text) for pattern in buff_patterns)
     card1_is_negative = any(re.search(pattern, card1_text) for pattern in negative_patterns)
 
@@ -1673,6 +1700,15 @@ def detect_spellslinger_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
     Detect Spellslinger Payoffs synergy (Rule 20)
     "Whenever you cast" triggers + cheap instants/sorceries
     """
+    # CRITICAL FIX: Distinguish Aura/Equipment triggers from general spell triggers
+    # Aura/Equipment/Vehicle trigger patterns (NOT general spellslinger)
+    aura_equipment_patterns = [
+        r'whenever you cast an aura',
+        r'whenever you cast an equipment',
+        r'whenever you cast a vehicle',
+        r'whenever you cast an aura, equipment, or vehicle'
+    ]
+
     # Spell trigger patterns
     spell_trigger_patterns = [
         r'whenever you cast an instant or sorcery',
@@ -1700,10 +1736,14 @@ def detect_spellslinger_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_cmc = card2.get('cmc', 0)
     card1_cmc = card1.get('cmc', 0)
 
+    # CRITICAL FIX: Exclude Aura/Equipment triggers from spellslinger detection
+    card1_is_aura_equipment_trigger = any(re.search(pattern, card1_text) for pattern in aura_equipment_patterns)
+
     # Check if card1 has spell triggers and card2 is a cheap instant/sorcery
-    card1_has_trigger = any(re.search(pattern, card1_text) for pattern in spell_trigger_patterns) or \
+    card1_has_trigger = (any(re.search(pattern, card1_text) for pattern in spell_trigger_patterns) or \
                         any(re.search(pattern, card1_text) for pattern in magecraft_patterns) or \
-                        'prowess' in card1_keywords
+                        'prowess' in card1_keywords) and \
+                        not card1_is_aura_equipment_trigger  # FIXED: Exclude Aura/Equipment triggers
 
     # Heuristic: Instant/Sorcery by type, or by common spell-like text when type is missing
     likely_spell_text = any(kw in card2_text for kw in [
@@ -1722,9 +1762,13 @@ def detect_spellslinger_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_has_trigger = any(re.search(pattern, card2_text) for pattern in spell_trigger_patterns) or \
+    # CRITICAL FIX: Exclude Aura/Equipment triggers from spellslinger detection
+    card2_is_aura_equipment_trigger = any(re.search(pattern, card2_text) for pattern in aura_equipment_patterns)
+
+    card2_has_trigger = (any(re.search(pattern, card2_text) for pattern in spell_trigger_patterns) or \
                         any(re.search(pattern, card2_text) for pattern in magecraft_patterns) or \
-                        'prowess' in card2_keywords
+                        'prowess' in card2_keywords) and \
+                        not card2_is_aura_equipment_trigger  # FIXED: Exclude Aura/Equipment triggers
 
     likely_spell_text1 = any(kw in card1_text for kw in [
         'scry', 'draw', 'counter target', 'destroy target', 'deal', 'exile target', 'return target', 'create two', 'create', 'gain control of', 'target creature'
@@ -2463,16 +2507,27 @@ def detect_equipment_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'living weapon'  # Equipment that creates tokens
     ]
 
-    # Equipment matters patterns
+    # Equipment tutor patterns (specific - check these first)
+    equipment_tutor_patterns = [
+        r'search.*library.*equipment',
+        r'search.*library.*for.*equipment'
+    ]
+
+    # Equipment recursion patterns
+    equipment_recursion_patterns = [
+        r'equipment.*from.*graveyard',
+        r'return.*equipment.*from.*graveyard'
+    ]
+
+    # Equipment matters patterns (general)
     equipment_matters_patterns = [
         r'whenever.*equipped',
         r'when.*becomes equipped',
         r'equipped creature',
-        r'search.*library.*equipment',
-        r'equipment.*from.*graveyard',
         r'equipment.*cost.*to equip',
         r'equipment.*you control',
-        r'creatures you control with equipment'
+        r'creatures you control with equipment',
+        r'whenever.*equipment.*enters'
     ]
 
     # Equipment synergy keywords
@@ -2487,14 +2542,59 @@ def detect_equipment_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_is_equipment = 'equipment' in card1_type or any(re.search(pattern, card1_text) for pattern in equipment_patterns)
     card2_is_equipment = 'equipment' in card2_type or any(re.search(pattern, card2_text) for pattern in equipment_patterns)
 
+    # Check for specific equipment interactions (tutors, recursion, matters)
+    card1_tutors_equipment = any(re.search(pattern, card1_text) for pattern in equipment_tutor_patterns)
+    card2_tutors_equipment = any(re.search(pattern, card2_text) for pattern in equipment_tutor_patterns)
+
+    card1_recurs_equipment = any(re.search(pattern, card1_text) for pattern in equipment_recursion_patterns)
+    card2_recurs_equipment = any(re.search(pattern, card2_text) for pattern in equipment_recursion_patterns)
+
     card1_cares_equipment = any(re.search(pattern, card1_text) for pattern in equipment_matters_patterns)
     card2_cares_equipment = any(re.search(pattern, card2_text) for pattern in equipment_matters_patterns)
 
-    # Equipment + equipment matters
+    # FIXED: Equipment + tutor (most specific)
+    if card1_is_equipment and card2_tutors_equipment:
+        return {
+            'name': 'Equipment Tutor',
+            'description': f"{card2['name']} can tutor for equipment like {card1['name']}",
+            'value': 3.5,
+            'category': 'card_advantage',
+            'subcategory': 'tutor_target'
+        }
+
+    if card2_is_equipment and card1_tutors_equipment:
+        return {
+            'name': 'Equipment Tutor',
+            'description': f"{card1['name']} can tutor for equipment like {card2['name']}",
+            'value': 3.5,
+            'category': 'card_advantage',
+            'subcategory': 'tutor_target'
+        }
+
+    # FIXED: Equipment + recursion
+    if card1_is_equipment and card2_recurs_equipment:
+        return {
+            'name': 'Equipment Recursion',
+            'description': f"{card2['name']} can recur equipment like {card1['name']} from graveyard",
+            'value': 3.0,
+            'category': 'role_interaction',
+            'subcategory': 'recursion'
+        }
+
+    if card2_is_equipment and card1_recurs_equipment:
+        return {
+            'name': 'Equipment Recursion',
+            'description': f"{card1['name']} can recur equipment like {card2['name']} from graveyard",
+            'value': 3.0,
+            'category': 'role_interaction',
+            'subcategory': 'recursion'
+        }
+
+    # FIXED: Equipment + equipment matters (general)
     if card1_is_equipment and card2_cares_equipment:
         return {
             'name': 'Equipment Synergy',
-            'description': f"{card2['name']} synergizes with equipment like {card1['name']}",
+            'description': f"{card2['name']} cares about equipment, {card1['name']} is equipment",
             'value': 3.0,
             'category': 'type_synergy',
             'subcategory': 'equipment_matters'
@@ -2503,7 +2603,7 @@ def detect_equipment_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     if card2_is_equipment and card1_cares_equipment:
         return {
             'name': 'Equipment Synergy',
-            'description': f"{card1['name']} synergizes with equipment like {card2['name']}",
+            'description': f"{card1['name']} cares about equipment, {card2['name']} is equipment",
             'value': 3.0,
             'category': 'type_synergy',
             'subcategory': 'equipment_matters'
