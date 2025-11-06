@@ -191,6 +191,17 @@ def get_base_stylesheet() -> List[Dict[str, Any]]:
                 'opacity': 0.9,
                 'z-index': 100  # Bring combos to front
             }
+        },
+        # Three-way synergy edges - triangular connections
+        {
+            'selector': 'edge.three-way-synergy',
+            'style': {
+                'line-color': '#9b59b6',  # Purple for three-way synergies
+                'width': 4,
+                'line-style': 'dashed',
+                'opacity': 0.7,
+                'z-index': 50  # Below combos, above regular synergies
+            }
         }
     ]
 
@@ -927,8 +938,18 @@ def load_deck(n_clicks, url, current_data):
         # Analyze synergies
         print(f"[DECK LOAD] Step 5: Analyzing synergies for {len(cards_with_details)} cards...")
         print(f"[DECK LOAD] This may take 1-2 minutes for large decks. Please wait...")
-        deck.synergies = analyze_deck_synergies(cards_with_details)
-        print(f"[DECK LOAD] Synergy analysis complete! Found {len(deck.synergies)} synergies")
+        synergy_result = analyze_deck_synergies(cards_with_details, include_three_way=True)
+
+        # Handle both old and new return formats
+        if isinstance(synergy_result, dict) and 'two_way' in synergy_result:
+            deck.synergies = synergy_result['two_way']
+            deck.three_way_synergies = synergy_result.get('three_way', {})
+            print(f"[DECK LOAD] Synergy analysis complete! Found {len(deck.synergies)} two-way synergies and {len(deck.three_way_synergies)} three-way synergies")
+        else:
+            # Old format (backward compatibility)
+            deck.synergies = synergy_result
+            deck.three_way_synergies = {}
+            print(f"[DECK LOAD] Synergy analysis complete! Found {len(deck.synergies)} synergies")
 
         # Save deck to file
         print("[DECK LOAD] Step 6: Saving deck to file...")

@@ -22,11 +22,13 @@ class Deck:
     """
 
     def __init__(self, deck_id: str, name: str, cards: List[Dict],
-                 synergies: Optional[Dict] = None, metadata: Optional[Dict] = None):
+                 synergies: Optional[Dict] = None, three_way_synergies: Optional[Dict] = None,
+                 metadata: Optional[Dict] = None):
         self.deck_id = deck_id
         self.name = name
         self.cards = cards
         self.synergies = synergies or {}
+        self.three_way_synergies = three_way_synergies or {}
         self.metadata = metadata or {}
 
         # Add creation timestamp if not present
@@ -42,6 +44,7 @@ class Deck:
             'name': self.name,
             'cards': self.cards,
             'synergies': self.synergies,
+            'three_way_synergies': self.three_way_synergies,
             'metadata': self.metadata
         }
 
@@ -88,6 +91,7 @@ class Deck:
             name=data['name'],
             cards=data.get('cards', []),
             synergies=data.get('synergies', {}),
+            three_way_synergies=data.get('three_way_synergies', {}),
             metadata=data.get('metadata', {})
         )
 

@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple
 from itertools import combinations
 from .rules import ALL_RULES, clear_damage_classification_cache
 from .categories import get_category_weight
+from .three_way_synergies import THREE_WAY_SYNERGY_RULES
 
 # Import combo detector (with graceful fallback if API unavailable)
 try:
@@ -43,6 +44,34 @@ def analyze_card_pair(card1: Dict, card2: Dict) -> List[Dict]:
         except Exception as e:
             # Log error but continue with other rules
             print(f"Error in {rule_func.__name__} for {card1.get('name')} and {card2.get('name')}: {e}")
+
+    return synergies
+
+
+def analyze_card_triple(card1: Dict, card2: Dict, card3: Dict) -> List[Dict]:
+    """
+    Analyze three-way synergies between three cards
+
+    Args:
+        card1: First card dictionary
+        card2: Second card dictionary
+        card3: Third card dictionary
+
+    Returns:
+        List of detected three-way synergies
+    """
+    synergies = []
+
+    # Run all three-way detection rules
+    for rule_func in THREE_WAY_SYNERGY_RULES:
+        try:
+            result = rule_func(card1, card2, card3)
+            if result:
+                synergies.append(result)
+        except Exception as e:
+            # Log error but continue with other rules
+            card_names = f"{card1.get('name')}, {card2.get('name')}, {card3.get('name')}"
+            print(f"Error in {rule_func.__name__} for {card_names}: {e}")
 
     return synergies
 
@@ -101,25 +130,27 @@ def organize_synergies_by_category(synergies: List[Dict]) -> Dict[str, List[Dict
     return organized
 
 
-def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5) -> Dict[str, Dict]:
+def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5, include_three_way: bool = True) -> Dict:
     """
     Analyze all synergies in a deck
 
     Args:
         cards: List of card dictionaries
         min_synergy_threshold: Minimum synergy weight to include in results
+        include_three_way: If True, also detect three-way synergies (slower)
 
     Returns:
-        Dictionary mapping card pairs to their synergies:
+        If include_three_way is True, returns:
         {
-            'CardA||CardB': {
-                'total_weight': float,
-                'synergies': {
-                    'category1': [synergy1, synergy2, ...],
-                    'category2': [...]
-                }
+            'two_way': {
+                'CardA||CardB': {...}
+            },
+            'three_way': {
+                'CardA||CardB||CardC': {...}
             }
         }
+
+        If include_three_way is False, returns just the two_way dict for backward compatibility
     """
     import time
     start_time = time.time()
@@ -201,7 +232,101 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
         except Exception as e:
             print(f"  Warning: Combo detection failed: {e}")
 
-    return synergy_dict
+    # Detect three-way synergies if requested
+    three_way_dict = {}
+    if include_three_way:
+        print("\nDetecting three-way synergies...")
+        three_way_start = time.time()
+        three_way_dict = analyze_three_way_synergies(cards, min_synergy_threshold)
+        three_way_elapsed = time.time() - three_way_start
+        print(f"  Completed in {three_way_elapsed:.1f}s")
+        print(f"  Found {len(three_way_dict)} three-way synergies")
+
+        # Return both two-way and three-way
+        return {
+            'two_way': synergy_dict,
+            'three_way': three_way_dict
+        }
+    else:
+        # Backward compatibility: return just the two-way synergies
+        return synergy_dict
+
+
+def analyze_three_way_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5) -> Dict[str, Dict]:
+    """
+    Analyze all three-way synergies in a deck
+
+    Args:
+        cards: List of card dictionaries
+        min_synergy_threshold: Minimum synergy weight to include in results
+
+    Returns:
+        Dictionary mapping card triplets to their synergies:
+        {
+            'CardA||CardB||CardC': {
+                'total_weight': float,
+                'synergies': {
+                    'category1': [synergy1, ...],
+                }
+            }
+        }
+    """
+    # Filter out lands to reduce computation
+    non_land_cards = []
+    for card in cards:
+        card_type = card.get('type_line', '').lower()
+        if '//' not in card_type and 'land' in card_type:
+            continue
+        if 'error' in card:
+            continue
+        non_land_cards.append(card)
+
+    num_cards = len(non_land_cards)
+
+    # Limit three-way detection to decks with reasonable size
+    if num_cards > 60:
+        print(f"  Limiting three-way detection to prevent long analysis time")
+        print(f"  Checking only {num_cards} non-land cards")
+
+    three_way_dict = {}
+    total_triplets = (num_cards * (num_cards - 1) * (num_cards - 2)) // 6
+    analyzed = 0
+
+    # Show progress for large decks
+    progress_interval = max(100, total_triplets // 20)
+
+    # Analyze all card triplets
+    for card1, card2, card3 in combinations(non_land_cards, 3):
+        analyzed += 1
+
+        if analyzed % progress_interval == 0 or analyzed == total_triplets:
+            print(f"  Progress: {analyzed}/{total_triplets} triplets ({100*analyzed/total_triplets:.1f}%)")
+
+        # Detect three-way synergies
+        synergies = analyze_card_triple(card1, card2, card3)
+
+        if synergies:
+            # Calculate total weight
+            total_weight = calculate_edge_weight(synergies)
+
+            # Only include if above threshold
+            if total_weight >= min_synergy_threshold:
+                # Create unique key
+                key = f"{card1['name']}||{card2['name']}||{card3['name']}"
+
+                # Organize by category
+                organized_synergies = organize_synergies_by_category(synergies)
+
+                three_way_dict[key] = {
+                    'card1': card1['name'],
+                    'card2': card2['name'],
+                    'card3': card3['name'],
+                    'total_weight': total_weight,
+                    'synergies': organized_synergies,
+                    'synergy_count': len(synergies)
+                }
+
+    return three_way_dict
 
 
 def detect_verified_combos(cards: List[Dict]) -> Dict[str, Dict]:

@@ -72,6 +72,35 @@ def build_graph_elements(deck_data: Dict) -> List[Dict]:
             continue
 
     print(f"[GRAPH BUILDER] Created {edges_created} edges")
+
+    # Create edges for three-way synergies (triangular connections)
+    three_way_synergies = deck_data.get('three_way_synergies', {})
+    if three_way_synergies:
+        print(f"[GRAPH BUILDER] Creating hyperedges for {len(three_way_synergies)} three-way synergies")
+
+        three_way_edges_created = 0
+        for synergy_key, synergy_data in three_way_synergies.items():
+            try:
+                if not synergy_key or not isinstance(synergy_data, dict):
+                    continue
+
+                # Create triangular edges (3 edges forming a triangle)
+                hyperedges = create_three_way_edges(synergy_key, synergy_data)
+
+                for edge in hyperedges:
+                    # Validate edge
+                    if not edge.get('data') or not edge['data'].get('source') or not edge['data'].get('target'):
+                        continue
+
+                    elements.append(edge)
+                    three_way_edges_created += 1
+
+            except Exception as e:
+                print(f"[GRAPH BUILDER] ERROR: Failed to create hyperedge for {synergy_key}: {e}")
+                continue
+
+        print(f"[GRAPH BUILDER] Created {three_way_edges_created} hyperedges")
+
     print(f"[GRAPH BUILDER] Total elements: {len(elements)}")
 
     return elements
@@ -167,6 +196,87 @@ def create_card_node(card: Dict) -> Dict:
         'data': node_data,
         'classes': classes
     }
+
+
+def create_three_way_edges(synergy_key: str, synergy_data: Dict) -> List[Dict]:
+    """
+    Create triangular edges for a three-way synergy
+
+    Args:
+        synergy_key: Key in format "Card1||Card2||Card3"
+        synergy_data: Dictionary containing synergy information
+
+    Returns:
+        List of 3 Cytoscape edge elements forming a triangle
+    """
+    cards = synergy_key.split('||')
+    if len(cards) != 3:
+        return []
+
+    card1, card2, card3 = cards
+    weight = synergy_data.get('total_weight', 1.0)
+
+    # Create 3 edges forming a triangle
+    edges = []
+
+    # Edge 1: card1 <-> card2
+    edge1_id = f"{card1}_{card2}_{card3}_1".replace(' ', '_').replace(',', '').replace("'", '')
+    edges.append({
+        'data': {
+            'id': edge1_id,
+            'source': card1,
+            'target': card2,
+            'source_label': card1,
+            'target_label': card2,
+            'weight': round(weight, 1),
+            'synergies': synergy_data.get('synergies', {}),
+            'synergy_count': synergy_data.get('synergy_count', 0),
+            'is_three_way': True,
+            'three_way_key': synergy_key,
+            'third_card': card3
+        },
+        'classes': 'synergy-edge three-way-synergy'
+    })
+
+    # Edge 2: card2 <-> card3
+    edge2_id = f"{card1}_{card2}_{card3}_2".replace(' ', '_').replace(',', '').replace("'", '')
+    edges.append({
+        'data': {
+            'id': edge2_id,
+            'source': card2,
+            'target': card3,
+            'source_label': card2,
+            'target_label': card3,
+            'weight': round(weight, 1),
+            'synergies': synergy_data.get('synergies', {}),
+            'synergy_count': synergy_data.get('synergy_count', 0),
+            'is_three_way': True,
+            'three_way_key': synergy_key,
+            'third_card': card1
+        },
+        'classes': 'synergy-edge three-way-synergy'
+    })
+
+    # Edge 3: card3 <-> card1
+    edge3_id = f"{card1}_{card2}_{card3}_3".replace(' ', '_').replace(',', '').replace("'", '')
+    edges.append({
+        'data': {
+            'id': edge3_id,
+            'source': card3,
+            'target': card1,
+            'source_label': card3,
+            'target_label': card1,
+            'weight': round(weight, 1),
+            'synergies': synergy_data.get('synergies', {}),
+            'synergy_count': synergy_data.get('synergy_count', 0),
+            'is_three_way': True,
+            'three_way_key': synergy_key,
+            'third_card': card2
+        },
+        'classes': 'synergy-edge three-way-synergy'
+    })
+
+    return edges
 
 
 def create_synergy_edge(synergy_key: str, synergy_data: Dict) -> Dict:
