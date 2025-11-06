@@ -252,13 +252,14 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
         return synergy_dict
 
 
-def analyze_three_way_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5) -> Dict[str, Dict]:
+def analyze_three_way_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5, max_synergies: int = 100) -> Dict[str, Dict]:
     """
-    Analyze all three-way synergies in a deck
+    Analyze all three-way synergies in a deck using smart pre-filtering
 
     Args:
         cards: List of card dictionaries
         min_synergy_threshold: Minimum synergy weight to include in results
+        max_synergies: Maximum number of synergies to return (top N by weight)
 
     Returns:
         Dictionary mapping card triplets to their synergies:
@@ -271,6 +272,11 @@ def analyze_three_way_synergies(cards: List[Dict], min_synergy_threshold: float 
             }
         }
     """
+    import time
+    from .three_way_synergies import categorize_cards_for_three_way
+
+    start_time = time.time()
+
     # Filter out lands to reduce computation
     non_land_cards = []
     for card in cards:
@@ -282,49 +288,106 @@ def analyze_three_way_synergies(cards: List[Dict], min_synergy_threshold: float 
         non_land_cards.append(card)
 
     num_cards = len(non_land_cards)
+    print(f"  Pre-categorizing {num_cards} cards for efficient synergy detection...")
 
-    # Limit three-way detection to decks with reasonable size
-    if num_cards > 60:
-        print(f"  Limiting three-way detection to prevent long analysis time")
-        print(f"  Checking only {num_cards} non-land cards")
+    # Pre-categorize cards by their roles to drastically reduce combinations to check
+    categorized = categorize_cards_for_three_way(non_land_cards)
+
+    # Print categorization stats
+    for category, card_list in categorized.items():
+        if card_list:
+            print(f"    {category}: {len(card_list)} cards")
 
     three_way_dict = {}
-    total_triplets = (num_cards * (num_cards - 1) * (num_cards - 2)) // 6
     analyzed = 0
 
-    # Show progress for large decks
-    progress_interval = max(100, total_triplets // 20)
+    # Define specific triplet patterns to check based on synergy rules
+    # This replaces checking ALL C(n,3) combinations with targeted checks
+    triplet_patterns = [
+        # Equipment Engine: Equipment + Creature + Equipment Matters
+        ('equipment', 'creature', 'equipment_matters'),
+        # Aristocrats: Token Gen + Sac Outlet + Death Payoff
+        ('token_gen', 'sac_outlet', 'death_payoff'),
+        # ETB Engine: ETB Creature + Flicker + ETB Multiplier
+        ('etb_creature', 'flicker', 'etb_multiplier'),
+        # Reanimator: Mill + Reanimate + Big Creature
+        ('mill', 'reanimate', 'big_creature'),
+        # Spellslinger: Cost Reducer + Cantrip + Spell Payoff
+        ('cost_reducer', 'cantrip', 'spell_payoff'),
+        # Tap/Untap: Tap Value + 2x Untapper
+        ('tap_value', 'untapper', 'untapper'),
+        # Discard Value: Draw + Discard Synergy + Madness
+        ('draw', 'discard_synergy', 'madness'),
+    ]
 
-    # Analyze all card triplets
-    for card1, card2, card3 in combinations(non_land_cards, 3):
-        analyzed += 1
+    print(f"  Checking targeted triplet combinations...")
 
-        if analyzed % progress_interval == 0 or analyzed == total_triplets:
-            print(f"  Progress: {analyzed}/{total_triplets} triplets ({100*analyzed/total_triplets:.1f}%)")
+    # For each pattern, only check relevant combinations
+    for cat1, cat2, cat3 in triplet_patterns:
+        cards1 = categorized.get(cat1, [])
+        cards2 = categorized.get(cat2, [])
+        cards3 = categorized.get(cat3, [])
 
-        # Detect three-way synergies
-        synergies = analyze_card_triple(card1, card2, card3)
+        if not cards1 or not cards2 or not cards3:
+            continue
 
-        if synergies:
-            # Calculate total weight
-            total_weight = calculate_edge_weight(synergies)
+        # Check all combinations of cards from these three categories
+        for card1 in cards1:
+            for card2 in cards2:
+                # Skip if same card
+                if card1['name'] == card2['name']:
+                    continue
 
-            # Only include if above threshold
-            if total_weight >= min_synergy_threshold:
-                # Create unique key
-                key = f"{card1['name']}||{card2['name']}||{card3['name']}"
+                for card3 in cards3:
+                    # Skip if same card
+                    if card3['name'] == card1['name'] or card3['name'] == card2['name']:
+                        continue
 
-                # Organize by category
-                organized_synergies = organize_synergies_by_category(synergies)
+                    analyzed += 1
 
-                three_way_dict[key] = {
-                    'card1': card1['name'],
-                    'card2': card2['name'],
-                    'card3': card3['name'],
-                    'total_weight': total_weight,
-                    'synergies': organized_synergies,
-                    'synergy_count': len(synergies)
-                }
+                    # Detect three-way synergies
+                    synergies = analyze_card_triple(card1, card2, card3)
+
+                    if synergies:
+                        # Calculate total weight
+                        total_weight = calculate_edge_weight(synergies)
+
+                        # Only include if above threshold
+                        if total_weight >= min_synergy_threshold:
+                            # Create unique key (sorted to avoid duplicates)
+                            sorted_names = sorted([card1['name'], card2['name'], card3['name']])
+                            key = f"{sorted_names[0]}||{sorted_names[1]}||{sorted_names[2]}"
+
+                            # Skip if already found (can happen due to overlapping categories)
+                            if key in three_way_dict:
+                                continue
+
+                            # Organize by category
+                            organized_synergies = organize_synergies_by_category(synergies)
+
+                            three_way_dict[key] = {
+                                'card1': sorted_names[0],
+                                'card2': sorted_names[1],
+                                'card3': sorted_names[2],
+                                'total_weight': total_weight,
+                                'synergies': organized_synergies,
+                                'synergy_count': len(synergies)
+                            }
+
+    print(f"  Analyzed {analyzed} targeted triplets (vs {num_cards*(num_cards-1)*(num_cards-2)//6} total combinations)")
+
+    # Limit to top N synergies by weight to prevent graph overload
+    if len(three_way_dict) > max_synergies:
+        print(f"  Limiting to top {max_synergies} three-way synergies by weight...")
+        sorted_synergies = sorted(
+            three_way_dict.items(),
+            key=lambda x: x[1]['total_weight'],
+            reverse=True
+        )[:max_synergies]
+        three_way_dict = dict(sorted_synergies)
+
+    elapsed = time.time() - start_time
+    print(f"  Found {len(three_way_dict)} three-way synergies in {elapsed:.2f}s")
 
     return three_way_dict
 

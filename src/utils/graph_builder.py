@@ -8,12 +8,13 @@ from typing import Dict, List
 from src.utils.card_roles import slugify_role
 
 
-def build_graph_elements(deck_data: Dict) -> List[Dict]:
+def build_graph_elements(deck_data: Dict, max_edges: int = 2000) -> List[Dict]:
     """
     Convert deck data into Cytoscape graph elements (nodes and edges)
 
     Args:
         deck_data: Dictionary containing deck information with cards and synergies
+        max_edges: Maximum number of edges to include (prevents graph overload)
 
     Returns:
         List of Cytoscape elements (nodes and edges)
@@ -48,12 +49,30 @@ def build_graph_elements(deck_data: Dict) -> List[Dict]:
 
     print(f"[GRAPH BUILDER] Created {len(elements)} nodes")
 
-    # Create edges for synergies
+    # Create edges for synergies - prioritize by weight to stay under limit
     synergies = deck_data.get('synergies', {})
-    print(f"[GRAPH BUILDER] Creating edges for {len(synergies)} synergies")
+    three_way_synergies = deck_data.get('three_way_synergies', {})
+
+    total_potential_edges = len(synergies) + (len(three_way_synergies) * 3)  # 3 edges per 3-way synergy
+    print(f"[GRAPH BUILDER] Total potential edges: {total_potential_edges} (limit: {max_edges})")
+
+    # Sort synergies by weight to prioritize strongest ones
+    sorted_synergies = sorted(
+        synergies.items(),
+        key=lambda x: x[1].get('total_weight', 0),
+        reverse=True
+    )
+
+    # Calculate how many 2-way edges we can include
+    # Reserve space for 3-way edges (they are usually more interesting)
+    three_way_edge_count = len(three_way_synergies) * 3
+    max_two_way_edges = min(len(sorted_synergies), max_edges - three_way_edge_count)
+
+    if max_two_way_edges < len(sorted_synergies):
+        print(f"[GRAPH BUILDER] Limiting to top {max_two_way_edges} two-way synergies by weight")
 
     edges_created = 0
-    for synergy_key, synergy_data in synergies.items():
+    for synergy_key, synergy_data in sorted_synergies[:max_two_way_edges]:
         try:
             if not synergy_key or not isinstance(synergy_data, dict):
                 continue
@@ -71,7 +90,7 @@ def build_graph_elements(deck_data: Dict) -> List[Dict]:
             print(f"[GRAPH BUILDER] ERROR: Failed to create edge for {synergy_key}: {e}")
             continue
 
-    print(f"[GRAPH BUILDER] Created {edges_created} edges")
+    print(f"[GRAPH BUILDER] Created {edges_created} two-way edges")
 
     # Create edges for three-way synergies (triangular connections)
     three_way_synergies = deck_data.get('three_way_synergies', {})
@@ -79,6 +98,8 @@ def build_graph_elements(deck_data: Dict) -> List[Dict]:
         print(f"[GRAPH BUILDER] Creating hyperedges for {len(three_way_synergies)} three-way synergies")
 
         three_way_edges_created = 0
+        edge_ids_seen = set()  # Track edge IDs to prevent duplicates
+
         for synergy_key, synergy_data in three_way_synergies.items():
             try:
                 if not synergy_key or not isinstance(synergy_data, dict):
@@ -92,6 +113,13 @@ def build_graph_elements(deck_data: Dict) -> List[Dict]:
                     if not edge.get('data') or not edge['data'].get('source') or not edge['data'].get('target'):
                         continue
 
+                    # Check for duplicate edge IDs
+                    edge_id = edge['data']['id']
+                    if edge_id in edge_ids_seen:
+                        print(f"[GRAPH BUILDER] WARNING: Skipping duplicate edge {edge_id}")
+                        continue
+
+                    edge_ids_seen.add(edge_id)
                     elements.append(edge)
                     three_way_edges_created += 1
 

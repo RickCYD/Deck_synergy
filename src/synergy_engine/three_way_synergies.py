@@ -24,122 +24,119 @@ EQUIPMENT_MATTERS_PATTERNS = [
 
 # Token/Aristocrats patterns - MORE SPECIFIC
 TOKEN_PATTERNS = [
-    re.compile(r'create (one|two|three|a|\d+|an?).*\d+/\d+.*token'),  # Must specify creating X/X tokens
+    re.compile(r'create (one|two|three|\d+|an?).*\d+/\d+.*token'),  # Must specify creating X/X tokens
     re.compile(r'at the beginning.*create.*\d+/\d+.*token'),  # Recurring token generation
-    re.compile(r'create (one|two|three|a|\d+|an?) token')  # Generic token creation
+    re.compile(r'create.*\d+/\d+.*creature token'),  # Explicit creature token creation
 ]
 
 SAC_OUTLET_PATTERNS = [
-    re.compile(r'sacrifice a creature\s*:'),  # Must be an activated/triggered ability (colon)
-    re.compile(r'sacrifice a permanent\s*:'),
-    re.compile(r'sacrifice.*creature.*:\s*(add|draw|deal)'),  # Specific payoffs
-    re.compile(r'you may sacrifice')  # Optional sac outlets
+    re.compile(r'sacrifice a creature\s*:'),  # Must be an activated ability (colon)
+    re.compile(r'sacrifice (a|an) (permanent|artifact)\s*:'),  # Can sac artifacts/permanents
+    re.compile(r'sacrifice.*creature.*:\s*(add|draw|deal|destroy|exile)'),  # Specific payoffs
 ]
 
 DEATH_PAYOFF_PATTERNS = [
-    re.compile(r'whenever (a|another|one or more) creature.*dies.*,\s*(you|target|each|draw|deal|create|gain)'),  # Must have payoff after dies
-    re.compile(r'when.*dies.*,\s*(you|target|each|draw|deal|create|gain)'),  # Shorter version
+    re.compile(r'whenever (a|another|one or more) creature.*you control.*dies.*,\s*(you|target|each|draw|deal|create|gain|lose|put|return|destroy)'),  # Must have payoff
+    re.compile(r'when.*creature.*dies.*,\s*(you|target|each|draw|deal|create|gain|lose|put|return|destroy)'),  # Shorter version
 ]
 
 # ETB/Flicker patterns
 ETB_PATTERNS = [
-    re.compile(r'when.*enters.*battlefield'),
-    re.compile(r'when.*enters'),
+    re.compile(r'when.*enters.*battlefield.*,\s*(you|target|each|draw|deal|create|gain|put|destroy|exile|return|search)'),  # Must have payoff
     re.compile(r'evoke')
 ]
 
 FLICKER_PATTERNS = [
-    re.compile(r'exile.*return.*battlefield'),
-    re.compile(r'exile.*return.*to the battlefield'),
+    re.compile(r'exile (it|target|.*creature|.*permanent).*return.*battlefield'),  # Must exile and return
+    re.compile(r'exile.*return.*to the battlefield under'),
     re.compile(r'blink'),
-    re.compile(r'flicker'),
-    re.compile(r'return.*to.*hand.*return.*to.*battlefield')
+    re.compile(r'flicker')
 ]
 
 ETB_MULTIPLIER_PATTERNS = [
-    re.compile(r'if.*permanent.*entering.*battlefield'),
-    re.compile(r'whenever.*creature.*enters.*battlefield'),
-    re.compile(r'whenever.*permanent.*enters'),
-    re.compile(r'enters.*battlefield.*abilities.*trigger.*additional'),
-    re.compile(r'panharmonicon')
+    re.compile(r'if.*permanent.*entering.*battlefield.*cause.*trigger'),
+    re.compile(r'whenever.*creature.*enters.*battlefield.*(you|target|each)'),  # Must have payoff
+    re.compile(r'enters.*battlefield.*trigger.*additional'),
+    re.compile(r'panharmonicon'),
+    re.compile(r'yarok')
 ]
 
 # Mill/Reanimate patterns
 MILL_PATTERNS = [
-    re.compile(r'mill'),
-    re.compile(r'put.*from.*library.*graveyard'),
+    re.compile(r'mill \d+'),  # Must specify a number
+    re.compile(r'put.*top.*cards.*from.*library.*into.*graveyard'),
     re.compile(r'entomb'),
     re.compile(r'buried alive')
 ]
 
 REANIMATE_PATTERNS = [
-    re.compile(r'return.*creature.*from.*graveyard.*battlefield'),
-    re.compile(r'put.*creature.*from.*graveyard.*onto.*battlefield'),
+    re.compile(r'return (target|a|up to) (creature|permanent).*card.*from.*graveyard.*to.*battlefield'),
+    re.compile(r'put.*creature.*card.*from.*graveyard.*onto.*battlefield'),
     re.compile(r'reanimate'),
-    re.compile(r'animate dead')
+    re.compile(r'animate dead'),
+    re.compile(r'living death')
 ]
 
 # Spellslinger patterns
 COST_REDUCER_PATTERNS = [
-    re.compile(r'instant.*sorcery.*cost.*less'),
-    re.compile(r'spells.*cost.*less'),
-    re.compile(r'reduce.*cost.*instant'),
-    re.compile(r'reduce.*cost.*sorcery')
+    re.compile(r'instant.*and.*sorcery.*cost.*less'),
+    re.compile(r'instant.*sorcery.*spells.*cost.*\{'),
+    re.compile(r'noncreature spells.*cost.*less')
 ]
 
 CANTRIP_PATTERNS = [
-    re.compile(r'draw.*card'),
-    re.compile(r'scry'),
-    re.compile(r'surveil')
+    re.compile(r'draw (a|one|\d+) card'),
+    re.compile(r'scry \d+'),
+    re.compile(r'surveil \d+')
 ]
 
 SPELL_PAYOFF_PATTERNS = [
-    re.compile(r'whenever you cast.*instant'),
-    re.compile(r'whenever you cast.*sorcery'),
-    re.compile(r'whenever you cast.*spell'),
+    re.compile(r'whenever you cast.*instant.*sorcery'),
+    re.compile(r'whenever you cast.*noncreature'),
+    re.compile(r'whenever you cast (an|a) instant'),
+    re.compile(r'whenever you cast (an|a) sorcery'),
     re.compile(r'storm'),
-    re.compile(r'for each instant.*sorcery'),
+    re.compile(r'for each instant.*and.*sorcery'),
     re.compile(r'prowess'),
     re.compile(r'magecraft')
 ]
 
 # Tap/Untap patterns
 TAP_VALUE_PATTERNS = [
-    re.compile(r'\{t\}:.*add'),
-    re.compile(r'\{t\}:.*draw'),
-    re.compile(r'\{t\}:.*create'),
-    re.compile(r'\{t\}:.*deal.*damage')
+    re.compile(r'\{t\}:\s*add'),
+    re.compile(r'\{t\}:\s*draw'),
+    re.compile(r'\{t\}:\s*create'),
+    re.compile(r'\{t\}:\s*deal \d+ damage')
 ]
 
 UNTAP_PATTERNS = [
-    re.compile(r'untap.*permanent'),
-    re.compile(r'untap.*creature'),
-    re.compile(r'untap.*artifact'),
-    re.compile(r'untap all'),
+    re.compile(r'untap (up to )?(target|all|each|another).*permanent'),
+    re.compile(r'untap (up to )?(target|all|each|another).*creature'),
+    re.compile(r'untap (up to )?(target|all|each|another).*artifact'),
     re.compile(r'seedborn muse'),
-    re.compile(r'unwinding clock')
+    re.compile(r'unwinding clock'),
+    re.compile(r'untap (all|each)'),
 ]
 
 # Discard patterns
 DRAW_PATTERNS = [
-    re.compile(r'draw.*cards'),
+    re.compile(r'(draw|draws) (\d+|seven|that many) card'),
     re.compile(r'each player draws'),
-    re.compile(r'wheel')
+    re.compile(r'wheel of fortune'),
+    re.compile(r'wheel of misfortune')
 ]
 
 DISCARD_SYNERGY_PATTERNS = [
-    re.compile(r'whenever.*discard'),
-    re.compile(r'when.*discard'),
-    re.compile(r'if.*card.*discarded'),
-    re.compile(r'discard.*create'),
-    re.compile(r'discard.*draw')
+    re.compile(r'whenever (you|a player) discard.*(create|draw|deal|add|put)'),  # Must have payoff
+    re.compile(r'when.*you.*discard.*(create|draw|deal|add|put)'),
+    re.compile(r'if.*card.*discarded.*(create|draw|deal)'),
 ]
 
 MADNESS_PATTERNS = [
-    re.compile(r'madness'),
-    re.compile(r'flashback'),
-    re.compile(r'when.*discarded'),
-    re.compile(r'disturb'),
+    re.compile(r'madness \{'),
+    re.compile(r'flashback \{'),
+    re.compile(r'when.*discarded.*(you may|return)'),
+    re.compile(r'disturb \{'),
     re.compile(r'retrace')
 ]
 
