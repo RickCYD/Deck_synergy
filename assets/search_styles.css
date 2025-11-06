@@ -1,40 +1,81 @@
-/* Compact Search Styles */
+/* Floating Search & Filter Styles - Material Design Inspired */
 
-/* Search result item hover effect */
-.search-result-item:hover {
-    background-color: #f0f7ff !important;
-}
-
-/* Search result item active/click effect */
-.search-result-item:active {
-    background-color: #e3f2fd !important;
-}
-
-/* Search input focus effect */
+/* Search Input Focus Effect */
 #card-search-input:focus {
-    border-color: #3498db !important;
     outline: none;
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.25) !important;
+    transform: translateY(-1px);
 }
 
-/* Custom scrollbar for search results */
+#card-search-input {
+    transition: all 0.2s ease;
+}
+
+/* Search Result Item Styles */
+.search-result-item {
+    transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.search-result-item:hover {
+    background-color: rgba(52, 152, 219, 0.08) !important;
+    transform: translateX(2px);
+}
+
+.search-result-item:active {
+    background-color: rgba(52, 152, 219, 0.15) !important;
+}
+
+/* Custom Scrollbar for Results */
 #card-search-results::-webkit-scrollbar {
     width: 6px;
 }
 
 #card-search-results::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: transparent;
 }
 
 #card-search-results::-webkit-scrollbar-thumb {
-    background: #ccc;
+    background: rgba(0, 0, 0, 0.2);
     border-radius: 3px;
 }
 
 #card-search-results::-webkit-scrollbar-thumb:hover {
-    background: #999;
+    background: rgba(0, 0, 0, 0.3);
 }
 
-/* Smooth transitions */
-.search-result-item {
-    transition: background-color 0.15s ease;
+/* Role Filter Chip Styles */
+.role-chip {
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.role-chip:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15) !important;
+}
+
+.role-chip:active {
+    transform: translateY(0px);
+}
+
+/* Clear Button Hover */
+#clear-role-filter-button:hover {
+    background-color: rgba(231, 76, 60, 1) !important;
+    transform: scale(1.05);
+}
+
+#clear-role-filter-button:active {
+    transform: scale(0.98);
+}
+
+#clear-role-filter-button {
+    transition: all 0.2s ease;
+}
+
+/* Glassmorphism Effect Support */
+@supports (backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px)) {
+    .glass-effect {
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+    }
 }
