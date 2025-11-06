@@ -458,6 +458,50 @@ app.layout = html.Div([
                         style={'width': '100%', 'height': '620px'},
                         elements=[],
                         stylesheet=get_base_stylesheet()
+                    ),
+
+                    # Floating Filter Chips (Top-Right Overlay)
+                    html.Div([
+                        html.Div(
+                            id='role-score-cards-container',
+                            children=[],
+                            style={
+                                'display': 'flex',
+                                'flexWrap': 'wrap',
+                                'gap': '6px',
+                                'justifyContent': 'flex-end'
+                            }
+                        ),
+                    ], style={
+                        'position': 'absolute',
+                        'top': '16px',
+                        'right': '16px',
+                        'maxWidth': '400px',
+                        'zIndex': '1000'
+                    }),
+
+                    # Clear Filter Button (appears when filter is active)
+                    html.Button(
+                        '✕ Clear Filter',
+                        id='clear-role-filter-button',
+                        n_clicks=0,
+                        style={
+                            'position': 'absolute',
+                            'top': '60px',
+                            'right': '16px',
+                            'padding': '6px 12px',
+                            'backgroundColor': 'rgba(231,76,60,0.9)',
+                            'backdropFilter': 'blur(10px)',
+                            'color': 'white',
+                            'border': 'none',
+                            'cursor': 'pointer',
+                            'fontSize': '13px',
+                            'fontWeight': 'bold',
+                            'borderRadius': '6px',
+                            'boxShadow': '0 4px 8px rgba(0,0,0,0.15)',
+                            'display': 'none',
+                            'zIndex': '1000'
+                        }
                     )
                 ], style={
                     'position': 'relative',  # Important for absolute positioning of overlays
