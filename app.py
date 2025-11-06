@@ -32,6 +32,12 @@ from src.simulation.mana_simulator import ManaSimulator, SimulationParams
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# Utility functions
+def hex_to_rgb(hex_color):
+    """Convert hex color to RGB tuple"""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
 # Initialize Dash app
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.title = "MTG Commander Synergy Visualizer"
@@ -409,60 +415,10 @@ app.layout = html.Div([
         ], style={'display': 'flex', 'gap': '12px'}),
     ], style={'padding': '0 20px', 'marginTop': '16px'}),
 
-    # Role Filter Score Cards
-    html.Div([
-        html.Div([
-            html.H3("Card Roles", style={
-                'color': '#2c3e50',
-                'marginBottom': '12px',
-                'fontSize': '16px',
-                'fontWeight': 'bold'
-            }),
-            html.Div(
-                id='role-score-cards-container',
-                children=[],
-                style={
-                    'display': 'flex',
-                    'flexWrap': 'wrap',
-                    'gap': '8px',
-                    'marginBottom': '8px'
-                }
-            ),
-            html.Div([
-                html.Button(
-                    'Clear Filter',
-                    id='clear-role-filter-button',
-                    n_clicks=0,
-                    style={
-                        'padding': '6px 12px',
-                        'backgroundColor': '#e74c3c',
-                        'color': 'white',
-                        'border': 'none',
-                        'cursor': 'pointer',
-                        'fontSize': '12px',
-                        'fontWeight': 'bold',
-                        'borderRadius': '4px',
-                        'display': 'none'
-                    }
-                ),
-                html.Div(
-                    id='active-role-filter-display',
-                    style={
-                        'marginLeft': '12px',
-                        'color': '#7f8c8d',
-                        'fontStyle': 'italic',
-                        'fontSize': '12px',
-                        'display': 'inline-block'
-                    }
-                )
-            ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '8px'})
-        ], style={
-            'backgroundColor': '#ffffff',
-            'borderRadius': '6px',
-            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-            'padding': '16px',
-        })
-    ], style={'padding': '0 20px', 'marginTop': '16px'}),
+    # Store for selected card from search
+    dcc.Store(id='search-selected-card-store', data=None),
+    # Store for active role filter display
+    dcc.Store(id='active-role-filter-display', data=None),
 
     # Tabbed content: Synergy Graph and Mana Simulation
     dcc.Tabs(id='main-tabs', value='synergy', children=[
@@ -504,6 +460,7 @@ app.layout = html.Div([
                         stylesheet=get_base_stylesheet()
                     )
                 ], style={
+                    'position': 'relative',  # Important for absolute positioning of overlays
                     'flex': '1 1 70%',
                     'backgroundColor': '#ffffff',
                     'borderRadius': '6px',
@@ -1090,30 +1047,35 @@ def update_graph(deck_file):
 
 @app.callback(
     [Output('role-score-cards-container', 'children'),
-     Output('active-role-filter-display', 'children'),
      Output('clear-role-filter-button', 'style')],
     [Input('role-filter-data', 'data'),
      Input('active-role-filter', 'data')],
     prevent_initial_call=False
 )
 def update_role_score_cards(role_data, active_filter):
-    """Populate the role score cards and show the current selection."""
+    """Populate the role filter chips in compact pill style."""
     if not role_data:
-        return [], "No roles detected.", {
+        return [], {
+            'position': 'absolute',
+            'top': '60px',
+            'right': '16px',
             'padding': '6px 12px',
-            'backgroundColor': '#e74c3c',
+            'backgroundColor': 'rgba(231,76,60,0.9)',
+            'backdropFilter': 'blur(10px)',
             'color': 'white',
             'border': 'none',
             'cursor': 'pointer',
-            'fontSize': '12px',
-            'fontWeight': 'bold',
-            'borderRadius': '4px',
+            'fontSize': '11px',
+            'fontWeight': '500',
+            'borderRadius': '6px',
+            'boxShadow': '0 2px 6px rgba(0,0,0,0.15)',
+            'zIndex': '1000',
             'display': 'none'
         }
 
-    score_cards = []
+    chips = []
 
-    # Define colors for each category
+    # Compact color scheme for chips
     category_colors = {
         'role_interaction': '#3498db',  # Blue
         'benefits': '#2ecc71',           # Green
@@ -1121,26 +1083,10 @@ def update_role_score_cards(role_data, active_filter):
         'card_advantage': '#e67e22'      # Orange
     }
 
+    # Collect all non-zero roles into compact chips
     for category_key, category_def in ROLE_CATEGORIES.items():
         category_summary = role_data.get(category_key, {'roles': {}})
         role_entries = category_summary.get('roles', {})
-
-        # Add category header
-        score_cards.append(
-            html.Div(
-                category_def['label'],
-                style={
-                    'width': '100%',
-                    'fontSize': '12px',
-                    'fontWeight': 'bold',
-                    'color': '#2c3e50',
-                    'marginTop': '8px',
-                    'marginBottom': '4px',
-                    'paddingLeft': '4px',
-                    'borderLeft': f'3px solid {category_colors.get(category_key, "#95a5a6")}',
-                }
-            )
-        )
 
         for role_def in category_def['roles']:
             role_key = role_def['key']
@@ -1148,83 +1094,59 @@ def update_role_score_cards(role_data, active_filter):
             cards = role_entries.get(role_key, {}).get('cards', []) or []
             count = len(cards)
 
+            # Only show roles with cards
+            if count == 0:
+                continue
+
             is_active = (active_filter and
                         active_filter.get('category') == category_key and
                         active_filter.get('role') == role_key)
 
-            # Create score card button
-            if count > 0:
-                card_style = {
-                    'padding': '8px 12px',
-                    'backgroundColor': category_colors.get(category_key, '#95a5a6') if is_active else '#f8f9fa',
-                    'color': 'white' if is_active else '#2c3e50',
-                    'border': f'2px solid {category_colors.get(category_key, "#95a5a6")}',
-                    'borderRadius': '6px',
-                    'cursor': 'pointer',
-                    'fontSize': '12px',
-                    'fontWeight': 'bold' if is_active else 'normal',
-                    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)' if is_active else 'none',
-                    'transition': 'all 0.2s',
-                    'minWidth': '80px',
-                    'textAlign': 'center'
-                }
-            else:
-                card_style = {
-                    'padding': '8px 12px',
-                    'backgroundColor': '#ecf0f1',
-                    'color': '#95a5a6',
-                    'border': '2px solid #bdc3c7',
-                    'borderRadius': '6px',
-                    'cursor': 'not-allowed',
-                    'fontSize': '12px',
-                    'opacity': '0.5',
-                    'minWidth': '80px',
-                    'textAlign': 'center'
-                }
+            # Compact chip style
+            chip_style = {
+                'padding': '6px 12px',
+                'backgroundColor': f'rgba({",".join(map(str, hex_to_rgb(category_colors.get(category_key, "#95a5a6"))))}, {"0.95" if is_active else "0.85"})',
+                'backdropFilter': 'blur(10px)',
+                'color': 'white',
+                'border': 'none' if is_active else f'1px solid rgba(255,255,255,0.3)',
+                'borderRadius': '16px',
+                'cursor': 'pointer',
+                'fontSize': '11px',
+                'fontWeight': '600' if is_active else '500',
+                'boxShadow': '0 2px 6px rgba(0,0,0,0.15)' if is_active else '0 1px 3px rgba(0,0,0,0.1)',
+                'whiteSpace': 'nowrap'
+            }
 
-            score_cards.append(
+            chips.append(
                 html.Button(
-                    [
-                        html.Div(role_label, style={'fontSize': '11px', 'marginBottom': '2px'}),
-                        html.Div(str(count), style={'fontSize': '18px', 'fontWeight': 'bold'})
-                    ],
+                    f"{role_label} {count}",
                     id={'type': 'role-card', 'category': category_key, 'role': role_key},
                     n_clicks=0,
-                    disabled=(count == 0),
-                    style=card_style
+                    style=chip_style,
+                    className='role-chip'
                 )
             )
 
-    active_message = "Click a role to filter cards"
+    # Show/hide clear button based on active filter
     clear_button_style = {
+        'position': 'absolute',
+        'top': '60px',
+        'right': '16px',
         'padding': '6px 12px',
-        'backgroundColor': '#e74c3c',
+        'backgroundColor': 'rgba(231,76,60,0.9)',
+        'backdropFilter': 'blur(10px)',
         'color': 'white',
         'border': 'none',
         'cursor': 'pointer',
-        'fontSize': '12px',
-        'fontWeight': 'bold',
-        'borderRadius': '4px',
-        'display': 'none'
+        'fontSize': '11px',
+        'fontWeight': '500',
+        'borderRadius': '6px',
+        'boxShadow': '0 2px 6px rgba(0,0,0,0.15)',
+        'zIndex': '1000',
+        'display': 'block' if active_filter else 'none'
     }
 
-    if active_filter:
-        category_key = active_filter.get('category')
-        role_key = active_filter.get('role')
-        if category_key and role_key:
-            category_def = ROLE_CATEGORIES.get(category_key)
-            category_label = category_def['label'] if category_def else category_key.replace('_', ' ').title()
-            role_label = role_key.replace('_', ' ').title()
-            if category_def:
-                for role_def in category_def['roles']:
-                    if role_def['key'] == role_key:
-                        role_label = role_def['label']
-                        break
-            count = len(role_data.get(category_key, {}).get('roles', {}).get(role_key, {}).get('cards', [])) if role_data else 0
-            active_message = f"Showing {count} {role_label} cards"
-            clear_button_style['display'] = 'inline-block'
-
-    return score_cards, active_message, clear_button_style
+    return chips, clear_button_style
 
 
 @app.callback(
@@ -3292,6 +3214,187 @@ def toggle_card_image_modal(view_clicks_list, close_clicks, modal_clicks, img_cl
                     print(f"[DEBUG MODAL] No image URL found for card '{card_name}'")
 
     return dash.no_update, dash.no_update
+
+
+# ============================================================================
+# Fuzzy Card Search Callbacks
+# ============================================================================
+
+@app.callback(
+    [Output('card-search-results', 'children'),
+     Output('card-search-results', 'style')],
+    Input('card-search-input', 'value'),
+    State('current-deck-file-store', 'data'),
+    prevent_initial_call=True
+)
+def handle_card_search(search_query, current_deck_file):
+    """Handle card search with fuzzy matching and display results"""
+    from src.utils.fuzzy_search import CardFuzzySearcher
+
+    # Base style for results container
+    base_style = {
+        'position': 'absolute',
+        'top': '40px',
+        'left': '0',
+        'right': '0',
+        'maxHeight': '200px',
+        'overflowY': 'auto',
+        'backgroundColor': 'white',
+        'border': '1px solid #ddd',
+        'borderRadius': '4px',
+        'boxShadow': '0 4px 8px rgba(0,0,0,0.1)',
+        'zIndex': '1000'
+    }
+
+    # Hide if no query
+    if not search_query or not current_deck_file:
+        return [], {**base_style, 'display': 'none'}
+
+    try:
+        # Load current deck
+        with open(current_deck_file, 'r') as f:
+            deck_data = json.load(f)
+
+        cards = deck_data.get('cards', [])
+
+        if not cards:
+            return [html.Div("No cards", style={'padding': '8px', 'fontSize': '11px', 'color': '#999'})], {**base_style, 'display': 'block'}
+
+        # Perform fuzzy search
+        searcher = CardFuzzySearcher()
+        matches = searcher.search(search_query, cards, limit=10)
+
+        if not matches:
+            return [html.Div(
+                f"No matches for '{search_query}'",
+                style={'padding': '8px', 'fontSize': '11px', 'color': '#999', 'fontStyle': 'italic'}
+            )], {**base_style, 'display': 'block'}
+
+        # Create compact result items
+        result_items = []
+        for card, score, reason in matches:
+            card_name = card.get('name', 'Unknown')
+            colors = card.get('colors', [])
+
+            # Simple color indicator
+            color_badge = ''.join(colors) if colors else '◯'
+
+            result_items.append(
+                html.Div([
+                    html.Span(
+                        card_name,
+                        style={
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'fontSize': '12px',
+                            'flex': '1'
+                        }
+                    ),
+                    html.Span(
+                        color_badge,
+                        style={
+                            'fontSize': '10px',
+                            'color': '#7f8c8d',
+                            'marginLeft': '8px'
+                        }
+                    ),
+                    html.Span(
+                        f"{int(score * 100)}%",
+                        style={
+                            'fontSize': '10px',
+                            'color': '#95a5a6',
+                            'marginLeft': '6px'
+                        }
+                    )
+                ],
+                id={'type': 'search-result-item', 'index': card_name},
+                n_clicks=0,
+                style={
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'padding': '6px 10px',
+                    'borderBottom': '1px solid #f0f0f0',
+                    'cursor': 'pointer',
+                    'backgroundColor': '#ffffff'
+                },
+                className='search-result-item'
+                )
+            )
+
+        return result_items, {**base_style, 'display': 'block'}
+
+    except Exception as e:
+        print(f"Error in card search: {e}")
+        import traceback
+        traceback.print_exc()
+        return [html.Div(
+            f"Error: {str(e)}",
+            style={'padding': '8px', 'fontSize': '11px', 'color': '#e74c3c'}
+        )], {**base_style, 'display': 'block'}
+
+
+@app.callback(
+    [Output('search-selected-card-store', 'data'),
+     Output('card-graph', 'stylesheet', allow_duplicate=True)],
+    Input({'type': 'search-result-item', 'index': ALL}, 'n_clicks'),
+    [State('card-graph', 'stylesheet'),
+     State('current-deck-file-store', 'data')],
+    prevent_initial_call=True
+)
+def select_card_from_search(n_clicks_list, current_stylesheet, current_deck_file):
+    """Handle card selection from search results and highlight in graph"""
+    ctx = callback_context
+
+    if not ctx.triggered or not current_stylesheet:
+        return dash.no_update, dash.no_update
+
+    # Find which card was clicked
+    trigger = ctx.triggered[0]
+    if not trigger['value'] or trigger['value'] == 0:
+        return dash.no_update, dash.no_update
+
+    # Extract card name from trigger
+    try:
+        trigger_id = eval(trigger['prop_id'].split('.')[0])
+        card_name = trigger_id['index']
+    except:
+        return dash.no_update, dash.no_update
+
+    print(f"[DEBUG SEARCH] Selected card: {card_name}")
+
+    # Remove any existing search highlight styles (identified by specific selector patterns)
+    new_stylesheet = [
+        s for s in current_stylesheet
+        if not (s.get('selector', '').startswith('.__search_') or
+                'node[id = ' in s.get('selector', '') and '__search_highlight' in s.get('selector', ''))
+    ]
+
+    # Add highlight styles with unique selector prefix
+    # Dim all nodes first
+    new_stylesheet.append({
+        'selector': '.__search_dim_all node',
+        'style': {'opacity': '0.3'}
+    })
+
+    # Highlight selected card
+    new_stylesheet.append({
+        'selector': f'node[id = "{card_name}"]',
+        'style': {
+            'border-width': '5px',
+            'border-color': '#f39c12',
+            'border-style': 'solid',
+            'opacity': '1',
+            'z-index': '9999'
+        }
+    })
+
+    # Keep edges connected to selected card visible
+    new_stylesheet.append({
+        'selector': f'edge[source = "{card_name}"], edge[target = "{card_name}"]',
+        'style': {'opacity': '1'}
+    })
+
+    return card_name, new_stylesheet
 
 
 if __name__ == '__main__':
