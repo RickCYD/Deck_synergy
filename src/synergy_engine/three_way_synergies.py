@@ -190,9 +190,12 @@ def categorize_cards_for_three_way(cards: List[Dict]) -> Dict[str, List[Dict]]:
             continue
 
         # Categorize by potential roles
-        if 'equipment' in card_type or _check_patterns(card_text, EQUIPMENT_PATTERNS):
+        # IMPORTANT: Only actual Equipment artifacts should be in 'equipment' category
+        # Spells that tutor/recur equipment are NOT equipment themselves
+        if 'equipment' in card_type and 'artifact' in card_type:
             categorized['equipment'].append(card)
-        if _check_patterns(card_text, EQUIPMENT_MATTERS_PATTERNS):
+        # Equipment matters cards care about equipped creatures (but aren't equipment themselves)
+        elif _check_patterns(card_text, EQUIPMENT_MATTERS_PATTERNS):
             categorized['equipment_matters'].append(card)
         if 'creature' in card_type:
             categorized['creature'].append(card)
