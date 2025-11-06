@@ -327,37 +327,6 @@ app.layout = html.Div([
             )
         ], style={'flex': '1 1 220px', 'minWidth': '220px'}),
 
-        html.Div([
-            html.Label("Role Filter:", style={'fontWeight': 'bold', 'marginBottom': '6px'}),
-            html.Div([
-                dcc.Dropdown(
-                    id='role-filter-dropdown',
-                    placeholder='Filter by role...',
-                    clearable=False,
-                    style={'flex': '1', 'minWidth': '180px'}
-                ),
-                html.Button(
-                    'Clear',
-                    id='clear-role-filter-button',
-                    n_clicks=0,
-                    style={
-                        'padding': '10px 16px',
-                        'backgroundColor': '#e74c3c',
-                        'color': 'white',
-                        'border': 'none',
-                        'cursor': 'pointer',
-                        'fontSize': '14px',
-                        'fontWeight': 'bold',
-                        'borderRadius': '4px',
-                        'marginLeft': '8px'
-                    }
-                )
-            ], style={'display': 'flex', 'gap': '8px', 'alignItems': 'center'}),
-            html.Div(
-                id='active-role-filter-display',
-                style={'marginTop': '6px', 'color': '#7f8c8d', 'fontStyle': 'italic', 'fontSize': '12px'}
-            )
-        ], style={'flex': '1 1 280px', 'minWidth': '260px'}),
 
         html.Div([
             dcc.Dropdown(
@@ -439,6 +408,61 @@ app.layout = html.Div([
                 }
             )
         ], style={'display': 'flex', 'gap': '12px'}),
+    ], style={'padding': '0 20px', 'marginTop': '16px'}),
+
+    # Role Filter Score Cards
+    html.Div([
+        html.Div([
+            html.H3("Card Roles", style={
+                'color': '#2c3e50',
+                'marginBottom': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold'
+            }),
+            html.Div(
+                id='role-score-cards-container',
+                children=[],
+                style={
+                    'display': 'flex',
+                    'flexWrap': 'wrap',
+                    'gap': '8px',
+                    'marginBottom': '8px'
+                }
+            ),
+            html.Div([
+                html.Button(
+                    'Clear Filter',
+                    id='clear-role-filter-button',
+                    n_clicks=0,
+                    style={
+                        'padding': '6px 12px',
+                        'backgroundColor': '#e74c3c',
+                        'color': 'white',
+                        'border': 'none',
+                        'cursor': 'pointer',
+                        'fontSize': '12px',
+                        'fontWeight': 'bold',
+                        'borderRadius': '4px',
+                        'display': 'none'
+                    }
+                ),
+                html.Div(
+                    id='active-role-filter-display',
+                    style={
+                        'marginLeft': '12px',
+                        'color': '#7f8c8d',
+                        'fontStyle': 'italic',
+                        'fontSize': '12px',
+                        'display': 'inline-block'
+                    }
+                )
+            ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '8px'})
+        ], style={
+            'backgroundColor': '#ffffff',
+            'borderRadius': '6px',
+            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+            'padding': '16px',
+        })
     ], style={'padding': '0 20px', 'marginTop': '16px'}),
 
     # Tabbed content: Synergy Graph and Mana Simulation
@@ -1046,46 +1070,125 @@ def update_graph(deck_file):
 
 
 @app.callback(
-    [Output('role-filter-dropdown', 'options'),
-     Output('role-filter-dropdown', 'disabled'),
-     Output('role-filter-dropdown', 'value'),
-     Output('active-role-filter-display', 'children')],
+    [Output('role-score-cards-container', 'children'),
+     Output('active-role-filter-display', 'children'),
+     Output('clear-role-filter-button', 'style')],
     [Input('role-filter-data', 'data'),
      Input('active-role-filter', 'data')],
     prevent_initial_call=False
 )
-def update_role_filter_dropdown(role_data, active_filter):
-    """Populate the role filter dropdown and show the current selection."""
+def update_role_score_cards(role_data, active_filter):
+    """Populate the role score cards and show the current selection."""
     if not role_data:
-        return [], True, None, "No role filter active."
+        return [], "No roles detected.", {
+            'padding': '6px 12px',
+            'backgroundColor': '#e74c3c',
+            'color': 'white',
+            'border': 'none',
+            'cursor': 'pointer',
+            'fontSize': '12px',
+            'fontWeight': 'bold',
+            'borderRadius': '4px',
+            'display': 'none'
+        }
 
-    options: List[Dict[str, Any]] = []
-    has_available = False
+    score_cards = []
+
+    # Define colors for each category
+    category_colors = {
+        'role_interaction': '#3498db',  # Blue
+        'benefits': '#2ecc71',           # Green
+        'type_synergy': '#9b59b6',       # Purple
+        'card_advantage': '#e67e22'      # Orange
+    }
 
     for category_key, category_def in ROLE_CATEGORIES.items():
         category_summary = role_data.get(category_key, {'roles': {}})
         role_entries = category_summary.get('roles', {})
 
-        options.append({
-            'label': category_def['label'],
-            'value': f'header::{category_key}',
-            'disabled': True
-        })
+        # Add category header
+        score_cards.append(
+            html.Div(
+                category_def['label'],
+                style={
+                    'width': '100%',
+                    'fontSize': '12px',
+                    'fontWeight': 'bold',
+                    'color': '#2c3e50',
+                    'marginTop': '8px',
+                    'marginBottom': '4px',
+                    'paddingLeft': '4px',
+                    'borderLeft': f'3px solid {category_colors.get(category_key, "#95a5a6")}',
+                }
+            )
+        )
 
         for role_def in category_def['roles']:
             role_key = role_def['key']
             role_label = role_def['label']
             cards = role_entries.get(role_key, {}).get('cards', []) or []
             count = len(cards)
-            options.append({
-                'label': f"  {role_label} ({count})",
-                'value': f"{category_key}::{role_key}",
-                'disabled': count == 0
-            })
-            if count > 0:
-                has_available = True
 
-    active_message = "No role filter active."
+            is_active = (active_filter and
+                        active_filter.get('category') == category_key and
+                        active_filter.get('role') == role_key)
+
+            # Create score card button
+            if count > 0:
+                card_style = {
+                    'padding': '8px 12px',
+                    'backgroundColor': category_colors.get(category_key, '#95a5a6') if is_active else '#f8f9fa',
+                    'color': 'white' if is_active else '#2c3e50',
+                    'border': f'2px solid {category_colors.get(category_key, "#95a5a6")}',
+                    'borderRadius': '6px',
+                    'cursor': 'pointer',
+                    'fontSize': '12px',
+                    'fontWeight': 'bold' if is_active else 'normal',
+                    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)' if is_active else 'none',
+                    'transition': 'all 0.2s',
+                    'minWidth': '80px',
+                    'textAlign': 'center'
+                }
+            else:
+                card_style = {
+                    'padding': '8px 12px',
+                    'backgroundColor': '#ecf0f1',
+                    'color': '#95a5a6',
+                    'border': '2px solid #bdc3c7',
+                    'borderRadius': '6px',
+                    'cursor': 'not-allowed',
+                    'fontSize': '12px',
+                    'opacity': '0.5',
+                    'minWidth': '80px',
+                    'textAlign': 'center'
+                }
+
+            score_cards.append(
+                html.Button(
+                    [
+                        html.Div(role_label, style={'fontSize': '11px', 'marginBottom': '2px'}),
+                        html.Div(str(count), style={'fontSize': '18px', 'fontWeight': 'bold'})
+                    ],
+                    id={'type': 'role-card', 'category': category_key, 'role': role_key},
+                    n_clicks=0,
+                    disabled=(count == 0),
+                    style=card_style
+                )
+            )
+
+    active_message = "Click a role to filter cards"
+    clear_button_style = {
+        'padding': '6px 12px',
+        'backgroundColor': '#e74c3c',
+        'color': 'white',
+        'border': 'none',
+        'cursor': 'pointer',
+        'fontSize': '12px',
+        'fontWeight': 'bold',
+        'borderRadius': '4px',
+        'display': 'none'
+    }
+
     if active_filter:
         category_key = active_filter.get('category')
         role_key = active_filter.get('role')
@@ -1099,41 +1202,46 @@ def update_role_filter_dropdown(role_data, active_filter):
                         role_label = role_def['label']
                         break
             count = len(role_data.get(category_key, {}).get('roles', {}).get(role_key, {}).get('cards', [])) if role_data else 0
-            active_message = f"Active Filter: {category_label} → {role_label} ({count} cards)"
+            active_message = f"Showing {count} {role_label} cards"
+            clear_button_style['display'] = 'inline-block'
 
-    return options, not has_available, None, active_message
+    return score_cards, active_message, clear_button_style
 
 
 @app.callback(
     Output('active-role-filter', 'data', allow_duplicate=True),
-    [Input('role-filter-dropdown', 'value'),
+    [Input({'type': 'role-card', 'category': ALL, 'role': ALL}, 'n_clicks'),
      Input('clear-role-filter-button', 'n_clicks')],
-    State('active-role-filter', 'data'),
+    [State({'type': 'role-card', 'category': ALL, 'role': ALL}, 'id'),
+     State('active-role-filter', 'data')],
     prevent_initial_call=True
 )
-def set_active_role_filter(dropdown_value, clear_click, current_filter):
-    """Update the active role filter when a dropdown value changes or clear is pressed."""
+def set_active_role_filter(role_clicks, clear_click, role_ids, current_filter):
+    """Update the active role filter when a role card is clicked or clear is pressed."""
     ctx = callback_context
     if not ctx.triggered:
         return dash.no_update
 
-    trigger = ctx.triggered[0]['prop_id']
-    if trigger == 'clear-role-filter-button.n_clicks':
+    trigger_id = ctx.triggered[0]['prop_id']
+
+    # Check if clear button was clicked
+    if 'clear-role-filter-button' in trigger_id:
         return None
 
-    if dropdown_value:
-        try:
-            category_key, role_key = dropdown_value.split('::', 1)
-        except ValueError:
-            return dash.no_update
+    # Check if a role card was clicked
+    if role_clicks and any(role_clicks):
+        # Find which card was clicked
+        for i, clicks in enumerate(role_clicks):
+            if clicks and clicks > 0:
+                role_id = role_ids[i]
+                category_key = role_id['category']
+                role_key = role_id['role']
 
-        if category_key == 'header':
-            return dash.no_update
+                # Toggle: if clicking the same role, clear the filter
+                if current_filter and current_filter.get('category') == category_key and current_filter.get('role') == role_key:
+                    return None
 
-        if current_filter and current_filter.get('category') == category_key and current_filter.get('role') == role_key:
-            return dash.no_update
-
-        return {'category': category_key, 'role': role_key}
+                return {'category': category_key, 'role': role_key}
 
     return dash.no_update
 
@@ -2395,16 +2503,17 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
             synergy_items.append(
                 html.Details([
                     html.Summary(
-                        summary_elements
-                    ], style={
-                        'cursor': 'pointer',
-                        'padding': '8px',
-                        'backgroundColor': '#ecf0f1',
-                        'borderRadius': '4px',
-                        'marginBottom': '5px',
-                        'display': 'flex',
-                        'alignItems': 'center'
-                    }),
+                        summary_elements,
+                        style={
+                            'cursor': 'pointer',
+                            'padding': '8px',
+                            'backgroundColor': '#ecf0f1',
+                            'borderRadius': '4px',
+                            'marginBottom': '5px',
+                            'display': 'flex',
+                            'alignItems': 'center'
+                        }
+                    ),
                     html.Div(
                         synergy_details if synergy_details else [
                             html.P("No detailed synergies available", style={'fontStyle': 'italic', 'color': '#95a5a6'})
