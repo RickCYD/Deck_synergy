@@ -22,27 +22,23 @@ EQUIPMENT_MATTERS_PATTERNS = [
     re.compile(r'for each equipment.*attached')
 ]
 
-# Token/Aristocrats patterns
+# Token/Aristocrats patterns - MORE SPECIFIC
 TOKEN_PATTERNS = [
-    re.compile(r'create.*token'),
-    re.compile(r'create.*\d+/\d+.*token'),
-    re.compile(r'token.*creature'),
-    re.compile(r'at the beginning.*create.*token')
+    re.compile(r'create (one|two|three|a|\d+|an?).*\d+/\d+.*token'),  # Must specify creating X/X tokens
+    re.compile(r'at the beginning.*create.*\d+/\d+.*token'),  # Recurring token generation
+    re.compile(r'create (one|two|three|a|\d+|an?) token')  # Generic token creation
 ]
 
 SAC_OUTLET_PATTERNS = [
-    re.compile(r'sacrifice.*creature'),
-    re.compile(r'sacrifice.*permanent'),
-    re.compile(r'sacrifice a creature:'),
-    re.compile(r'sacrifice a permanent:')
+    re.compile(r'sacrifice a creature\s*:'),  # Must be an activated/triggered ability (colon)
+    re.compile(r'sacrifice a permanent\s*:'),
+    re.compile(r'sacrifice.*creature.*:\s*(add|draw|deal)'),  # Specific payoffs
+    re.compile(r'you may sacrifice')  # Optional sac outlets
 ]
 
 DEATH_PAYOFF_PATTERNS = [
-    re.compile(r'whenever.*creature.*dies'),
-    re.compile(r'whenever.*permanent.*dies'),
-    re.compile(r'when.*creature.*dies'),
-    re.compile(r'whenever.*creature you control dies'),
-    re.compile(r'whenever.*another creature dies')
+    re.compile(r'whenever (a|another|one or more) creature.*dies.*,\s*(you|target|each|draw|deal|create|gain)'),  # Must have payoff after dies
+    re.compile(r'when.*dies.*,\s*(you|target|each|draw|deal|create|gain)'),  # Shorter version
 ]
 
 # ETB/Flicker patterns

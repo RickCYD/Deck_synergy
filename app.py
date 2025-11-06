@@ -2871,11 +2871,28 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
         ])
 
         synergies = edge_data.get('synergies', {})
-        info_panel = html.Div([
-            html.H3(
+        is_three_way = edge_data.get('is_three_way', False)
+
+        # Build title based on whether it's 2-way or 3-way
+        if is_three_way:
+            third_card = edge_data.get('third_card', '')
+            title = html.Div([
+                html.H3("🔺 Three-Way Synergy", style={'color': '#9b59b6', 'marginBottom': '8px'}),
+                html.P([
+                    html.Strong("Cards: "),
+                    f"{edge_data.get('source_label', 'Unknown')} + ",
+                    f"{edge_data.get('target_label', 'Unknown')} + ",
+                    f"{third_card}"
+                ], style={'fontSize': '14px', 'color': '#555', 'marginBottom': '0px'})
+            ])
+        else:
+            title = html.H3(
                 f"Synergy: {edge_data.get('source_label', 'Unknown')} ↔ {edge_data.get('target_label', 'Unknown')}",
                 style={'color': '#2c3e50'}
-            ),
+            )
+
+        info_panel = html.Div([
+            title,
             html.Hr(),
             html.P([html.Strong("Total Synergy Strength: "), f"{edge_data.get('weight', 0):.2f}"]),
             html.Hr(),
