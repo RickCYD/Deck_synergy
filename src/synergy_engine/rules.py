@@ -4,6 +4,7 @@ Individual rule functions for detecting different types of synergies between car
 """
 
 import re
+from src.synergy_engine.regex_cache import search_cached, match_cached, findall_cached
 from typing import Dict, List, Optional, Set
 from functools import lru_cache
 from src.utils.damage_extractors import classify_damage_effect
@@ -51,9 +52,9 @@ def detect_etb_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_text = card2.get('oracle_text', '').lower()
 
     # Check if card1 has ETB and card2 can trigger it
-    card1_has_etb = any(re.search(kw, card1_text) for kw in etb_keywords)
-    card2_can_trigger = any(re.search(kw, card2_text) for kw in flicker_keywords)
-    card2_is_reanimation = any(re.search(kw, card2_text) for kw in anti_flicker)
+    card1_has_etb = any(search_cached(kw, card1_text) for kw in etb_keywords)
+    card2_can_trigger = any(search_cached(kw, card2_text) for kw in flicker_keywords)
+    card2_is_reanimation = any(search_cached(kw, card2_text) for kw in anti_flicker)
 
     # Only count as flicker if it's not reanimation
     if card1_has_etb and card2_can_trigger and not card2_is_reanimation:
@@ -66,9 +67,9 @@ def detect_etb_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_has_etb = any(re.search(kw, card2_text) for kw in etb_keywords)
-    card1_can_trigger = any(re.search(kw, card1_text) for kw in flicker_keywords)
-    card1_is_reanimation = any(re.search(kw, card1_text) for kw in anti_flicker)
+    card2_has_etb = any(search_cached(kw, card2_text) for kw in etb_keywords)
+    card1_can_trigger = any(search_cached(kw, card1_text) for kw in flicker_keywords)
+    card1_is_reanimation = any(search_cached(kw, card1_text) for kw in anti_flicker)
 
     if card2_has_etb and card1_can_trigger and not card1_is_reanimation:
         return {
@@ -124,12 +125,12 @@ def detect_sacrifice_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_is_outlet = any(re.search(pattern, card1_text) for pattern in sacrifice_outlet_patterns) and \
-                      not any(re.search(pattern, card1_text) for pattern in exclude_patterns)
-    card2_creates_tokens = any(re.search(kw, card2_text) for kw in token_generation)
+    card1_is_outlet = any(search_cached(pattern, card1_text) for pattern in sacrifice_outlet_patterns) and \
+                      not any(search_cached(pattern, card1_text) for pattern in exclude_patterns)
+    card2_creates_tokens = any(search_cached(kw, card2_text) for kw in token_generation)
     # Only count as death trigger if NOT a self-death trigger
-    card2_death_trigger = any(re.search(kw, card2_text) for kw in death_trigger_keywords) and \
-                          not any(re.search(kw, card2_text) for kw in self_death_patterns)
+    card2_death_trigger = any(search_cached(kw, card2_text) for kw in death_trigger_keywords) and \
+                          not any(search_cached(kw, card2_text) for kw in self_death_patterns)
 
     if card1_is_outlet and (card2_creates_tokens or card2_death_trigger):
         return {
@@ -141,12 +142,12 @@ def detect_sacrifice_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_is_outlet = any(re.search(pattern, card2_text) for pattern in sacrifice_outlet_patterns) and \
-                      not any(re.search(pattern, card2_text) for pattern in exclude_patterns)
-    card1_creates_tokens = any(re.search(kw, card1_text) for kw in token_generation)
+    card2_is_outlet = any(search_cached(pattern, card2_text) for pattern in sacrifice_outlet_patterns) and \
+                      not any(search_cached(pattern, card2_text) for pattern in exclude_patterns)
+    card1_creates_tokens = any(search_cached(kw, card1_text) for kw in token_generation)
     # Only count as death trigger if NOT a self-death trigger
-    card1_death_trigger = any(re.search(kw, card1_text) for kw in death_trigger_keywords) and \
-                          not any(re.search(kw, card1_text) for kw in self_death_patterns)
+    card1_death_trigger = any(search_cached(kw, card1_text) for kw in death_trigger_keywords) and \
+                          not any(search_cached(kw, card1_text) for kw in self_death_patterns)
 
     if card2_is_outlet and (card1_creates_tokens or card1_death_trigger):
         return {
@@ -189,7 +190,7 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check if card1 produces colorless mana and card2 has any mana cost
     # NOTE: Reduced weight from 1.0 to 0.2 - mana production is generic utility
-    card1_produces_colorless = any(re.search(pattern, card1_text) for pattern in colorless_patterns)
+    card1_produces_colorless = any(search_cached(pattern, card1_text) for pattern in colorless_patterns)
     if card1_produces_colorless and card2_cmc > 0:
         return {
             'name': 'Mana Acceleration',
@@ -200,7 +201,7 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check if card2 produces colorless mana and card1 has any mana cost
-    card2_produces_colorless = any(re.search(pattern, card2_text) for pattern in colorless_patterns)
+    card2_produces_colorless = any(search_cached(pattern, card2_text) for pattern in colorless_patterns)
     if card2_produces_colorless and card1_cmc > 0:
         return {
             'name': 'Mana Acceleration',
@@ -212,7 +213,7 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check if card1 produces mana and card2 needs that color
     for color, patterns in mana_production_patterns.items():
-        card1_produces_color = any(re.search(pattern, card1_text) for pattern in patterns) or \
+        card1_produces_color = any(search_cached(pattern, card1_text) for pattern in patterns) or \
                                ('land' in card1_type and color in card1_colors)
 
         if card1_produces_color and color in card2_colors:
@@ -227,7 +228,7 @@ def detect_mana_color_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check reverse
     for color, patterns in mana_production_patterns.items():
-        card2_produces_color = any(re.search(pattern, card2_text) for pattern in patterns) or \
+        card2_produces_color = any(search_cached(pattern, card2_text) for pattern in patterns) or \
                                ('land' in card2_type and color in card2_colors)
 
         if card2_produces_color and color in card1_colors:
@@ -299,7 +300,7 @@ def detect_tribal_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Check if card1 cares about a type that card2 has
     for subtype in card2_subtypes:
         patterns = makes_tribal_pattern(subtype)
-        if any(re.search(pattern, card1_text) for pattern in patterns):
+        if any(search_cached(pattern, card1_text) for pattern in patterns):
             return {
                 'name': 'Tribal Synergy',
                 'description': f"{card1['name']} cares about {subtype}s, {card2['name']} is a {subtype}",
@@ -311,7 +312,7 @@ def detect_tribal_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Check if card2 cares about a type that card1 has
     for subtype in card1_subtypes:
         patterns = makes_tribal_pattern(subtype)
-        if any(re.search(pattern, card2_text) for pattern in patterns):
+        if any(search_cached(pattern, card2_text) for pattern in patterns):
             return {
                 'name': 'Tribal Synergy',
                 'description': f"{card2['name']} cares about {subtype}s, {card1['name']} is a {subtype}",
@@ -344,8 +345,8 @@ def detect_card_draw_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_draws = any(re.search(kw, card1_text) for kw in draw_keywords + wheel_keywords)
-    card2_draws = any(re.search(kw, card2_text) for kw in draw_keywords + wheel_keywords)
+    card1_draws = any(search_cached(kw, card1_text) for kw in draw_keywords + wheel_keywords)
+    card2_draws = any(search_cached(kw, card2_text) for kw in draw_keywords + wheel_keywords)
 
     # Both cards draw - card advantage engine
     if card1_draws and card2_draws:
@@ -386,8 +387,8 @@ def detect_ramp_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_is_land = 'land' in card2_type.lower()
 
     # Only non-lands can be considered 
-    card1_is_ramp = (not card1_is_land) and any(re.search(kw, card1_text) for kw in ramp_keywords)
-    card2_is_ramp = (not card2_is_land) and any(re.search(kw, card2_text) for kw in ramp_keywords)
+    card1_is_ramp = (not card1_is_land) and any(search_cached(kw, card1_text) for kw in ramp_keywords)
+    card2_is_ramp = (not card2_is_land) and any(search_cached(kw, card2_text) for kw in ramp_keywords)
 
     card1_cmc = card1.get('cmc', 0)
     card2_cmc = card2.get('cmc', 0)
@@ -467,8 +468,8 @@ def detect_type_matters_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     for card_type, patterns in positive_care_patterns.items():
         # Check if card1 positively cares about card_type and card2 is that type
-        card1_cares = any(re.search(pattern, card1_text) for pattern in patterns)
-        card1_is_negative = any(re.search(pattern, card1_text) for pattern in negative_patterns)
+        card1_cares = any(search_cached(pattern, card1_text) for pattern in patterns)
+        card1_is_negative = any(search_cached(pattern, card1_text) for pattern in negative_patterns)
 
         if card1_cares and not card1_is_negative and card_type in card2_type:
             return {
@@ -480,8 +481,8 @@ def detect_type_matters_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             }
 
         # Check reverse
-        card2_cares = any(re.search(pattern, card2_text) for pattern in patterns)
-        card2_is_negative = any(re.search(pattern, card2_text) for pattern in negative_patterns)
+        card2_cares = any(search_cached(pattern, card2_text) for pattern in patterns)
+        card2_is_negative = any(search_cached(pattern, card2_text) for pattern in negative_patterns)
 
         if card2_cares and not card2_is_negative and card_type in card1_type:
             return {
@@ -515,12 +516,12 @@ def detect_combo_potential(card1: Dict, card2: Dict) -> Optional[Dict]:
     if card1_has_combo_word and card2_has_combo_word:
         # Check for specific infinite mana combos
         # Must have "untap target" or "untap another" (not self-untap)
-        card1_untaps_others = re.search(r'untap (target|another|all|up to)', card1_text)
-        card2_untaps_others = re.search(r'untap (target|another|all|up to)', card2_text)
+        card1_untaps_others = search_cached(r'untap (target|another|all|up to)', card1_text)
+        card2_untaps_others = search_cached(r'untap (target|another|all|up to)', card2_text)
 
         # Must produce mana from tapping
-        card1_taps_for_mana = re.search(r'\{t\}.*add.*mana', card1_text) or re.search(r'\{t\}:.*add \{[wubrgc]\}', card1_text)
-        card2_taps_for_mana = re.search(r'\{t\}.*add.*mana', card2_text) or re.search(r'\{t\}:.*add \{[wubrgc]\}', card2_text)
+        card1_taps_for_mana = search_cached(r'\{t\}.*add.*mana', card1_text) or search_cached(r'\{t\}:.*add \{[wubrgc]\}', card1_text)
+        card2_taps_for_mana = search_cached(r'\{t\}.*add.*mana', card2_text) or search_cached(r'\{t\}:.*add \{[wubrgc]\}', card2_text)
 
         if (card1_untaps_others and card2_taps_for_mana) or (card2_untaps_others and card1_taps_for_mana):
             return {
@@ -612,9 +613,9 @@ def detect_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_generates = any(re.search(kw, card1_text) for kw in token_generation) and \
-                      not any(re.search(kw, card1_text) for kw in opponent_token_patterns)
-    card2_payoff = any(re.search(kw, card2_text) for kw in token_payoff)
+    card1_generates = any(search_cached(kw, card1_text) for kw in token_generation) and \
+                      not any(search_cached(kw, card1_text) for kw in opponent_token_patterns)
+    card2_payoff = any(search_cached(kw, card2_text) for kw in token_payoff)
 
     if card1_generates and card2_payoff:
         return {
@@ -626,9 +627,9 @@ def detect_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_generates = any(re.search(kw, card2_text) for kw in token_generation) and \
-                      not any(re.search(kw, card2_text) for kw in opponent_token_patterns)
-    card1_payoff = any(re.search(kw, card1_text) for kw in token_payoff)
+    card2_generates = any(search_cached(kw, card2_text) for kw in token_generation) and \
+                      not any(search_cached(kw, card2_text) for kw in opponent_token_patterns)
+    card1_payoff = any(search_cached(kw, card1_text) for kw in token_payoff)
 
     if card2_generates and card1_payoff:
         return {
@@ -675,8 +676,8 @@ def detect_graveyard_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_fills = any(re.search(kw, card1_text) for kw in graveyard_fill)
-    card2_payoff = any(re.search(kw, card2_text) for kw in graveyard_payoff)
+    card1_fills = any(search_cached(kw, card1_text) for kw in graveyard_fill)
+    card2_payoff = any(search_cached(kw, card2_text) for kw in graveyard_payoff)
 
     if card1_fills and card2_payoff:
         return {
@@ -688,8 +689,8 @@ def detect_graveyard_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_fills = any(re.search(kw, card2_text) for kw in graveyard_fill)
-    card1_payoff = any(re.search(kw, card1_text) for kw in graveyard_payoff)
+    card2_fills = any(search_cached(kw, card2_text) for kw in graveyard_fill)
+    card1_payoff = any(search_cached(kw, card1_text) for kw in graveyard_payoff)
 
     if card2_fills and card1_payoff:
         return {
@@ -737,9 +738,9 @@ def detect_life_as_resource(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
 
     # Check card1 pays life, card2 gains life
-    card1_pays_life = any(re.search(pattern, card1_text) for pattern in life_payment_patterns)
-    card1_targets_opponent = any(re.search(pattern, card1_text) for pattern in opponent_patterns)
-    card2_gains_life = any(re.search(pattern, card2_text) for pattern in life_gain_patterns) or 'lifelink' in card2_keywords
+    card1_pays_life = any(search_cached(pattern, card1_text) for pattern in life_payment_patterns)
+    card1_targets_opponent = any(search_cached(pattern, card1_text) for pattern in opponent_patterns)
+    card2_gains_life = any(search_cached(pattern, card2_text) for pattern in life_gain_patterns) or 'lifelink' in card2_keywords
 
     if card1_pays_life and not card1_targets_opponent and card2_gains_life:
         return {
@@ -751,9 +752,9 @@ def detect_life_as_resource(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_pays_life = any(re.search(pattern, card2_text) for pattern in life_payment_patterns)
-    card2_targets_opponent = any(re.search(pattern, card2_text) for pattern in opponent_patterns)
-    card1_gains_life = any(re.search(pattern, card1_text) for pattern in life_gain_patterns) or 'lifelink' in card1_keywords
+    card2_pays_life = any(search_cached(pattern, card2_text) for pattern in life_payment_patterns)
+    card2_targets_opponent = any(search_cached(pattern, card2_text) for pattern in opponent_patterns)
+    card1_gains_life = any(search_cached(pattern, card1_text) for pattern in life_gain_patterns) or 'lifelink' in card1_keywords
 
     if card2_pays_life and not card2_targets_opponent and card1_gains_life:
         return {
@@ -798,9 +799,9 @@ def detect_deathtouch_pingers(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
 
     # Check if card1 has/grants deathtouch and card2 deals damage
-    card1_has_deathtouch = 'deathtouch' in card1_keywords or any(re.search(pattern, card1_text) for pattern in deathtouch_patterns)
-    card1_grants_deathtouch = any(re.search(pattern, card1_text) for pattern in grants_deathtouch)
-    card2_deals_damage = any(re.search(pattern, card2_text) for pattern in pinger_patterns)
+    card1_has_deathtouch = 'deathtouch' in card1_keywords or any(search_cached(pattern, card1_text) for pattern in deathtouch_patterns)
+    card1_grants_deathtouch = any(search_cached(pattern, card1_text) for pattern in grants_deathtouch)
+    card2_deals_damage = any(search_cached(pattern, card2_text) for pattern in pinger_patterns)
 
     if (card1_has_deathtouch or card1_grants_deathtouch) and card2_deals_damage:
         return {
@@ -812,9 +813,9 @@ def detect_deathtouch_pingers(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_has_deathtouch = 'deathtouch' in card2_keywords or any(re.search(pattern, card2_text) for pattern in deathtouch_patterns)
-    card2_grants_deathtouch = any(re.search(pattern, card2_text) for pattern in grants_deathtouch)
-    card1_deals_damage = any(re.search(pattern, card1_text) for pattern in pinger_patterns)
+    card2_has_deathtouch = 'deathtouch' in card2_keywords or any(search_cached(pattern, card2_text) for pattern in deathtouch_patterns)
+    card2_grants_deathtouch = any(search_cached(pattern, card2_text) for pattern in grants_deathtouch)
+    card1_deals_damage = any(search_cached(pattern, card1_text) for pattern in pinger_patterns)
 
     if (card2_has_deathtouch or card2_grants_deathtouch) and card1_deals_damage:
         return {
@@ -867,10 +868,10 @@ def detect_indestructible_board_wipe(card1: Dict, card2: Dict) -> Optional[Dict]
     card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
 
     # Check if card1 has/grants indestructible and card2 is a destroy-wipe
-    card1_has_indestructible = 'indestructible' in card1_keywords or any(re.search(pattern, card1_text) for pattern in indestructible_patterns)
-    card2_is_destroy_wipe = any(re.search(pattern, card2_text) for pattern in destroy_wipe_patterns)
-    card2_is_exile_wipe = any(re.search(pattern, card2_text) for pattern in exile_wipe_patterns)
-    card2_is_one_sided = any(re.search(pattern, card2_text) for pattern in one_sided_patterns)
+    card1_has_indestructible = 'indestructible' in card1_keywords or any(search_cached(pattern, card1_text) for pattern in indestructible_patterns)
+    card2_is_destroy_wipe = any(search_cached(pattern, card2_text) for pattern in destroy_wipe_patterns)
+    card2_is_exile_wipe = any(search_cached(pattern, card2_text) for pattern in exile_wipe_patterns)
+    card2_is_one_sided = any(search_cached(pattern, card2_text) for pattern in one_sided_patterns)
 
     if card1_has_indestructible and card2_is_destroy_wipe and not card2_is_exile_wipe:
         value = 3.5 if card2_is_one_sided else 3.0
@@ -883,10 +884,10 @@ def detect_indestructible_board_wipe(card1: Dict, card2: Dict) -> Optional[Dict]
         }
 
     # Check reverse
-    card2_has_indestructible = 'indestructible' in card2_keywords or any(re.search(pattern, card2_text) for pattern in indestructible_patterns)
-    card1_is_destroy_wipe = any(re.search(pattern, card1_text) for pattern in destroy_wipe_patterns)
-    card1_is_exile_wipe = any(re.search(pattern, card1_text) for pattern in exile_wipe_patterns)
-    card1_is_one_sided = any(re.search(pattern, card1_text) for pattern in one_sided_patterns)
+    card2_has_indestructible = 'indestructible' in card2_keywords or any(search_cached(pattern, card2_text) for pattern in indestructible_patterns)
+    card1_is_destroy_wipe = any(search_cached(pattern, card1_text) for pattern in destroy_wipe_patterns)
+    card1_is_exile_wipe = any(search_cached(pattern, card1_text) for pattern in exile_wipe_patterns)
+    card1_is_one_sided = any(search_cached(pattern, card1_text) for pattern in one_sided_patterns)
 
     if card2_has_indestructible and card1_is_destroy_wipe and not card1_is_exile_wipe:
         value = 3.5 if card1_is_one_sided else 3.0
@@ -930,9 +931,9 @@ def detect_extra_combat_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
 
     # Check if card1 gives extra combat and card2 benefits from it
-    card1_extra_combat = any(re.search(pattern, card1_text) for pattern in extra_combat_patterns)
+    card1_extra_combat = any(search_cached(pattern, card1_text) for pattern in extra_combat_patterns)
     card2_combat_ability = any(kw in card2_keywords for kw in combat_keywords) or \
-                           any(re.search(pattern, card2_text) for pattern in combat_ability_patterns)
+                           any(search_cached(pattern, card2_text) for pattern in combat_ability_patterns)
 
     if card1_extra_combat and card2_combat_ability:
         return {
@@ -944,9 +945,9 @@ def detect_extra_combat_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_extra_combat = any(re.search(pattern, card2_text) for pattern in extra_combat_patterns)
+    card2_extra_combat = any(search_cached(pattern, card2_text) for pattern in extra_combat_patterns)
     card1_combat_ability = any(kw in card1_keywords for kw in combat_keywords) or \
-                           any(re.search(pattern, card1_text) for pattern in combat_ability_patterns)
+                           any(search_cached(pattern, card1_text) for pattern in combat_ability_patterns)
 
     if card2_extra_combat and card1_combat_ability:
         return {
@@ -963,8 +964,8 @@ def detect_extra_combat_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'add \{r\} for each 1 life your opponents have lost this turn',
         r'for each 1 life your opponents have lost this turn, add \{r\}'
     ]
-    card1_neheb = any(re.search(p, card1_text) for p in neheb_patterns)
-    card2_neheb = any(re.search(p, card2_text) for p in neheb_patterns)
+    card1_neheb = any(search_cached(p, card1_text) for p in neheb_patterns)
+    card2_neheb = any(search_cached(p, card2_text) for p in neheb_patterns)
     if (card1_extra_combat and card2_neheb) or (card2_extra_combat and card1_neheb):
         return {
             'name': 'Extra Combat Mana Loop',
@@ -1010,9 +1011,9 @@ def detect_wheel_and_deal(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_text = card2.get('oracle_text', '').lower()
 
     # Check if card1 is wheel and card2 is punisher
-    card1_is_wheel = any(re.search(pattern, card1_text) for pattern in wheel_patterns)
-    card2_punishes_draw = any(re.search(pattern, card2_text) for pattern in draw_punisher_patterns)
-    card2_punishes_discard = any(re.search(pattern, card2_text) for pattern in discard_punisher_patterns)
+    card1_is_wheel = any(search_cached(pattern, card1_text) for pattern in wheel_patterns)
+    card2_punishes_draw = any(search_cached(pattern, card2_text) for pattern in draw_punisher_patterns)
+    card2_punishes_discard = any(search_cached(pattern, card2_text) for pattern in discard_punisher_patterns)
 
     if card1_is_wheel and (card2_punishes_draw or card2_punishes_discard):
         return {
@@ -1024,9 +1025,9 @@ def detect_wheel_and_deal(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_is_wheel = any(re.search(pattern, card2_text) for pattern in wheel_patterns)
-    card1_punishes_draw = any(re.search(pattern, card1_text) for pattern in draw_punisher_patterns)
-    card1_punishes_discard = any(re.search(pattern, card1_text) for pattern in discard_punisher_patterns)
+    card2_is_wheel = any(search_cached(pattern, card2_text) for pattern in wheel_patterns)
+    card1_punishes_draw = any(search_cached(pattern, card1_text) for pattern in draw_punisher_patterns)
+    card1_punishes_discard = any(search_cached(pattern, card1_text) for pattern in discard_punisher_patterns)
 
     if card2_is_wheel and (card1_punishes_draw or card1_punishes_discard):
         return {
@@ -1082,9 +1083,9 @@ def detect_tap_untap_engines(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_name = (card2.get('name') or '').lower()
 
     # Check if card1 untaps and card2 has tap abilities
-    card1_untaps = any(re.search(pattern, card1_text) for pattern in untap_patterns)
-    card2_has_tap_ability = any(re.search(pattern, card2_text) for pattern in tap_ability_patterns)
-    card2_is_basic_mana = any(re.search(pattern, card2_text) for pattern in basic_mana_patterns)
+    card1_untaps = any(search_cached(pattern, card1_text) for pattern in untap_patterns)
+    card2_has_tap_ability = any(search_cached(pattern, card2_text) for pattern in tap_ability_patterns)
+    card2_is_basic_mana = any(search_cached(pattern, card2_text) for pattern in basic_mana_patterns)
 
     if card1_untaps and card2_has_tap_ability and not card2_is_basic_mana:
         return {
@@ -1096,9 +1097,9 @@ def detect_tap_untap_engines(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_untaps = any(re.search(pattern, card2_text) for pattern in untap_patterns)
-    card1_has_tap_ability = any(re.search(pattern, card1_text) for pattern in tap_ability_patterns)
-    card1_is_basic_mana = any(re.search(pattern, card1_text) for pattern in basic_mana_patterns)
+    card2_untaps = any(search_cached(pattern, card2_text) for pattern in untap_patterns)
+    card1_has_tap_ability = any(search_cached(pattern, card1_text) for pattern in tap_ability_patterns)
+    card1_is_basic_mana = any(search_cached(pattern, card1_text) for pattern in basic_mana_patterns)
 
     if card2_untaps and card1_has_tap_ability and not card1_is_basic_mana:
         return {
@@ -1163,8 +1164,8 @@ def detect_cheat_big_spells(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check if card1 cheats and card2 is expensive
     # CRITICAL FIX: Exclude ramp spells from cheat detection
-    card1_cheats = any(re.search(pattern, card1_text) for pattern in cheat_patterns) and \
-                   not any(re.search(pattern, card1_text) for pattern in ramp_patterns)
+    card1_cheats = any(search_cached(pattern, card1_text) for pattern in cheat_patterns) and \
+                   not any(search_cached(pattern, card1_text) for pattern in ramp_patterns)
 
     if card1_cheats and card2_cmc >= HIGH_CMC:
         cmc_diff = card2_cmc - 3  # Assume average cheat cost is 3
@@ -1179,8 +1180,8 @@ def detect_cheat_big_spells(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check reverse
     # CRITICAL FIX: Exclude ramp spells from cheat detection
-    card2_cheats = any(re.search(pattern, card2_text) for pattern in cheat_patterns) and \
-                   not any(re.search(pattern, card2_text) for pattern in ramp_patterns)
+    card2_cheats = any(search_cached(pattern, card2_text) for pattern in cheat_patterns) and \
+                   not any(search_cached(pattern, card2_text) for pattern in ramp_patterns)
 
     if card2_cheats and card1_cmc >= HIGH_CMC:
         cmc_diff = card1_cmc - 3
@@ -1216,8 +1217,8 @@ def detect_scry_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
 
     # Check if card1 scrys and card2 benefits from scrying
-    card1_scrys = 'scry' in card1_keywords or any(re.search(pattern, card1_text) for pattern in scry_patterns)
-    card2_benefits_scry = any(re.search(pattern, card2_text) for pattern in scry_benefit_patterns)
+    card1_scrys = 'scry' in card1_keywords or any(search_cached(pattern, card1_text) for pattern in scry_patterns)
+    card2_benefits_scry = any(search_cached(pattern, card2_text) for pattern in scry_benefit_patterns)
 
     if card1_scrys and card2_benefits_scry:
         return {
@@ -1229,8 +1230,8 @@ def detect_scry_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_scrys = 'scry' in card2_keywords or any(re.search(pattern, card2_text) for pattern in scry_patterns)
-    card1_benefits_scry = any(re.search(pattern, card1_text) for pattern in scry_benefit_patterns)
+    card2_scrys = 'scry' in card2_keywords or any(search_cached(pattern, card2_text) for pattern in scry_patterns)
+    card1_benefits_scry = any(search_cached(pattern, card1_text) for pattern in scry_benefit_patterns)
 
     if card2_scrys and card1_benefits_scry:
         return {
@@ -1262,8 +1263,8 @@ def detect_surveil_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
 
     # Check if card1 surveils and card2 benefits from Surveiling
-    card1_surveys = 'surveil' in card1_keywords or any(re.search(pattern, card1_text) for pattern in surveil_patterns)
-    card2_benefits_surveil = any(re.search(pattern, card2_text) for pattern in surveil_benefit_patterns)
+    card1_surveys = 'surveil' in card1_keywords or any(search_cached(pattern, card1_text) for pattern in surveil_patterns)
+    card2_benefits_surveil = any(search_cached(pattern, card2_text) for pattern in surveil_benefit_patterns)
 
     if card1_surveys and card2_benefits_surveil:
         return {
@@ -1275,8 +1276,8 @@ def detect_surveil_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_surveys = 'surveil' in card2_keywords or any(re.search(pattern, card2_text) for pattern in surveil_patterns)
-    card1_benefits_surveil = any(re.search(pattern, card1_text) for pattern in surveil_benefit_patterns)
+    card2_surveys = 'surveil' in card2_keywords or any(search_cached(pattern, card2_text) for pattern in surveil_patterns)
+    card1_benefits_surveil = any(search_cached(pattern, card1_text) for pattern in surveil_benefit_patterns)
 
     if card2_surveys and card1_benefits_surveil:
         return {
@@ -1326,9 +1327,9 @@ def detect_topdeck_manipulation(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
 
     # Check if card1 manipulates top and card2 cares about top
-    card1_manipulates = 'top' in card2_keywords or any(re.search(pattern, card1_text) for pattern in top_manipulation_patterns)
-    card1_is_bounce = any(re.search(pattern, card1_text) for pattern in bounce_patterns)
-    card2_cares_top = any(re.search(pattern, card2_text) for pattern in top_matters_patterns) or 'miracle' in card2_keywords
+    card1_manipulates = 'top' in card2_keywords or any(search_cached(pattern, card1_text) for pattern in top_manipulation_patterns)
+    card1_is_bounce = any(search_cached(pattern, card1_text) for pattern in bounce_patterns)
+    card2_cares_top = any(search_cached(pattern, card2_text) for pattern in top_matters_patterns) or 'miracle' in card2_keywords
 
     if card1_manipulates and not card1_is_bounce and card2_cares_top:
         return {
@@ -1340,9 +1341,9 @@ def detect_topdeck_manipulation(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_manipulates = 'top' in card2_keywords or any(re.search(pattern, card2_text) for pattern in top_manipulation_patterns)
-    card2_is_bounce = any(re.search(pattern, card2_text) for pattern in bounce_patterns)
-    card1_cares_top = any(re.search(pattern, card1_text) for pattern in top_matters_patterns) or 'miracle' in card1_keywords
+    card2_manipulates = 'top' in card2_keywords or any(search_cached(pattern, card2_text) for pattern in top_manipulation_patterns)
+    card2_is_bounce = any(search_cached(pattern, card2_text) for pattern in bounce_patterns)
+    card1_cares_top = any(search_cached(pattern, card1_text) for pattern in top_matters_patterns) or 'miracle' in card1_keywords
 
     if card2_manipulates and not card2_is_bounce and card1_cares_top:
         return {
@@ -1379,9 +1380,9 @@ def detect_threaten_and_sac(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_text = card2.get('oracle_text', '').lower()
 
     # Check if card1 threatens and card2 can sac or blink
-    card1_threatens = any(re.search(pattern, card1_text) for pattern in threaten_patterns)
+    card1_threatens = any(search_cached(pattern, card1_text) for pattern in threaten_patterns)
     card2_is_sac_outlet = 'sacrifice' in card2_text and ('a creature' in card2_text or 'another creature' in card2_text)
-    card2_blinks = any(re.search(pattern, card2_text) for pattern in blink_patterns)
+    card2_blinks = any(search_cached(pattern, card2_text) for pattern in blink_patterns)
 
     if card1_threatens and (card2_is_sac_outlet or card2_blinks):
         return {
@@ -1393,9 +1394,9 @@ def detect_threaten_and_sac(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_threatens = any(re.search(pattern, card2_text) for pattern in threaten_patterns)
+    card2_threatens = any(search_cached(pattern, card2_text) for pattern in threaten_patterns)
     card1_is_sac_outlet = 'sacrifice' in card1_text and ('a creature' in card1_text or 'another creature' in card1_text)
-    card1_blinks = any(re.search(pattern, card1_text) for pattern in blink_patterns)
+    card1_blinks = any(search_cached(pattern, card1_text) for pattern in blink_patterns)
 
     if card2_threatens and (card1_is_sac_outlet or card1_blinks):
         return {
@@ -1450,10 +1451,10 @@ def detect_token_anthems(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check if card1 makes tokens and card2 buffs
     # CRITICAL FIX: Exclude cards that give tokens to opponents
-    card1_makes_tokens = any(re.search(pattern, card1_text) for pattern in token_patterns) and \
-                         not any(re.search(pattern, card1_text) for pattern in opponent_token_patterns)
-    card2_buffs = any(re.search(pattern, card2_text) for pattern in buff_patterns)
-    card2_is_negative = any(re.search(pattern, card2_text) for pattern in negative_patterns)
+    card1_makes_tokens = any(search_cached(pattern, card1_text) for pattern in token_patterns) and \
+                         not any(search_cached(pattern, card1_text) for pattern in opponent_token_patterns)
+    card2_buffs = any(search_cached(pattern, card2_text) for pattern in buff_patterns)
+    card2_is_negative = any(search_cached(pattern, card2_text) for pattern in negative_patterns)
 
     if card1_makes_tokens and card2_buffs and not card2_is_negative:
         return {
@@ -1466,10 +1467,10 @@ def detect_token_anthems(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check reverse
     # CRITICAL FIX: Exclude cards that give tokens to opponents
-    card2_makes_tokens = any(re.search(pattern, card2_text) for pattern in token_patterns) and \
-                         not any(re.search(pattern, card2_text) for pattern in opponent_token_patterns)
-    card1_buffs = any(re.search(pattern, card1_text) for pattern in buff_patterns)
-    card1_is_negative = any(re.search(pattern, card1_text) for pattern in negative_patterns)
+    card2_makes_tokens = any(search_cached(pattern, card2_text) for pattern in token_patterns) and \
+                         not any(search_cached(pattern, card2_text) for pattern in opponent_token_patterns)
+    card1_buffs = any(search_cached(pattern, card1_text) for pattern in buff_patterns)
+    card1_is_negative = any(search_cached(pattern, card1_text) for pattern in negative_patterns)
 
     if card2_makes_tokens and card1_buffs and not card1_is_negative:
         return {
@@ -1510,8 +1511,8 @@ def detect_convoke_improvise(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Check if card1 has convoke/improvise and card2 makes tokens
     card1_has_convoke = 'convoke' in card1_keywords or 'convoke' in card1_text
     card1_has_improvise = 'improvise' in card1_keywords or 'improvise' in card1_text
-    card2_makes_creatures = any(re.search(pattern, card2_text) for pattern in token_patterns)
-    card2_makes_artifacts = any(re.search(pattern, card2_text) for pattern in artifact_token_patterns)
+    card2_makes_creatures = any(search_cached(pattern, card2_text) for pattern in token_patterns)
+    card2_makes_artifacts = any(search_cached(pattern, card2_text) for pattern in artifact_token_patterns)
 
     if card1_has_convoke and card2_makes_creatures:
         return {
@@ -1534,8 +1535,8 @@ def detect_convoke_improvise(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Check reverse
     card2_has_convoke = 'convoke' in card2_keywords or 'convoke' in card2_text
     card2_has_improvise = 'improvise' in card2_keywords or 'improvise' in card2_text
-    card1_makes_creatures = any(re.search(pattern, card1_text) for pattern in token_patterns)
-    card1_makes_artifacts = any(re.search(pattern, card1_text) for pattern in artifact_token_patterns)
+    card1_makes_creatures = any(search_cached(pattern, card1_text) for pattern in token_patterns)
+    card1_makes_artifacts = any(search_cached(pattern, card1_text) for pattern in artifact_token_patterns)
 
     if card2_has_convoke and card1_makes_creatures:
         return {
@@ -1590,7 +1591,7 @@ def detect_fling_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
         card2_power = 0
 
     # Check if card1 is fling and card2 is high power
-    card1_is_fling = any(re.search(pattern, card1_text) for pattern in fling_patterns)
+    card1_is_fling = any(search_cached(pattern, card1_text) for pattern in fling_patterns)
 
     # Ephemeral/high-power heuristic when power is unknown: look for haste+trample and end-step sacrifice
     card2_ephemeral_big = ('haste' in card2_text and 'trample' in card2_text and ('sacrifice' in card2_text and 'end step' in card2_text))
@@ -1605,7 +1606,7 @@ def detect_fling_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_is_fling = any(re.search(pattern, card2_text) for pattern in fling_patterns)
+    card2_is_fling = any(search_cached(pattern, card2_text) for pattern in fling_patterns)
 
     card1_ephemeral_big = ('haste' in card1_text and 'trample' in card1_text and ('sacrifice' in card1_text and 'end step' in card1_text))
 
@@ -1664,8 +1665,8 @@ def detect_double_strike_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check if card1 grants double strike and card2 has good power
     card1_grants_double_strike = 'double strike' in card1_keywords or \
-                                  any(re.search(pattern, card1_text) for pattern in double_strike_patterns)
-    card1_doubles_damage = any(re.search(pattern, card1_text) for pattern in damage_doubler_patterns)
+                                  any(search_cached(pattern, card1_text) for pattern in double_strike_patterns)
+    card1_doubles_damage = any(search_cached(pattern, card1_text) for pattern in damage_doubler_patterns)
 
     if (card1_grants_double_strike or card1_doubles_damage) and card2_power >= MIN_POWER:
         multiplier = "doubles" if card1_grants_double_strike else "multiplies"
@@ -1679,8 +1680,8 @@ def detect_double_strike_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check reverse
     card2_grants_double_strike = 'double strike' in card2_keywords or \
-                                  any(re.search(pattern, card2_text) for pattern in double_strike_patterns)
-    card2_doubles_damage = any(re.search(pattern, card2_text) for pattern in damage_doubler_patterns)
+                                  any(search_cached(pattern, card2_text) for pattern in double_strike_patterns)
+    card2_doubles_damage = any(search_cached(pattern, card2_text) for pattern in damage_doubler_patterns)
 
     if (card2_grants_double_strike or card2_doubles_damage) and card1_power >= MIN_POWER:
         multiplier = "doubles" if card2_grants_double_strike else "multiplies"
@@ -1737,11 +1738,11 @@ def detect_spellslinger_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_cmc = card1.get('cmc', 0)
 
     # CRITICAL FIX: Exclude Aura/Equipment triggers from spellslinger detection
-    card1_is_aura_equipment_trigger = any(re.search(pattern, card1_text) for pattern in aura_equipment_patterns)
+    card1_is_aura_equipment_trigger = any(search_cached(pattern, card1_text) for pattern in aura_equipment_patterns)
 
     # Check if card1 has spell triggers and card2 is a cheap instant/sorcery
-    card1_has_trigger = (any(re.search(pattern, card1_text) for pattern in spell_trigger_patterns) or \
-                        any(re.search(pattern, card1_text) for pattern in magecraft_patterns) or \
+    card1_has_trigger = (any(search_cached(pattern, card1_text) for pattern in spell_trigger_patterns) or \
+                        any(search_cached(pattern, card1_text) for pattern in magecraft_patterns) or \
                         'prowess' in card1_keywords) and \
                         not card1_is_aura_equipment_trigger  # FIXED: Exclude Aura/Equipment triggers
 
@@ -1763,10 +1764,10 @@ def detect_spellslinger_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check reverse
     # CRITICAL FIX: Exclude Aura/Equipment triggers from spellslinger detection
-    card2_is_aura_equipment_trigger = any(re.search(pattern, card2_text) for pattern in aura_equipment_patterns)
+    card2_is_aura_equipment_trigger = any(search_cached(pattern, card2_text) for pattern in aura_equipment_patterns)
 
-    card2_has_trigger = (any(re.search(pattern, card2_text) for pattern in spell_trigger_patterns) or \
-                        any(re.search(pattern, card2_text) for pattern in magecraft_patterns) or \
+    card2_has_trigger = (any(search_cached(pattern, card2_text) for pattern in spell_trigger_patterns) or \
+                        any(search_cached(pattern, card2_text) for pattern in magecraft_patterns) or \
                         'prowess' in card2_keywords) and \
                         not card2_is_aura_equipment_trigger  # FIXED: Exclude Aura/Equipment triggers
 
@@ -1819,9 +1820,9 @@ def detect_artifact_token_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_text = card2.get('oracle_text', '').lower()
 
     # Check if card1 makes artifact tokens and card2 has triggers
-    card1_makes_artifacts = any(re.search(pattern, card1_text) for pattern in artifact_token_patterns)
-    card2_has_etb = any(re.search(pattern, card2_text) for pattern in artifact_etb_patterns)
-    card2_has_death = any(re.search(pattern, card2_text) for pattern in artifact_death_patterns)
+    card1_makes_artifacts = any(search_cached(pattern, card1_text) for pattern in artifact_token_patterns)
+    card2_has_etb = any(search_cached(pattern, card2_text) for pattern in artifact_etb_patterns)
+    card2_has_death = any(search_cached(pattern, card2_text) for pattern in artifact_death_patterns)
 
     if card1_makes_artifacts and (card2_has_etb or card2_has_death):
         trigger_type = "enters" if card2_has_etb else "dies"
@@ -1834,9 +1835,9 @@ def detect_artifact_token_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
         }
 
     # Check reverse
-    card2_makes_artifacts = any(re.search(pattern, card2_text) for pattern in artifact_token_patterns)
-    card1_has_etb = any(re.search(pattern, card1_text) for pattern in artifact_etb_patterns)
-    card1_has_death = any(re.search(pattern, card1_text) for pattern in artifact_death_patterns)
+    card2_makes_artifacts = any(search_cached(pattern, card2_text) for pattern in artifact_token_patterns)
+    card1_has_etb = any(search_cached(pattern, card1_text) for pattern in artifact_etb_patterns)
+    card1_has_death = any(search_cached(pattern, card1_text) for pattern in artifact_death_patterns)
 
     if card2_makes_artifacts and (card1_has_etb or card1_has_death):
         trigger_type = "enters" if card1_has_etb else "dies"
@@ -1886,8 +1887,8 @@ def detect_token_doublers(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check if card1 is a doubler and card2 makes tokens
     card1_is_doubler = card1_name in token_doubler_names or \
-                       any(re.search(pattern, card1_text) for pattern in token_doubler_patterns)
-    card2_makes_tokens = any(re.search(pattern, card2_text) for pattern in token_patterns)
+                       any(search_cached(pattern, card1_text) for pattern in token_doubler_patterns)
+    card2_makes_tokens = any(search_cached(pattern, card2_text) for pattern in token_patterns)
 
     if card1_is_doubler and card2_makes_tokens:
         return {
@@ -1900,8 +1901,8 @@ def detect_token_doublers(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check reverse
     card2_is_doubler = card2_name in token_doubler_names or \
-                       any(re.search(pattern, card2_text) for pattern in token_doubler_patterns)
-    card1_makes_tokens = any(re.search(pattern, card1_text) for pattern in token_patterns)
+                       any(search_cached(pattern, card2_text) for pattern in token_doubler_patterns)
+    card1_makes_tokens = any(search_cached(pattern, card1_text) for pattern in token_patterns)
 
     if card2_is_doubler and card1_makes_tokens:
         return {
@@ -1940,8 +1941,8 @@ def detect_discard_madness_flashback(card1: Dict, card2: Dict) -> Optional[Dict]
     card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
 
     # Check if card1 is discard outlet and card2 has madness/flashback
-    card1_is_outlet = any(re.search(pattern, card1_text) for pattern in discard_outlet_patterns) or \
-                      any(re.search(pattern, card1_text) for pattern in oneshot_discard_patterns)
+    card1_is_outlet = any(search_cached(pattern, card1_text) for pattern in discard_outlet_patterns) or \
+                      any(search_cached(pattern, card1_text) for pattern in oneshot_discard_patterns)
 
     card2_has_madness = 'madness' in card2_keywords or 'madness' in card2_text
     card2_has_flashback = 'flashback' in card2_keywords or 'flashback' in card2_text
@@ -1958,8 +1959,8 @@ def detect_discard_madness_flashback(card1: Dict, card2: Dict) -> Optional[Dict]
         }
 
     # Check reverse
-    card2_is_outlet = any(re.search(pattern, card2_text) for pattern in discard_outlet_patterns) or \
-                      any(re.search(pattern, card2_text) for pattern in oneshot_discard_patterns)
+    card2_is_outlet = any(search_cached(pattern, card2_text) for pattern in discard_outlet_patterns) or \
+                      any(search_cached(pattern, card2_text) for pattern in oneshot_discard_patterns)
 
     card1_has_madness = 'madness' in card1_keywords or 'madness' in card1_text
     card1_has_flashback = 'flashback' in card1_keywords or 'flashback' in card1_text
@@ -2003,8 +2004,8 @@ def detect_enchantress_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check if card1 has enchantress effect and card2 is an enchantment
     card1_is_enchantress = (
-        any(re.search(pattern, card1_text) for pattern in enchantress_patterns)
-        or any(re.search(pattern, card1_text) for pattern in constellation_patterns)
+        any(search_cached(pattern, card1_text) for pattern in enchantress_patterns)
+        or any(search_cached(pattern, card1_text) for pattern in constellation_patterns)
     )
     # Consider enchantments by type or by clear Aura/enchant wording if type_line missing
     card2_is_enchantment = 'enchantment' in card2_type or \
@@ -2021,8 +2022,8 @@ def detect_enchantress_effects(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check reverse
     card2_is_enchantress = (
-        any(re.search(pattern, card2_text) for pattern in enchantress_patterns)
-        or any(re.search(pattern, card2_text) for pattern in constellation_patterns)
+        any(search_cached(pattern, card2_text) for pattern in enchantress_patterns)
+        or any(search_cached(pattern, card2_text) for pattern in constellation_patterns)
     )
     card1_is_enchantment = 'enchantment' in card1_type or \
                            ('enchant ' in card1_text) or ('aura' in card1_text)
@@ -2081,11 +2082,11 @@ def detect_voltron_evasion(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check if card1 is equipment/aura with power boost and card2 grants evasion
     card1_is_equipment_aura = 'equipment' in card1_type or 'aura' in card1_type or \
-                              any(re.search(pattern, card1_text) for pattern in equipment_aura_patterns)
-    card1_boosts_power = any(re.search(pattern, card1_text) for pattern in power_boost_patterns)
+                              any(search_cached(pattern, card1_text) for pattern in equipment_aura_patterns)
+    card1_boosts_power = any(search_cached(pattern, card1_text) for pattern in power_boost_patterns)
 
     card2_grants_evasion = any(kw in card2_keywords for kw in evasion_keywords) or \
-                           any(re.search(pattern, card2_text) for pattern in evasion_patterns)
+                           any(search_cached(pattern, card2_text) for pattern in evasion_patterns)
     card2_is_equipment_aura = 'equipment' in card2_type or 'aura' in card2_type
 
     if card1_is_equipment_aura and card1_boosts_power and card2_is_equipment_aura and card2_grants_evasion:
@@ -2099,11 +2100,11 @@ def detect_voltron_evasion(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     # Check reverse
     card2_is_equipment_aura = 'equipment' in card2_type or 'aura' in card2_type or \
-                              any(re.search(pattern, card2_text) for pattern in equipment_aura_patterns)
-    card2_boosts_power = any(re.search(pattern, card2_text) for pattern in power_boost_patterns)
+                              any(search_cached(pattern, card2_text) for pattern in equipment_aura_patterns)
+    card2_boosts_power = any(search_cached(pattern, card2_text) for pattern in power_boost_patterns)
 
     card1_grants_evasion = any(kw in card1_keywords for kw in evasion_keywords) or \
-                           any(re.search(pattern, card1_text) for pattern in evasion_patterns)
+                           any(search_cached(pattern, card1_text) for pattern in evasion_patterns)
     card1_is_equipment_aura = 'equipment' in card1_type or 'aura' in card1_type
 
     if card2_is_equipment_aura and card2_boosts_power and card1_is_equipment_aura and card1_grants_evasion:
@@ -2161,16 +2162,16 @@ def detect_aristocrats_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_is_drain = class2['strategy'] == 'drain'
 
     # Only count as death trigger if NOT a self-death trigger
-    card1_has_death_trigger = any(re.search(pattern, card1_text) for pattern in death_trigger_patterns) and \
-                               not any(re.search(pattern, card1_text) for pattern in self_death_patterns)
-    card2_has_death_trigger = any(re.search(pattern, card2_text) for pattern in death_trigger_patterns) and \
-                               not any(re.search(pattern, card2_text) for pattern in self_death_patterns)
+    card1_has_death_trigger = any(search_cached(pattern, card1_text) for pattern in death_trigger_patterns) and \
+                               not any(search_cached(pattern, card1_text) for pattern in self_death_patterns)
+    card2_has_death_trigger = any(search_cached(pattern, card2_text) for pattern in death_trigger_patterns) and \
+                               not any(search_cached(pattern, card2_text) for pattern in self_death_patterns)
 
-    card1_is_sac_outlet = any(re.search(pattern, card1_text) for pattern in sacrifice_outlet_patterns)
-    card2_is_sac_outlet = any(re.search(pattern, card2_text) for pattern in sacrifice_outlet_patterns)
+    card1_is_sac_outlet = any(search_cached(pattern, card1_text) for pattern in sacrifice_outlet_patterns)
+    card2_is_sac_outlet = any(search_cached(pattern, card2_text) for pattern in sacrifice_outlet_patterns)
 
-    card1_makes_tokens = any(re.search(pattern, card1_text) for pattern in token_generation_patterns)
-    card2_makes_tokens = any(re.search(pattern, card2_text) for pattern in token_generation_patterns)
+    card1_makes_tokens = any(search_cached(pattern, card1_text) for pattern in token_generation_patterns)
+    card2_makes_tokens = any(search_cached(pattern, card2_text) for pattern in token_generation_patterns)
 
     # Drain effect + sacrifice outlet = aristocrats combo
     if card1_is_drain and card2_is_sac_outlet:
@@ -2264,8 +2265,8 @@ def detect_burn_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_has_damage = class1['has_damage_effects'] or len(class1['direct_damages']) > 0 or len(class1['burn_effects']) > 0
     card2_has_damage = class2['has_damage_effects'] or len(class2['direct_damages']) > 0 or len(class2['burn_effects']) > 0
 
-    card1_is_amplifier = any(re.search(pattern, card1_text) for pattern in damage_amplifier_patterns)
-    card2_is_amplifier = any(re.search(pattern, card2_text) for pattern in damage_amplifier_patterns)
+    card1_is_amplifier = any(search_cached(pattern, card1_text) for pattern in damage_amplifier_patterns)
+    card2_is_amplifier = any(search_cached(pattern, card2_text) for pattern in damage_amplifier_patterns)
 
     card1_multiplayer = class1['is_multiplayer_focused']
     card2_multiplayer = class2['is_multiplayer_focused']
@@ -2338,8 +2339,8 @@ def detect_lifegain_payoffs(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_has_lifegain = class1['has_life_gain'] or class1['strategy'] == 'lifegain'
     card2_has_lifegain = class2['has_life_gain'] or class2['strategy'] == 'lifegain'
 
-    card1_is_payoff = any(re.search(pattern, card1_text) for pattern in lifegain_payoff_patterns)
-    card2_is_payoff = any(re.search(pattern, card2_text) for pattern in lifegain_payoff_patterns)
+    card1_is_payoff = any(search_cached(pattern, card1_text) for pattern in lifegain_payoff_patterns)
+    card2_is_payoff = any(search_cached(pattern, card2_text) for pattern in lifegain_payoff_patterns)
 
     # Lifegain payoff + lifegain source
     if card1_is_payoff and card2_has_lifegain:
@@ -2395,8 +2396,8 @@ def detect_damage_based_card_draw(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_has_damage = class1['has_damage_effects']
     card2_has_damage = class2['has_damage_effects']
 
-    card1_is_draw_trigger = any(re.search(pattern, card1_text) for pattern in damage_draw_patterns)
-    card2_is_draw_trigger = any(re.search(pattern, card2_text) for pattern in damage_draw_patterns)
+    card1_is_draw_trigger = any(search_cached(pattern, card1_text) for pattern in damage_draw_patterns)
+    card2_is_draw_trigger = any(search_cached(pattern, card2_text) for pattern in damage_draw_patterns)
 
     # Damage + draw trigger creates engine
     if card1_is_draw_trigger and card2_has_damage:
@@ -2457,11 +2458,11 @@ def detect_creature_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_has_creature_damage = len(class1['creature_damages']) > 0
     card2_has_creature_damage = len(class2['creature_damages']) > 0
 
-    card1_boosts_power = any(re.search(pattern, card1_text) for pattern in power_boost_patterns)
-    card2_boosts_power = any(re.search(pattern, card2_text) for pattern in power_boost_patterns)
+    card1_boosts_power = any(search_cached(pattern, card1_text) for pattern in power_boost_patterns)
+    card2_boosts_power = any(search_cached(pattern, card2_text) for pattern in power_boost_patterns)
 
-    card1_combat_matters = any(re.search(pattern, card1_text) for pattern in combat_matters_patterns)
-    card2_combat_matters = any(re.search(pattern, card2_text) for pattern in combat_matters_patterns)
+    card1_combat_matters = any(search_cached(pattern, card1_text) for pattern in combat_matters_patterns)
+    card2_combat_matters = any(search_cached(pattern, card2_text) for pattern in combat_matters_patterns)
 
     # Power boost + combat damage trigger
     if card1_boosts_power and card2_combat_matters:
@@ -2539,18 +2540,18 @@ def detect_equipment_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_type = card2.get('type_line', '').lower()
 
     # Check if one is equipment and the other cares about equipment
-    card1_is_equipment = 'equipment' in card1_type or any(re.search(pattern, card1_text) for pattern in equipment_patterns)
-    card2_is_equipment = 'equipment' in card2_type or any(re.search(pattern, card2_text) for pattern in equipment_patterns)
+    card1_is_equipment = 'equipment' in card1_type or any(search_cached(pattern, card1_text) for pattern in equipment_patterns)
+    card2_is_equipment = 'equipment' in card2_type or any(search_cached(pattern, card2_text) for pattern in equipment_patterns)
 
     # Check for specific equipment interactions (tutors, recursion, matters)
-    card1_tutors_equipment = any(re.search(pattern, card1_text) for pattern in equipment_tutor_patterns)
-    card2_tutors_equipment = any(re.search(pattern, card2_text) for pattern in equipment_tutor_patterns)
+    card1_tutors_equipment = any(search_cached(pattern, card1_text) for pattern in equipment_tutor_patterns)
+    card2_tutors_equipment = any(search_cached(pattern, card2_text) for pattern in equipment_tutor_patterns)
 
-    card1_recurs_equipment = any(re.search(pattern, card1_text) for pattern in equipment_recursion_patterns)
-    card2_recurs_equipment = any(re.search(pattern, card2_text) for pattern in equipment_recursion_patterns)
+    card1_recurs_equipment = any(search_cached(pattern, card1_text) for pattern in equipment_recursion_patterns)
+    card2_recurs_equipment = any(search_cached(pattern, card2_text) for pattern in equipment_recursion_patterns)
 
-    card1_cares_equipment = any(re.search(pattern, card1_text) for pattern in equipment_matters_patterns)
-    card2_cares_equipment = any(re.search(pattern, card2_text) for pattern in equipment_matters_patterns)
+    card1_cares_equipment = any(search_cached(pattern, card1_text) for pattern in equipment_matters_patterns)
+    card2_cares_equipment = any(search_cached(pattern, card2_text) for pattern in equipment_matters_patterns)
 
     # FIXED: Equipment + tutor (most specific)
     if card1_is_equipment and card2_tutors_equipment:
@@ -2648,11 +2649,11 @@ def detect_landfall_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_text = card2.get('oracle_text', '').lower()
 
     # Check if one has landfall and the other ramps/fetches lands
-    card1_has_landfall = any(re.search(pattern, card1_text) for pattern in landfall_patterns)
-    card2_has_landfall = any(re.search(pattern, card2_text) for pattern in landfall_patterns)
+    card1_has_landfall = any(search_cached(pattern, card1_text) for pattern in landfall_patterns)
+    card2_has_landfall = any(search_cached(pattern, card2_text) for pattern in landfall_patterns)
 
-    card1_ramps_lands = any(re.search(pattern, card1_text) for pattern in land_ramp_patterns)
-    card2_ramps_lands = any(re.search(pattern, card2_text) for pattern in land_ramp_patterns)
+    card1_ramps_lands = any(search_cached(pattern, card1_text) for pattern in land_ramp_patterns)
+    card2_ramps_lands = any(search_cached(pattern, card2_text) for pattern in land_ramp_patterns)
 
     # Landfall + land ramp
     if card1_has_landfall and card2_ramps_lands:
@@ -2715,11 +2716,11 @@ def detect_counter_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_places_counters = any(re.search(pattern, card1_text) for pattern in counter_place_patterns)
-    card2_places_counters = any(re.search(pattern, card2_text) for pattern in counter_place_patterns)
+    card1_places_counters = any(search_cached(pattern, card1_text) for pattern in counter_place_patterns)
+    card2_places_counters = any(search_cached(pattern, card2_text) for pattern in counter_place_patterns)
 
-    card1_cares_counters = any(re.search(pattern, card1_text) for pattern in counter_matters_patterns)
-    card2_cares_counters = any(re.search(pattern, card2_text) for pattern in counter_matters_patterns)
+    card1_cares_counters = any(search_cached(pattern, card1_text) for pattern in counter_matters_patterns)
+    card2_cares_counters = any(search_cached(pattern, card2_text) for pattern in counter_matters_patterns)
 
     # Counter doubler patterns (higher value)
     counter_doubler_patterns = [
@@ -2731,8 +2732,8 @@ def detect_counter_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'additional \+1/\+1 counter'
     ]
 
-    card1_doubles_counters = any(re.search(pattern, card1_text) for pattern in counter_doubler_patterns)
-    card2_doubles_counters = any(re.search(pattern, card2_text) for pattern in counter_doubler_patterns)
+    card1_doubles_counters = any(search_cached(pattern, card1_text) for pattern in counter_doubler_patterns)
+    card2_doubles_counters = any(search_cached(pattern, card2_text) for pattern in counter_doubler_patterns)
 
     # Counter placement + counter doubler (highest value)
     if card1_places_counters and card2_doubles_counters:
@@ -2815,12 +2816,12 @@ def detect_copy_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_type = card2.get('type_line', '').lower()
 
     # Check for creature clones
-    card1_is_clone = any(re.search(pattern, card1_text) for pattern in copy_patterns) and 'creature' in card1_type
-    card2_is_clone = any(re.search(pattern, card2_text) for pattern in copy_patterns) and 'creature' in card2_type
+    card1_is_clone = any(search_cached(pattern, card1_text) for pattern in copy_patterns) and 'creature' in card1_type
+    card2_is_clone = any(search_cached(pattern, card2_text) for pattern in copy_patterns) and 'creature' in card2_type
 
     # Check for spell copiers
-    card1_copies_spells = any(re.search(pattern, card1_text) for pattern in spell_copy_patterns)
-    card2_copies_spells = any(re.search(pattern, card2_text) for pattern in spell_copy_patterns)
+    card1_copies_spells = any(search_cached(pattern, card1_text) for pattern in spell_copy_patterns)
+    card2_copies_spells = any(search_cached(pattern, card2_text) for pattern in spell_copy_patterns)
 
     # High-value ETB patterns
     high_value_etb_patterns = [
@@ -2833,8 +2834,8 @@ def detect_copy_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'enters the battlefield.*put'
     ]
 
-    card1_has_etb = any(re.search(pattern, card1_text) for pattern in high_value_etb_patterns)
-    card2_has_etb = any(re.search(pattern, card2_text) for pattern in high_value_etb_patterns)
+    card1_has_etb = any(search_cached(pattern, card1_text) for pattern in high_value_etb_patterns)
+    card2_has_etb = any(search_cached(pattern, card2_text) for pattern in high_value_etb_patterns)
 
     # Clone + high-value ETB
     if card1_is_clone and card2_has_etb:
@@ -2910,14 +2911,14 @@ def detect_storm_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_cmc = card2.get('cmc', 999)
 
     # Check for storm
-    card1_has_storm = any(re.search(pattern, card1_text) for pattern in storm_patterns)
-    card2_has_storm = any(re.search(pattern, card2_text) for pattern in storm_patterns)
+    card1_has_storm = any(search_cached(pattern, card1_text) for pattern in storm_patterns)
+    card2_has_storm = any(search_cached(pattern, card2_text) for pattern in storm_patterns)
 
     # Check for cheap enablers
     card1_is_enabler = (card1_cmc <= 2 and ('instant' in card1_type or 'sorcery' in card1_type)) and \
-                       any(re.search(pattern, card1_text) for pattern in cheap_spell_patterns)
+                       any(search_cached(pattern, card1_text) for pattern in cheap_spell_patterns)
     card2_is_enabler = (card2_cmc <= 2 and ('instant' in card2_type or 'sorcery' in card2_type)) and \
-                       any(re.search(pattern, card2_text) for pattern in cheap_spell_patterns)
+                       any(search_cached(pattern, card2_text) for pattern in cheap_spell_patterns)
 
     # Storm + cheap enabler
     if card1_has_storm and card2_is_enabler:
@@ -2974,11 +2975,11 @@ def detect_energy_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_text = card2.get('oracle_text', '').lower()
 
     # Check for energy generation and consumption
-    card1_generates_energy = any(re.search(pattern, card1_text) for pattern in energy_generation_patterns)
-    card2_generates_energy = any(re.search(pattern, card2_text) for pattern in energy_generation_patterns)
+    card1_generates_energy = any(search_cached(pattern, card1_text) for pattern in energy_generation_patterns)
+    card2_generates_energy = any(search_cached(pattern, card2_text) for pattern in energy_generation_patterns)
 
-    card1_consumes_energy = any(re.search(pattern, card1_text) for pattern in energy_consumption_patterns)
-    card2_consumes_energy = any(re.search(pattern, card2_text) for pattern in energy_consumption_patterns)
+    card1_consumes_energy = any(search_cached(pattern, card1_text) for pattern in energy_consumption_patterns)
+    card2_consumes_energy = any(search_cached(pattern, card2_text) for pattern in energy_consumption_patterns)
 
     # Energy generation + consumption
     if card1_generates_energy and card2_consumes_energy:
@@ -3045,12 +3046,12 @@ def detect_stax_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_cmc = card2.get('cmc', 999)
 
     # Check for tax effects
-    card1_is_tax = any(re.search(pattern, card1_text) for pattern in tax_patterns)
-    card2_is_tax = any(re.search(pattern, card2_text) for pattern in tax_patterns)
+    card1_is_tax = any(search_cached(pattern, card1_text) for pattern in tax_patterns)
+    card2_is_tax = any(search_cached(pattern, card2_text) for pattern in tax_patterns)
 
     # Check for tax payoffs
-    card1_is_payoff = any(re.search(pattern, card1_text) for pattern in tax_payoff_patterns)
-    card2_is_payoff = any(re.search(pattern, card2_text) for pattern in tax_payoff_patterns)
+    card1_is_payoff = any(search_cached(pattern, card1_text) for pattern in tax_payoff_patterns)
+    card2_is_payoff = any(search_cached(pattern, card2_text) for pattern in tax_payoff_patterns)
 
     # Tax effect + tax payoff
     if card1_is_tax and card2_is_payoff:
@@ -3123,10 +3124,10 @@ def detect_sacrifice_outlet_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_outlet = any(re.search(pattern, card1_text) for pattern in sac_outlet_patterns)
-    card2_outlet = any(re.search(pattern, card2_text) for pattern in sac_outlet_patterns)
-    card1_payoff = any(re.search(pattern, card1_text) for pattern in sac_payoff_patterns)
-    card2_payoff = any(re.search(pattern, card2_text) for pattern in sac_payoff_patterns)
+    card1_outlet = any(search_cached(pattern, card1_text) for pattern in sac_outlet_patterns)
+    card2_outlet = any(search_cached(pattern, card2_text) for pattern in sac_outlet_patterns)
+    card1_payoff = any(search_cached(pattern, card1_text) for pattern in sac_payoff_patterns)
+    card2_payoff = any(search_cached(pattern, card2_text) for pattern in sac_payoff_patterns)
 
     if card1_outlet and card2_payoff:
         return {
@@ -3170,10 +3171,10 @@ def detect_blink_etb_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_blink = any(re.search(pattern, card1_text) for pattern in blink_patterns)
-    card2_blink = any(re.search(pattern, card2_text) for pattern in blink_patterns)
-    card1_etb = any(re.search(pattern, card1_text) for pattern in strong_etb_patterns)
-    card2_etb = any(re.search(pattern, card2_text) for pattern in strong_etb_patterns)
+    card1_blink = any(search_cached(pattern, card1_text) for pattern in blink_patterns)
+    card2_blink = any(search_cached(pattern, card2_text) for pattern in blink_patterns)
+    card1_etb = any(search_cached(pattern, card1_text) for pattern in strong_etb_patterns)
+    card2_etb = any(search_cached(pattern, card2_text) for pattern in strong_etb_patterns)
 
     if (card1_blink and card2_etb) or (card2_blink and card1_etb):
         return {
@@ -3245,8 +3246,8 @@ def detect_infect_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'deals.*twice'
     ]
 
-    card1_double = any(re.search(pattern, card1_text) for pattern in damage_double_patterns)
-    card2_double = any(re.search(pattern, card2_text) for pattern in damage_double_patterns)
+    card1_double = any(search_cached(pattern, card1_text) for pattern in damage_double_patterns)
+    card2_double = any(search_cached(pattern, card2_text) for pattern in damage_double_patterns)
 
     if (card1_infect and card2_double) or (card2_infect and card1_double):
         return {
@@ -3281,8 +3282,8 @@ def detect_mill_self_payoff(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_self_mill = any(re.search(pattern, card1_text) for pattern in mill_self_patterns)
-    card2_self_mill = any(re.search(pattern, card2_text) for pattern in mill_self_patterns)
+    card1_self_mill = any(search_cached(pattern, card1_text) for pattern in mill_self_patterns)
+    card2_self_mill = any(search_cached(pattern, card2_text) for pattern in mill_self_patterns)
     card1_gy_count = any(pattern in card1_text for pattern in graveyard_count_patterns)
     card2_gy_count = any(pattern in card2_text for pattern in graveyard_count_patterns)
 
@@ -3321,8 +3322,8 @@ def detect_flash_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_grants_flash = any(re.search(pattern, card1_text) for pattern in flash_grant_patterns)
-    card2_grants_flash = any(re.search(pattern, card2_text) for pattern in flash_grant_patterns)
+    card1_grants_flash = any(search_cached(pattern, card1_text) for pattern in flash_grant_patterns)
+    card2_grants_flash = any(search_cached(pattern, card2_text) for pattern in flash_grant_patterns)
 
     # Check if the other card would benefit from flash
     card1_cmc = card1.get('cmc', 0)
@@ -3367,8 +3368,8 @@ def detect_haste_enabler_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_type = card1.get('type_line', '').lower()
     card2_type = card2.get('type_line', '').lower()
 
-    card1_grants_haste = any(re.search(pattern, card1_text) for pattern in haste_grant_patterns)
-    card2_grants_haste = any(re.search(pattern, card2_text) for pattern in haste_grant_patterns)
+    card1_grants_haste = any(search_cached(pattern, card1_text) for pattern in haste_grant_patterns)
+    card2_grants_haste = any(search_cached(pattern, card2_text) for pattern in haste_grant_patterns)
 
     card1_power = card1.get('power', '')
     card2_power = card2.get('power', '')
@@ -3411,10 +3412,10 @@ def detect_vigilance_tap_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     vigilance_patterns = [r'\bvigilance\b', r'doesn\'t tap', r'attacks each combat if able']
     tap_ability_patterns = [r'{t}:', r'tap.*:']
 
-    card1_vigilance = any(re.search(pattern, card1_text) for pattern in vigilance_patterns)
-    card2_vigilance = any(re.search(pattern, card2_text) for pattern in vigilance_patterns)
-    card1_tap_ability = any(re.search(pattern, card1_text) for pattern in tap_ability_patterns)
-    card2_tap_ability = any(re.search(pattern, card2_text) for pattern in tap_ability_patterns)
+    card1_vigilance = any(search_cached(pattern, card1_text) for pattern in vigilance_patterns)
+    card2_vigilance = any(search_cached(pattern, card2_text) for pattern in vigilance_patterns)
+    card1_tap_ability = any(search_cached(pattern, card1_text) for pattern in tap_ability_patterns)
+    card2_tap_ability = any(search_cached(pattern, card2_text) for pattern in tap_ability_patterns)
 
     if card1_vigilance and card1_tap_ability:
         return {
@@ -3448,8 +3449,8 @@ def detect_hexproof_aura_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     protection_keywords = [r'\bhexproof\b', r'\bshroud\b', r'protection from', r'\bward\b']
 
-    card1_protected = any(re.search(pattern, card1_text) for pattern in protection_keywords)
-    card2_protected = any(re.search(pattern, card2_text) for pattern in protection_keywords)
+    card1_protected = any(search_cached(pattern, card1_text) for pattern in protection_keywords)
+    card2_protected = any(search_cached(pattern, card2_text) for pattern in protection_keywords)
 
     card1_is_aura = 'aura' in card1_type or 'equipment' in card1_type
     card2_is_aura = 'aura' in card2_type or 'equipment' in card2_type
@@ -3491,8 +3492,8 @@ def detect_trample_pump_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'enchanted creature gets \+[0-9]+/\+[0-9]+'
     ]
 
-    card1_pump = any(re.search(pattern, card1_text) for pattern in pump_patterns)
-    card2_pump = any(re.search(pattern, card2_text) for pattern in pump_patterns)
+    card1_pump = any(search_cached(pattern, card1_text) for pattern in pump_patterns)
+    card2_pump = any(search_cached(pattern, card2_text) for pattern in pump_patterns)
 
     if card1_trample and card2_pump:
         return {
@@ -3531,8 +3532,8 @@ def detect_lifelink_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'additional.*damage'
     ]
 
-    card1_mult = any(re.search(pattern, card1_text) for pattern in damage_mult_patterns)
-    card2_mult = any(re.search(pattern, card2_text) for pattern in damage_mult_patterns)
+    card1_mult = any(search_cached(pattern, card1_text) for pattern in damage_mult_patterns)
+    card2_mult = any(search_cached(pattern, card2_text) for pattern in damage_mult_patterns)
 
     if card1_lifelink and card2_mult:
         return {
@@ -3568,8 +3569,8 @@ def detect_flying_evasion_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'creatures with flying you control get'
     ]
 
-    card1_flying_matters = any(re.search(pattern, card1_text) for pattern in flying_matters_patterns)
-    card2_flying_matters = any(re.search(pattern, card2_text) for pattern in flying_matters_patterns)
+    card1_flying_matters = any(search_cached(pattern, card1_text) for pattern in flying_matters_patterns)
+    card2_flying_matters = any(search_cached(pattern, card2_text) for pattern in flying_matters_patterns)
 
     card1_flying = 'flying' in card1_text or 'flying' in card1.get('keywords', [])
     card2_flying = 'flying' in card2_text or 'flying' in card2.get('keywords', [])
@@ -3609,8 +3610,8 @@ def detect_menace_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     token_gen_patterns = [r'create.*token', r'create.*\d+/\d+']
 
-    card1_tokens = any(re.search(pattern, card1_text) for pattern in token_gen_patterns)
-    card2_tokens = any(re.search(pattern, card2_text) for pattern in token_gen_patterns)
+    card1_tokens = any(search_cached(pattern, card1_text) for pattern in token_gen_patterns)
+    card2_tokens = any(search_cached(pattern, card2_text) for pattern in token_gen_patterns)
 
     if card1_evasion and card2_tokens:
         return {
@@ -3715,8 +3716,8 @@ def detect_planeswalker_protection_synergy(card1: Dict, card2: Dict) -> Optional
         r'fog'
     ]
 
-    card1_protection = any(re.search(pattern, card1_text) for pattern in protection_patterns) or ('creature' in card1_type and 'defender' in card1.get('keywords', []))
-    card2_protection = any(re.search(pattern, card2_text) for pattern in protection_patterns) or ('creature' in card2_type and 'defender' in card2.get('keywords', []))
+    card1_protection = any(search_cached(pattern, card1_text) for pattern in protection_patterns) or ('creature' in card1_type and 'defender' in card1.get('keywords', []))
+    card2_protection = any(search_cached(pattern, card2_text) for pattern in protection_patterns) or ('creature' in card2_type and 'defender' in card2.get('keywords', []))
 
     if card1_walker and card2_protection:
         return {
@@ -3752,8 +3753,8 @@ def detect_commander_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
 
-    card1_pump = any(re.search(pattern, card1_text) for pattern in pump_patterns)
-    card2_pump = any(re.search(pattern, card2_text) for pattern in pump_patterns)
+    card1_pump = any(search_cached(pattern, card1_text) for pattern in pump_patterns)
+    card2_pump = any(search_cached(pattern, card2_text) for pattern in pump_patterns)
 
     # Check if either is legendary creature (potential commander)
     card1_type = card1.get('type_line', '').lower()
@@ -3798,14 +3799,14 @@ def detect_untap_land_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_type = card1.get('type_line', '').lower()
     card2_type = card2.get('type_line', '').lower()
 
-    card1_untaps = any(re.search(pattern, card1_text) for pattern in untap_land_patterns)
-    card2_untaps = any(re.search(pattern, card2_text) for pattern in untap_land_patterns)
+    card1_untaps = any(search_cached(pattern, card1_text) for pattern in untap_land_patterns)
+    card2_untaps = any(search_cached(pattern, card2_text) for pattern in untap_land_patterns)
 
     # Check for utility lands with tap abilities
     tap_ability = r'{t}:.*(?:add|draw|create|deal)'
 
-    card1_utility = 'land' in card1_type and re.search(tap_ability, card1_text)
-    card2_utility = 'land' in card2_type and re.search(tap_ability, card2_text)
+    card1_utility = 'land' in card1_type and search_cached(tap_ability, card1_text)
+    card2_utility = 'land' in card2_type and search_cached(tap_ability, card2_text)
 
     if card1_untaps and card2_utility:
         return {
@@ -3840,14 +3841,14 @@ def detect_fetch_land_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Fetch land pattern
     fetch_pattern = r'search.*library.*land.*battlefield'
 
-    card1_fetch = 'land' in card1_type and re.search(fetch_pattern, card1_text)
-    card2_fetch = 'land' in card2_type and re.search(fetch_pattern, card2_text)
+    card1_fetch = 'land' in card1_type and search_cached(fetch_pattern, card1_text)
+    card2_fetch = 'land' in card2_type and search_cached(fetch_pattern, card2_text)
 
     # Landfall pattern
     landfall_pattern = r'landfall|whenever.*land enters'
 
-    card1_landfall = re.search(landfall_pattern, card1_text)
-    card2_landfall = re.search(landfall_pattern, card2_text)
+    card1_landfall = search_cached(landfall_pattern, card1_text)
+    card2_landfall = search_cached(landfall_pattern, card2_text)
 
     if card1_fetch and card2_landfall:
         return {
@@ -3888,10 +3889,10 @@ def detect_artifact_sac_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'whenever an artifact.*dies'
     ]
 
-    card1_sac = any(re.search(pattern, card1_text) for pattern in artifact_sac_patterns)
-    card2_sac = any(re.search(pattern, card2_text) for pattern in artifact_sac_patterns)
-    card1_payoff = any(re.search(pattern, card1_text) for pattern in artifact_death_patterns)
-    card2_payoff = any(re.search(pattern, card2_text) for pattern in artifact_death_patterns)
+    card1_sac = any(search_cached(pattern, card1_text) for pattern in artifact_sac_patterns)
+    card2_sac = any(search_cached(pattern, card2_text) for pattern in artifact_sac_patterns)
+    card1_payoff = any(search_cached(pattern, card1_text) for pattern in artifact_death_patterns)
+    card2_payoff = any(search_cached(pattern, card2_text) for pattern in artifact_death_patterns)
 
     if card1_sac and card2_payoff:
         return {
@@ -3929,8 +3930,8 @@ def detect_enchantment_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'whenever you cast.*enchantment'
     ]
 
-    card1_matters = any(re.search(pattern, card1_text) for pattern in enchantment_matters_patterns)
-    card2_matters = any(re.search(pattern, card2_text) for pattern in enchantment_matters_patterns)
+    card1_matters = any(search_cached(pattern, card1_text) for pattern in enchantment_matters_patterns)
+    card2_matters = any(search_cached(pattern, card2_text) for pattern in enchantment_matters_patterns)
 
     card1_is_enchantment = 'enchantment' in card1_type
     card2_is_enchantment = 'enchantment' in card2_type
@@ -3974,8 +3975,8 @@ def detect_saga_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'lore counter'
     ]
 
-    card1_synergy = any(re.search(pattern, card1_text) for pattern in saga_synergy_patterns)
-    card2_synergy = any(re.search(pattern, card2_text) for pattern in saga_synergy_patterns)
+    card1_synergy = any(search_cached(pattern, card1_text) for pattern in saga_synergy_patterns)
+    card2_synergy = any(search_cached(pattern, card2_text) for pattern in saga_synergy_patterns)
 
     if card1_saga and card2_synergy:
         return {
@@ -4016,8 +4017,8 @@ def detect_room_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'bounce'
     ]
 
-    card1_bounce = any(re.search(pattern, card1_text) for pattern in bounce_patterns)
-    card2_bounce = any(re.search(pattern, card2_text) for pattern in bounce_patterns)
+    card1_bounce = any(search_cached(pattern, card1_text) for pattern in bounce_patterns)
+    card2_bounce = any(search_cached(pattern, card2_text) for pattern in bounce_patterns)
 
     if card1_room and card2_bounce:
         return {
@@ -4058,8 +4059,8 @@ def detect_vehicle_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'myr'
     ]
 
-    card1_enabler = any(re.search(pattern, card1_text) for pattern in crew_enabler_patterns) or 'creature' in card1_type
-    card2_enabler = any(re.search(pattern, card2_text) for pattern in crew_enabler_patterns) or 'creature' in card2_type
+    card1_enabler = any(search_cached(pattern, card1_text) for pattern in crew_enabler_patterns) or 'creature' in card1_type
+    card2_enabler = any(search_cached(pattern, card2_text) for pattern in crew_enabler_patterns) or 'creature' in card2_type
 
     if card1_vehicle and card2_enabler:
         return {
@@ -4098,8 +4099,8 @@ def detect_food_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'artifact.*enters'
     ]
 
-    card1_matters = any(re.search(pattern, card1_text) for pattern in artifact_sac_matters)
-    card2_matters = any(re.search(pattern, card2_text) for pattern in artifact_sac_matters)
+    card1_matters = any(search_cached(pattern, card1_text) for pattern in artifact_sac_matters)
+    card2_matters = any(search_cached(pattern, card2_text) for pattern in artifact_sac_matters)
 
     if card1_food and card2_matters:
         return {
@@ -4138,8 +4139,8 @@ def detect_blood_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'when.*discarded'
     ]
 
-    card1_matters = any(re.search(pattern, card1_text) for pattern in discard_matters_patterns)
-    card2_matters = any(re.search(pattern, card2_text) for pattern in discard_matters_patterns)
+    card1_matters = any(search_cached(pattern, card1_text) for pattern in discard_matters_patterns)
+    card2_matters = any(search_cached(pattern, card2_text) for pattern in discard_matters_patterns)
 
     if card1_blood and card2_matters:
         return {
@@ -4178,8 +4179,8 @@ def detect_investigate_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'affinity'
     ]
 
-    card1_payoff = any(re.search(pattern, card1_text) for pattern in artifact_payoff_patterns)
-    card2_payoff = any(re.search(pattern, card2_text) for pattern in artifact_payoff_patterns)
+    card1_payoff = any(search_cached(pattern, card1_text) for pattern in artifact_payoff_patterns)
+    card2_payoff = any(search_cached(pattern, card2_text) for pattern in artifact_payoff_patterns)
 
     if card1_investigate and card2_payoff:
         return {
@@ -4212,8 +4213,8 @@ def detect_role_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     # Role tokens are enchantment tokens (Wilds of Eldraine)
     role_patterns = [r'\brole\b', r'role token']
 
-    card1_role = any(re.search(pattern, card1_text) for pattern in role_patterns)
-    card2_role = any(re.search(pattern, card2_text) for pattern in role_patterns)
+    card1_role = any(search_cached(pattern, card1_text) for pattern in role_patterns)
+    card2_role = any(search_cached(pattern, card2_text) for pattern in role_patterns)
 
     enchantment_matters = [
         r'whenever.*enchantment enters',
@@ -4221,8 +4222,8 @@ def detect_role_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'constellation'
     ]
 
-    card1_matters = any(re.search(pattern, card1_text) for pattern in enchantment_matters)
-    card2_matters = any(re.search(pattern, card2_text) for pattern in enchantment_matters)
+    card1_matters = any(search_cached(pattern, card1_text) for pattern in enchantment_matters)
+    card2_matters = any(search_cached(pattern, card2_text) for pattern in enchantment_matters)
 
     if card1_role and card2_matters:
         return {
@@ -4299,8 +4300,8 @@ def detect_modified_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'enchanted creatures you control'
     ]
 
-    card1_matters = any(re.search(pattern, card1_text) for pattern in modified_matters_patterns)
-    card2_matters = any(re.search(pattern, card2_text) for pattern in modified_matters_patterns)
+    card1_matters = any(search_cached(pattern, card1_text) for pattern in modified_matters_patterns)
+    card2_matters = any(search_cached(pattern, card2_text) for pattern in modified_matters_patterns)
 
     modifier_patterns = [
         r'equipment',
@@ -4354,8 +4355,8 @@ def detect_ninjutsu_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'horsemanship'
     ]
 
-    card1_evasion = any(re.search(pattern, card1_text) for pattern in evasion_patterns)
-    card2_evasion = any(re.search(pattern, card2_text) for pattern in evasion_patterns)
+    card1_evasion = any(search_cached(pattern, card1_text) for pattern in evasion_patterns)
+    card2_evasion = any(search_cached(pattern, card2_text) for pattern in evasion_patterns)
 
     if card1_ninjutsu and card2_evasion:
         return {
@@ -4394,8 +4395,8 @@ def detect_mutate_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'whenever.*creature enters'
     ]
 
-    card1_payoff = any(re.search(pattern, card1_text) for pattern in mutate_payoff_patterns)
-    card2_payoff = any(re.search(pattern, card2_text) for pattern in mutate_payoff_patterns)
+    card1_payoff = any(search_cached(pattern, card1_text) for pattern in mutate_payoff_patterns)
+    card2_payoff = any(search_cached(pattern, card2_text) for pattern in mutate_payoff_patterns)
 
     if card1_mutate and card2_payoff:
         return {
@@ -4487,8 +4488,8 @@ def detect_foretell_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'cast.*from exile'
     ]
 
-    card1_exile = any(re.search(pattern, card1_text) for pattern in exile_matters_patterns)
-    card2_exile = any(re.search(pattern, card2_text) for pattern in exile_matters_patterns)
+    card1_exile = any(search_cached(pattern, card1_text) for pattern in exile_matters_patterns)
+    card2_exile = any(search_cached(pattern, card2_text) for pattern in exile_matters_patterns)
 
     if card1_foretell and card2_exile:
         return {
@@ -4527,8 +4528,8 @@ def detect_boast_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'vigilance'
     ]
 
-    card1_untap = any(re.search(pattern, card1_text) for pattern in untap_creature_patterns)
-    card2_untap = any(re.search(pattern, card2_text) for pattern in untap_creature_patterns)
+    card1_untap = any(search_cached(pattern, card1_text) for pattern in untap_creature_patterns)
+    card2_untap = any(search_cached(pattern, card2_text) for pattern in untap_creature_patterns)
 
     if card1_boast and card2_untap:
         return {
@@ -4567,8 +4568,8 @@ def detect_backup_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'remove.*\+1/\+1 counter'
     ]
 
-    card1_payoff = any(re.search(pattern, card1_text) for pattern in counter_payoff_patterns)
-    card2_payoff = any(re.search(pattern, card2_text) for pattern in counter_payoff_patterns)
+    card1_payoff = any(search_cached(pattern, card1_text) for pattern in counter_payoff_patterns)
+    card2_payoff = any(search_cached(pattern, card2_text) for pattern in counter_payoff_patterns)
 
     if card1_backup and card2_payoff:
         return {
@@ -4607,8 +4608,8 @@ def detect_blitz_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'when.*dies'
     ]
 
-    card1_death = any(re.search(pattern, card1_text) for pattern in death_matters_patterns)
-    card2_death = any(re.search(pattern, card2_text) for pattern in death_matters_patterns)
+    card1_death = any(search_cached(pattern, card1_text) for pattern in death_matters_patterns)
+    card2_death = any(search_cached(pattern, card2_text) for pattern in death_matters_patterns)
 
     if card1_blitz and card2_death:
         return {
@@ -4722,8 +4723,8 @@ def detect_incubate_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'artifacts you control'
     ]
 
-    card1_synergy = any(re.search(pattern, card1_text) for pattern in token_synergy_patterns)
-    card2_synergy = any(re.search(pattern, card2_text) for pattern in token_synergy_patterns)
+    card1_synergy = any(search_cached(pattern, card1_text) for pattern in token_synergy_patterns)
+    card2_synergy = any(search_cached(pattern, card2_text) for pattern in token_synergy_patterns)
 
     if card1_incubate and card2_synergy:
         return {
@@ -4801,8 +4802,8 @@ def detect_kicker_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     kicker_patterns = [r'\bkicker\b', r'multikicker', r'was kicked']
 
-    card1_kicker = any(re.search(pattern, card1_text) for pattern in kicker_patterns)
-    card2_kicker = any(re.search(pattern, card2_text) for pattern in kicker_patterns)
+    card1_kicker = any(search_cached(pattern, card1_text) for pattern in kicker_patterns)
+    card2_kicker = any(search_cached(pattern, card2_text) for pattern in kicker_patterns)
 
     mana_gen_patterns = [
         r'add.*{[wubrgc]}',
@@ -4811,8 +4812,8 @@ def detect_kicker_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'cost.*less to cast'
     ]
 
-    card1_mana = any(re.search(pattern, card1_text) for pattern in mana_gen_patterns)
-    card2_mana = any(re.search(pattern, card2_text) for pattern in mana_gen_patterns)
+    card1_mana = any(search_cached(pattern, card1_text) for pattern in mana_gen_patterns)
+    card2_mana = any(search_cached(pattern, card2_text) for pattern in mana_gen_patterns)
 
     if card1_kicker and card2_mana:
         return {
@@ -4852,8 +4853,8 @@ def detect_overload_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'ritual'
     ]
 
-    card1_big_mana = any(re.search(pattern, card1_text) for pattern in big_mana_patterns)
-    card2_big_mana = any(re.search(pattern, card2_text) for pattern in big_mana_patterns)
+    card1_big_mana = any(search_cached(pattern, card1_text) for pattern in big_mana_patterns)
+    card2_big_mana = any(search_cached(pattern, card2_text) for pattern in big_mana_patterns)
 
     if card1_overload and card2_big_mana:
         return {
@@ -4894,8 +4895,8 @@ def detect_miracle_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'sensei\'s divining top'
     ]
 
-    card1_topdeck = any(re.search(pattern, card1_text) for pattern in topdeck_patterns)
-    card2_topdeck = any(re.search(pattern, card2_text) for pattern in topdeck_patterns)
+    card1_topdeck = any(search_cached(pattern, card1_text) for pattern in topdeck_patterns)
+    card2_topdeck = any(search_cached(pattern, card2_text) for pattern in topdeck_patterns)
 
     if card1_miracle and card2_topdeck:
         return {

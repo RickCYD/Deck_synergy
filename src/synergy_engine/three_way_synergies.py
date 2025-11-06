@@ -5,6 +5,241 @@ Detects synergies that require 3 specific cards to work together
 from typing import Dict, List, Optional
 import re
 
+# Pre-compile all regex patterns for performance
+# Equipment patterns
+EQUIPMENT_PATTERNS = [
+    re.compile(r'\bequipment\b'),
+    re.compile(r'equip \{'),
+    re.compile(r'attach.*to target creature'),
+    re.compile(r'living weapon')
+]
+
+EQUIPMENT_MATTERS_PATTERNS = [
+    re.compile(r'equipped creature'),
+    re.compile(r'whenever.*equipped'),
+    re.compile(r'when.*becomes equipped'),
+    re.compile(r'creatures you control with equipment'),
+    re.compile(r'for each equipment.*attached')
+]
+
+# Token/Aristocrats patterns
+TOKEN_PATTERNS = [
+    re.compile(r'create.*token'),
+    re.compile(r'create.*\d+/\d+.*token'),
+    re.compile(r'token.*creature'),
+    re.compile(r'at the beginning.*create.*token')
+]
+
+SAC_OUTLET_PATTERNS = [
+    re.compile(r'sacrifice.*creature'),
+    re.compile(r'sacrifice.*permanent'),
+    re.compile(r'sacrifice a creature:'),
+    re.compile(r'sacrifice a permanent:')
+]
+
+DEATH_PAYOFF_PATTERNS = [
+    re.compile(r'whenever.*creature.*dies'),
+    re.compile(r'whenever.*permanent.*dies'),
+    re.compile(r'when.*creature.*dies'),
+    re.compile(r'whenever.*creature you control dies'),
+    re.compile(r'whenever.*another creature dies')
+]
+
+# ETB/Flicker patterns
+ETB_PATTERNS = [
+    re.compile(r'when.*enters.*battlefield'),
+    re.compile(r'when.*enters'),
+    re.compile(r'evoke')
+]
+
+FLICKER_PATTERNS = [
+    re.compile(r'exile.*return.*battlefield'),
+    re.compile(r'exile.*return.*to the battlefield'),
+    re.compile(r'blink'),
+    re.compile(r'flicker'),
+    re.compile(r'return.*to.*hand.*return.*to.*battlefield')
+]
+
+ETB_MULTIPLIER_PATTERNS = [
+    re.compile(r'if.*permanent.*entering.*battlefield'),
+    re.compile(r'whenever.*creature.*enters.*battlefield'),
+    re.compile(r'whenever.*permanent.*enters'),
+    re.compile(r'enters.*battlefield.*abilities.*trigger.*additional'),
+    re.compile(r'panharmonicon')
+]
+
+# Mill/Reanimate patterns
+MILL_PATTERNS = [
+    re.compile(r'mill'),
+    re.compile(r'put.*from.*library.*graveyard'),
+    re.compile(r'entomb'),
+    re.compile(r'buried alive')
+]
+
+REANIMATE_PATTERNS = [
+    re.compile(r'return.*creature.*from.*graveyard.*battlefield'),
+    re.compile(r'put.*creature.*from.*graveyard.*onto.*battlefield'),
+    re.compile(r'reanimate'),
+    re.compile(r'animate dead')
+]
+
+# Spellslinger patterns
+COST_REDUCER_PATTERNS = [
+    re.compile(r'instant.*sorcery.*cost.*less'),
+    re.compile(r'spells.*cost.*less'),
+    re.compile(r'reduce.*cost.*instant'),
+    re.compile(r'reduce.*cost.*sorcery')
+]
+
+CANTRIP_PATTERNS = [
+    re.compile(r'draw.*card'),
+    re.compile(r'scry'),
+    re.compile(r'surveil')
+]
+
+SPELL_PAYOFF_PATTERNS = [
+    re.compile(r'whenever you cast.*instant'),
+    re.compile(r'whenever you cast.*sorcery'),
+    re.compile(r'whenever you cast.*spell'),
+    re.compile(r'storm'),
+    re.compile(r'for each instant.*sorcery'),
+    re.compile(r'prowess'),
+    re.compile(r'magecraft')
+]
+
+# Tap/Untap patterns
+TAP_VALUE_PATTERNS = [
+    re.compile(r'\{t\}:.*add'),
+    re.compile(r'\{t\}:.*draw'),
+    re.compile(r'\{t\}:.*create'),
+    re.compile(r'\{t\}:.*deal.*damage')
+]
+
+UNTAP_PATTERNS = [
+    re.compile(r'untap.*permanent'),
+    re.compile(r'untap.*creature'),
+    re.compile(r'untap.*artifact'),
+    re.compile(r'untap all'),
+    re.compile(r'seedborn muse'),
+    re.compile(r'unwinding clock')
+]
+
+# Discard patterns
+DRAW_PATTERNS = [
+    re.compile(r'draw.*cards'),
+    re.compile(r'each player draws'),
+    re.compile(r'wheel')
+]
+
+DISCARD_SYNERGY_PATTERNS = [
+    re.compile(r'whenever.*discard'),
+    re.compile(r'when.*discard'),
+    re.compile(r'if.*card.*discarded'),
+    re.compile(r'discard.*create'),
+    re.compile(r'discard.*draw')
+]
+
+MADNESS_PATTERNS = [
+    re.compile(r'madness'),
+    re.compile(r'flashback'),
+    re.compile(r'when.*discarded'),
+    re.compile(r'disturb'),
+    re.compile(r'retrace')
+]
+
+
+def _check_patterns(text: str, patterns: List[re.Pattern]) -> bool:
+    """Helper function to check if text matches any pattern"""
+    return any(pattern.search(text) for pattern in patterns)
+
+
+def categorize_cards_for_three_way(cards: List[Dict]) -> Dict[str, List[Dict]]:
+    """
+    Pre-categorize cards by their potential roles in three-way synergies.
+    This significantly speeds up three-way detection by filtering cards upfront.
+
+    Returns:
+        Dictionary mapping category names to lists of cards
+    """
+    categorized = {
+        'equipment': [],
+        'equipment_matters': [],
+        'creature': [],
+        'token_gen': [],
+        'sac_outlet': [],
+        'death_payoff': [],
+        'etb_creature': [],
+        'flicker': [],
+        'etb_multiplier': [],
+        'mill': [],
+        'reanimate': [],
+        'big_creature': [],
+        'cost_reducer': [],
+        'cantrip': [],
+        'spell_payoff': [],
+        'tap_value': [],
+        'untapper': [],
+        'draw': [],
+        'discard_synergy': [],
+        'madness': []
+    }
+
+    for card in cards:
+        card_text = card.get('oracle_text', '').lower()
+        card_type = card.get('type_line', '').lower()
+        cmc = card.get('cmc', 0)
+        keywords = [kw.lower() for kw in card.get('keywords', [])]
+
+        # Skip lands
+        if '//' not in card_type and 'land' in card_type:
+            continue
+        if 'error' in card:
+            continue
+
+        # Categorize by potential roles
+        if 'equipment' in card_type or _check_patterns(card_text, EQUIPMENT_PATTERNS):
+            categorized['equipment'].append(card)
+        if _check_patterns(card_text, EQUIPMENT_MATTERS_PATTERNS):
+            categorized['equipment_matters'].append(card)
+        if 'creature' in card_type:
+            categorized['creature'].append(card)
+            if cmc >= 6:
+                categorized['big_creature'].append(card)
+        if _check_patterns(card_text, TOKEN_PATTERNS):
+            categorized['token_gen'].append(card)
+        if _check_patterns(card_text, SAC_OUTLET_PATTERNS):
+            categorized['sac_outlet'].append(card)
+        if _check_patterns(card_text, DEATH_PAYOFF_PATTERNS):
+            categorized['death_payoff'].append(card)
+        if 'creature' in card_type and _check_patterns(card_text, ETB_PATTERNS):
+            categorized['etb_creature'].append(card)
+        if _check_patterns(card_text, FLICKER_PATTERNS):
+            categorized['flicker'].append(card)
+        if _check_patterns(card_text, ETB_MULTIPLIER_PATTERNS):
+            categorized['etb_multiplier'].append(card)
+        if _check_patterns(card_text, MILL_PATTERNS):
+            categorized['mill'].append(card)
+        if _check_patterns(card_text, REANIMATE_PATTERNS):
+            categorized['reanimate'].append(card)
+        if _check_patterns(card_text, COST_REDUCER_PATTERNS):
+            categorized['cost_reducer'].append(card)
+        if ('instant' in card_type or 'sorcery' in card_type) and cmc <= 2 and _check_patterns(card_text, CANTRIP_PATTERNS):
+            categorized['cantrip'].append(card)
+        if _check_patterns(card_text, SPELL_PAYOFF_PATTERNS):
+            categorized['spell_payoff'].append(card)
+        if _check_patterns(card_text, TAP_VALUE_PATTERNS):
+            categorized['tap_value'].append(card)
+        if _check_patterns(card_text, UNTAP_PATTERNS):
+            categorized['untapper'].append(card)
+        if _check_patterns(card_text, DRAW_PATTERNS):
+            categorized['draw'].append(card)
+        if _check_patterns(card_text, DISCARD_SYNERGY_PATTERNS):
+            categorized['discard_synergy'].append(card)
+        if 'madness' in keywords or 'flashback' in keywords or _check_patterns(card_text, MADNESS_PATTERNS):
+            categorized['madness'].append(card)
+
+    return categorized
+
 
 def detect_equipment_matters_three_way(card1: Dict, card2: Dict, card3: Dict) -> Optional[Dict]:
     """
@@ -13,46 +248,27 @@ def detect_equipment_matters_three_way(card1: Dict, card2: Dict, card3: Dict) ->
 
     Pattern: Equipment + Creature + Card that cares about equipped creatures
     """
-    equipment_patterns = [
-        r'\bequipment\b',
-        r'equip \{',
-        r'attach.*to target creature',
-        r'living weapon'
-    ]
-
-    equipment_matters_patterns = [
-        r'equipped creature',
-        r'whenever.*equipped',
-        r'when.*becomes equipped',
-        r'creatures you control with equipment',
-        r'for each equipment.*attached'
-    ]
-
-    # Get card info
-    cards = [card1, card2, card3]
-    equipment_card = None
-    creature_card = None
-    matters_card = None
-
-    for card in cards:
+    # Cache card attributes
+    cards_data = []
+    for card in [card1, card2, card3]:
         card_text = card.get('oracle_text', '').lower()
         card_type = card.get('type_line', '').lower()
+        cards_data.append({
+            'card': card,
+            'text': card_text,
+            'type': card_type,
+            'is_equipment': 'equipment' in card_type or _check_patterns(card_text, EQUIPMENT_PATTERNS),
+            'is_creature': 'creature' in card_type,
+            'matters': _check_patterns(card_text, EQUIPMENT_MATTERS_PATTERNS)
+        })
 
-        # Check if equipment
-        if 'equipment' in card_type or any(re.search(p, card_text) for p in equipment_patterns):
-            if not equipment_card:
-                equipment_card = card
-        # Check if creature
-        elif 'creature' in card_type:
-            if not creature_card:
-                creature_card = card
-        # Check if equipment matters
-        if any(re.search(p, card_text) for p in equipment_matters_patterns):
-            if not matters_card:
-                matters_card = card
+    # Find components
+    equipment_card = next((d['card'] for d in cards_data if d['is_equipment']), None)
+    creature_card = next((d['card'] for d in cards_data if d['is_creature'] and not d['is_equipment']), None)
+    matters_card = next((d['card'] for d in cards_data if d['matters'] and d['card'] != equipment_card), None)
 
     # Need all three components
-    if equipment_card and creature_card and matters_card and matters_card != equipment_card:
+    if equipment_card and creature_card and matters_card:
         return {
             'name': 'Equipment Engine',
             'description': f"{equipment_card['name']} equips {creature_card['name']}, {matters_card['name']} provides additional value for equipped creatures",
@@ -72,45 +288,22 @@ def detect_token_aristocrats_three_way(card1: Dict, card2: Dict, card3: Dict) ->
 
     Pattern: Token generator + Sac outlet + Death trigger payoff
     """
-    token_patterns = [
-        r'create.*token',
-        r'create.*\d+/\d+.*token',
-        r'token.*creature',
-        r'at the beginning.*create.*token'
-    ]
-
-    sac_outlet_patterns = [
-        r'sacrifice.*creature',
-        r'sacrifice.*permanent',
-        r'sacrifice a creature:',
-        r'sacrifice a permanent:'
-    ]
-
-    death_payoff_patterns = [
-        r'whenever.*creature.*dies',
-        r'whenever.*permanent.*dies',
-        r'when.*creature.*dies',
-        r'whenever.*creature you control dies',
-        r'whenever.*another creature dies'
-    ]
-
-    cards = [card1, card2, card3]
-    token_gen = None
-    sac_outlet = None
-    death_payoff = None
-
-    for card in cards:
+    # Cache card attributes
+    cards_data = []
+    for card in [card1, card2, card3]:
         card_text = card.get('oracle_text', '').lower()
+        cards_data.append({
+            'card': card,
+            'text': card_text,
+            'is_token_gen': _check_patterns(card_text, TOKEN_PATTERNS),
+            'is_sac_outlet': _check_patterns(card_text, SAC_OUTLET_PATTERNS),
+            'is_death_payoff': _check_patterns(card_text, DEATH_PAYOFF_PATTERNS)
+        })
 
-        if any(re.search(p, card_text) for p in token_patterns):
-            if not token_gen:
-                token_gen = card
-        if any(re.search(p, card_text) for p in sac_outlet_patterns):
-            if not sac_outlet:
-                sac_outlet = card
-        if any(re.search(p, card_text) for p in death_payoff_patterns):
-            if not death_payoff:
-                death_payoff = card
+    # Find components
+    token_gen = next((d['card'] for d in cards_data if d['is_token_gen']), None)
+    sac_outlet = next((d['card'] for d in cards_data if d['is_sac_outlet']), None)
+    death_payoff = next((d['card'] for d in cards_data if d['is_death_payoff']), None)
 
     if token_gen and sac_outlet and death_payoff:
         return {
@@ -132,51 +325,25 @@ def detect_etb_flicker_payoff_three_way(card1: Dict, card2: Dict, card3: Dict) -
 
     Pattern: ETB creature + Flicker spell + ETB doubler/payoff
     """
-    etb_patterns = [
-        r'when.*enters.*battlefield',
-        r'when.*enters',
-        r'evoke'
-    ]
-
-    flicker_patterns = [
-        r'exile.*return.*battlefield',
-        r'exile.*return.*to the battlefield',
-        r'blink',
-        r'flicker',
-        r'return.*to.*hand.*return.*to.*battlefield'
-    ]
-
-    etb_multiplier_patterns = [
-        r'if.*permanent.*entering.*battlefield',
-        r'whenever.*creature.*enters.*battlefield',
-        r'whenever.*permanent.*enters',
-        r'enters.*battlefield.*abilities.*trigger.*additional',
-        r'panharmonicon'
-    ]
-
-    cards = [card1, card2, card3]
-    etb_creature = None
-    flicker = None
-    multiplier = None
-
-    for card in cards:
+    # Cache card attributes
+    cards_data = []
+    for card in [card1, card2, card3]:
         card_text = card.get('oracle_text', '').lower()
         card_type = card.get('type_line', '').lower()
+        has_etb = _check_patterns(card_text, ETB_PATTERNS)
+        cards_data.append({
+            'card': card,
+            'text': card_text,
+            'type': card_type,
+            'is_etb_creature': 'creature' in card_type and has_etb,
+            'is_flicker': _check_patterns(card_text, FLICKER_PATTERNS),
+            'is_multiplier': _check_patterns(card_text, ETB_MULTIPLIER_PATTERNS)
+        })
 
-        # ETB creature (must be creature with ETB)
-        if 'creature' in card_type and any(re.search(p, card_text) for p in etb_patterns):
-            if not etb_creature:
-                etb_creature = card
-
-        # Flicker effect
-        if any(re.search(p, card_text) for p in flicker_patterns):
-            if not flicker:
-                flicker = card
-
-        # ETB multiplier
-        if any(re.search(p, card_text) for p in etb_multiplier_patterns):
-            if not multiplier:
-                multiplier = card
+    # Find components
+    etb_creature = next((d['card'] for d in cards_data if d['is_etb_creature']), None)
+    flicker = next((d['card'] for d in cards_data if d['is_flicker']), None)
+    multiplier = next((d['card'] for d in cards_data if d['is_multiplier']), None)
 
     if etb_creature and flicker and multiplier:
         return {
@@ -198,42 +365,26 @@ def detect_mill_reanimate_target_three_way(card1: Dict, card2: Dict, card3: Dict
 
     Pattern: Graveyard filler + Reanimation + High-value creature
     """
-    mill_patterns = [
-        r'mill',
-        r'put.*from.*library.*graveyard',
-        r'entomb',
-        r'buried alive'
-    ]
-
-    reanimate_patterns = [
-        r'return.*creature.*from.*graveyard.*battlefield',
-        r'put.*creature.*from.*graveyard.*onto.*battlefield',
-        r'reanimate',
-        r'animate dead'
-    ]
-
-    cards = [card1, card2, card3]
-    mill_card = None
-    reanimate_card = None
-    target = None
-
-    for card in cards:
+    # Cache card attributes
+    cards_data = []
+    for card in [card1, card2, card3]:
         card_text = card.get('oracle_text', '').lower()
         card_type = card.get('type_line', '').lower()
         cmc = card.get('cmc', 0)
+        cards_data.append({
+            'card': card,
+            'text': card_text,
+            'type': card_type,
+            'cmc': cmc,
+            'is_mill': _check_patterns(card_text, MILL_PATTERNS),
+            'is_reanimate': _check_patterns(card_text, REANIMATE_PATTERNS),
+            'is_big_creature': 'creature' in card_type and cmc >= 6
+        })
 
-        if any(re.search(p, card_text) for p in mill_patterns):
-            if not mill_card:
-                mill_card = card
-
-        if any(re.search(p, card_text) for p in reanimate_patterns):
-            if not reanimate_card:
-                reanimate_card = card
-
-        # High-value creature (CMC 6+, or legend, or powerful keywords)
-        if 'creature' in card_type and cmc >= 6:
-            if not target:
-                target = card
+    # Find components
+    mill_card = next((d['card'] for d in cards_data if d['is_mill']), None)
+    reanimate_card = next((d['card'] for d in cards_data if d['is_reanimate']), None)
+    target = next((d['card'] for d in cards_data if d['is_big_creature']), None)
 
     if mill_card and reanimate_card and target:
         return {
@@ -255,52 +406,28 @@ def detect_cost_reducer_cantrip_payoff_three_way(card1: Dict, card2: Dict, card3
 
     Pattern: Spell cost reducer + Cheap spell + Spell payoff
     """
-    cost_reducer_patterns = [
-        r'instant.*sorcery.*cost.*less',
-        r'spells.*cost.*less',
-        r'reduce.*cost.*instant',
-        r'reduce.*cost.*sorcery'
-    ]
-
-    cantrip_patterns = [
-        r'draw.*card',
-        r'scry',
-        r'surveil'
-    ]
-
-    spell_payoff_patterns = [
-        r'whenever you cast.*instant',
-        r'whenever you cast.*sorcery',
-        r'whenever you cast.*spell',
-        r'storm',
-        r'for each instant.*sorcery',
-        r'prowess',
-        r'magecraft'
-    ]
-
-    cards = [card1, card2, card3]
-    cost_reducer = None
-    cantrip = None
-    payoff = None
-
-    for card in cards:
+    # Cache card attributes
+    cards_data = []
+    for card in [card1, card2, card3]:
         card_text = card.get('oracle_text', '').lower()
         card_type = card.get('type_line', '').lower()
         cmc = card.get('cmc', 0)
+        is_cheap_spell = ('instant' in card_type or 'sorcery' in card_type) and cmc <= 2
+        has_draw = _check_patterns(card_text, CANTRIP_PATTERNS)
+        cards_data.append({
+            'card': card,
+            'text': card_text,
+            'type': card_type,
+            'cmc': cmc,
+            'is_cost_reducer': _check_patterns(card_text, COST_REDUCER_PATTERNS),
+            'is_cantrip': is_cheap_spell and has_draw,
+            'is_payoff': _check_patterns(card_text, SPELL_PAYOFF_PATTERNS)
+        })
 
-        if any(re.search(p, card_text) for p in cost_reducer_patterns):
-            if not cost_reducer:
-                cost_reducer = card
-
-        # Cheap instant/sorcery with draw
-        if ('instant' in card_type or 'sorcery' in card_type) and cmc <= 2:
-            if any(re.search(p, card_text) for p in cantrip_patterns):
-                if not cantrip:
-                    cantrip = card
-
-        if any(re.search(p, card_text) for p in spell_payoff_patterns):
-            if not payoff:
-                payoff = card
+    # Find components
+    cost_reducer = next((d['card'] for d in cards_data if d['is_cost_reducer']), None)
+    cantrip = next((d['card'] for d in cards_data if d['is_cantrip']), None)
+    payoff = next((d['card'] for d in cards_data if d['is_payoff']), None)
 
     if cost_reducer and cantrip and payoff:
         return {
@@ -322,48 +449,29 @@ def detect_tap_untap_combo_three_way(card1: Dict, card2: Dict, card3: Dict) -> O
 
     Pattern: Tap ability + Untap effect + Additional untapper
     """
-    tap_value_patterns = [
-        r'\{t\}:.*add',
-        r'\{t\}:.*draw',
-        r'\{t\}:.*create',
-        r'\{t\}:.*deal.*damage'
-    ]
-
-    untap_patterns = [
-        r'untap.*permanent',
-        r'untap.*creature',
-        r'untap.*artifact',
-        r'untap all',
-        r'seedborn muse',
-        r'unwinding clock'
-    ]
-
-    cards = [card1, card2, card3]
-    tap_card = None
-    untapper1 = None
-    untapper2 = None
-
-    for card in cards:
+    # Cache card attributes
+    cards_data = []
+    for card in [card1, card2, card3]:
         card_text = card.get('oracle_text', '').lower()
+        cards_data.append({
+            'card': card,
+            'text': card_text,
+            'is_tap_value': _check_patterns(card_text, TAP_VALUE_PATTERNS),
+            'is_untapper': _check_patterns(card_text, UNTAP_PATTERNS)
+        })
 
-        if any(re.search(p, card_text) for p in tap_value_patterns):
-            if not tap_card:
-                tap_card = card
+    # Find components
+    tap_card = next((d['card'] for d in cards_data if d['is_tap_value']), None)
+    untappers = [d['card'] for d in cards_data if d['is_untapper']]
 
-        if any(re.search(p, card_text) for p in untap_patterns):
-            if not untapper1:
-                untapper1 = card
-            elif not untapper2 and card != untapper1:
-                untapper2 = card
-
-    if tap_card and untapper1 and untapper2:
+    if tap_card and len(untappers) >= 2:
         return {
             'name': 'Tap/Untap Engine',
-            'description': f"{tap_card['name']} taps for value, {untapper1['name']} and {untapper2['name']} keep untapping it",
+            'description': f"{tap_card['name']} taps for value, {untappers[0]['name']} and {untappers[1]['name']} keep untapping it",
             'value': 6.0,
             'category': 'role_interaction',
             'subcategory': 'tap_untap_engine',
-            'cards': [tap_card['name'], untapper1['name'], untapper2['name']]
+            'cards': [tap_card['name'], untappers[0]['name'], untappers[1]['name']]
         }
 
     return None
@@ -376,49 +484,25 @@ def detect_draw_discard_madness_three_way(card1: Dict, card2: Dict, card3: Dict)
 
     Pattern: Draw spell + Discard synergy + Card that wants to be discarded
     """
-    draw_patterns = [
-        r'draw.*cards',
-        r'each player draws',
-        r'wheel'
-    ]
-
-    discard_synergy_patterns = [
-        r'whenever.*discard',
-        r'when.*discard',
-        r'if.*card.*discarded',
-        r'discard.*create',
-        r'discard.*draw'
-    ]
-
-    madness_patterns = [
-        r'madness',
-        r'flashback',
-        r'when.*discarded',
-        r'disturb',
-        r'retrace'
-    ]
-
-    cards = [card1, card2, card3]
-    draw_card = None
-    discard_synergy = None
-    madness_card = None
-
-    for card in cards:
+    # Cache card attributes
+    cards_data = []
+    for card in [card1, card2, card3]:
         card_text = card.get('oracle_text', '').lower()
         keywords = [kw.lower() for kw in card.get('keywords', [])]
+        has_madness_keyword = 'madness' in keywords or 'flashback' in keywords
+        has_madness_text = _check_patterns(card_text, MADNESS_PATTERNS)
+        cards_data.append({
+            'card': card,
+            'text': card_text,
+            'is_draw': _check_patterns(card_text, DRAW_PATTERNS),
+            'is_discard_synergy': _check_patterns(card_text, DISCARD_SYNERGY_PATTERNS),
+            'is_madness': has_madness_keyword or has_madness_text
+        })
 
-        if any(re.search(p, card_text) for p in draw_patterns):
-            if not draw_card:
-                draw_card = card
-
-        if any(re.search(p, card_text) for p in discard_synergy_patterns):
-            if not discard_synergy:
-                discard_synergy = card
-
-        if any(re.search(p, card_text) for p in madness_patterns) or \
-           'madness' in keywords or 'flashback' in keywords:
-            if not madness_card:
-                madness_card = card
+    # Find components
+    draw_card = next((d['card'] for d in cards_data if d['is_draw']), None)
+    discard_synergy = next((d['card'] for d in cards_data if d['is_discard_synergy']), None)
+    madness_card = next((d['card'] for d in cards_data if d['is_madness']), None)
 
     if draw_card and discard_synergy and madness_card:
         return {
