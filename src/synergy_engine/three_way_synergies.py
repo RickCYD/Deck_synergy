@@ -42,7 +42,7 @@ DEATH_PAYOFF_PATTERNS = [
 
 # ETB/Flicker patterns
 ETB_PATTERNS = [
-    re.compile(r'when.*enters.*battlefield.*,\s*(you|target|each|draw|deal|create|gain|put|destroy|exile|return|search)'),  # Must have payoff
+    re.compile(r'when.*enters.*battlefield.*(you|target|each|draw|deal|create|gain|put|destroy|exile|return|search)'),  # Must have payoff
     re.compile(r'evoke')
 ]
 
@@ -54,9 +54,9 @@ FLICKER_PATTERNS = [
 ]
 
 ETB_MULTIPLIER_PATTERNS = [
-    re.compile(r'if.*permanent.*entering.*battlefield.*cause.*trigger'),
-    re.compile(r'whenever.*creature.*enters.*battlefield.*(you|target|each)'),  # Must have payoff
-    re.compile(r'enters.*battlefield.*trigger.*additional'),
+    re.compile(r'if.*(artifact|creature|permanent).*enter(s|ing).*battlefield.*trigger'),
+    re.compile(r'whenever.*(creature|permanent).*enters.*battlefield.*(you|target|each|draw|create|gain)'),  # Must have payoff
+    re.compile(r'trigger(s|ed)?.*additional'),  # Panharmonicon effect
     re.compile(r'panharmonicon'),
     re.compile(r'yarok')
 ]
