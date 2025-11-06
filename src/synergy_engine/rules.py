@@ -2507,16 +2507,27 @@ def detect_equipment_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'living weapon'  # Equipment that creates tokens
     ]
 
-    # Equipment matters patterns
+    # Equipment tutor patterns (specific - check these first)
+    equipment_tutor_patterns = [
+        r'search.*library.*equipment',
+        r'search.*library.*for.*equipment'
+    ]
+
+    # Equipment recursion patterns
+    equipment_recursion_patterns = [
+        r'equipment.*from.*graveyard',
+        r'return.*equipment.*from.*graveyard'
+    ]
+
+    # Equipment matters patterns (general)
     equipment_matters_patterns = [
         r'whenever.*equipped',
         r'when.*becomes equipped',
         r'equipped creature',
-        r'search.*library.*equipment',
-        r'equipment.*from.*graveyard',
         r'equipment.*cost.*to equip',
         r'equipment.*you control',
-        r'creatures you control with equipment'
+        r'creatures you control with equipment',
+        r'whenever.*equipment.*enters'
     ]
 
     # Equipment synergy keywords
@@ -2531,14 +2542,59 @@ def detect_equipment_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_is_equipment = 'equipment' in card1_type or any(re.search(pattern, card1_text) for pattern in equipment_patterns)
     card2_is_equipment = 'equipment' in card2_type or any(re.search(pattern, card2_text) for pattern in equipment_patterns)
 
+    # Check for specific equipment interactions (tutors, recursion, matters)
+    card1_tutors_equipment = any(re.search(pattern, card1_text) for pattern in equipment_tutor_patterns)
+    card2_tutors_equipment = any(re.search(pattern, card2_text) for pattern in equipment_tutor_patterns)
+
+    card1_recurs_equipment = any(re.search(pattern, card1_text) for pattern in equipment_recursion_patterns)
+    card2_recurs_equipment = any(re.search(pattern, card2_text) for pattern in equipment_recursion_patterns)
+
     card1_cares_equipment = any(re.search(pattern, card1_text) for pattern in equipment_matters_patterns)
     card2_cares_equipment = any(re.search(pattern, card2_text) for pattern in equipment_matters_patterns)
 
-    # Equipment + equipment matters
+    # FIXED: Equipment + tutor (most specific)
+    if card1_is_equipment and card2_tutors_equipment:
+        return {
+            'name': 'Equipment Tutor',
+            'description': f"{card2['name']} can tutor for equipment like {card1['name']}",
+            'value': 3.5,
+            'category': 'card_advantage',
+            'subcategory': 'tutor_target'
+        }
+
+    if card2_is_equipment and card1_tutors_equipment:
+        return {
+            'name': 'Equipment Tutor',
+            'description': f"{card1['name']} can tutor for equipment like {card2['name']}",
+            'value': 3.5,
+            'category': 'card_advantage',
+            'subcategory': 'tutor_target'
+        }
+
+    # FIXED: Equipment + recursion
+    if card1_is_equipment and card2_recurs_equipment:
+        return {
+            'name': 'Equipment Recursion',
+            'description': f"{card2['name']} can recur equipment like {card1['name']} from graveyard",
+            'value': 3.0,
+            'category': 'role_interaction',
+            'subcategory': 'recursion'
+        }
+
+    if card2_is_equipment and card1_recurs_equipment:
+        return {
+            'name': 'Equipment Recursion',
+            'description': f"{card1['name']} can recur equipment like {card2['name']} from graveyard",
+            'value': 3.0,
+            'category': 'role_interaction',
+            'subcategory': 'recursion'
+        }
+
+    # FIXED: Equipment + equipment matters (general)
     if card1_is_equipment and card2_cares_equipment:
         return {
             'name': 'Equipment Synergy',
-            'description': f"{card2['name']} synergizes with equipment like {card1['name']}",
+            'description': f"{card2['name']} cares about equipment, {card1['name']} is equipment",
             'value': 3.0,
             'category': 'type_synergy',
             'subcategory': 'equipment_matters'
@@ -2547,7 +2603,7 @@ def detect_equipment_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     if card2_is_equipment and card1_cares_equipment:
         return {
             'name': 'Equipment Synergy',
-            'description': f"{card1['name']} synergizes with equipment like {card2['name']}",
+            'description': f"{card1['name']} cares about equipment, {card2['name']} is equipment",
             'value': 3.0,
             'category': 'type_synergy',
             'subcategory': 'equipment_matters'
