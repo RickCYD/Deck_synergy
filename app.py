@@ -410,6 +410,71 @@ app.layout = html.Div([
         ], style={'display': 'flex', 'gap': '12px'}),
     ], style={'padding': '0 20px', 'marginTop': '16px'}),
 
+    # Fuzzy Card Search Section
+    html.Div([
+        html.Div([
+            html.H3("Search Cards", style={
+                'color': '#2c3e50',
+                'marginBottom': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold'
+            }),
+            html.Div([
+                dcc.Input(
+                    id='card-search-input',
+                    type='text',
+                    placeholder='Type card name, type, or color...',
+                    debounce=True,
+                    style={
+                        'width': '100%',
+                        'padding': '10px',
+                        'fontSize': '14px',
+                        'border': '2px solid #bdc3c7',
+                        'borderRadius': '6px',
+                        'outline': 'none',
+                        'transition': 'border-color 0.2s'
+                    }
+                ),
+            ], style={'marginBottom': '12px'}),
+            html.Div(
+                id='card-search-results',
+                children=[],
+                style={
+                    'maxHeight': '300px',
+                    'overflowY': 'auto',
+                    'overflowX': 'hidden'
+                }
+            ),
+            html.Div([
+                html.Button(
+                    'Clear Search',
+                    id='clear-search-button',
+                    n_clicks=0,
+                    style={
+                        'padding': '6px 12px',
+                        'backgroundColor': '#95a5a6',
+                        'color': 'white',
+                        'border': 'none',
+                        'cursor': 'pointer',
+                        'fontSize': '12px',
+                        'fontWeight': 'bold',
+                        'borderRadius': '4px',
+                        'marginTop': '8px',
+                        'display': 'none'
+                    }
+                ),
+            ], style={'display': 'flex', 'alignItems': 'center'})
+        ], style={
+            'backgroundColor': '#ffffff',
+            'borderRadius': '6px',
+            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+            'padding': '16px',
+        })
+    ], style={'padding': '0 20px', 'marginTop': '16px'}),
+
+    # Store for selected card from search
+    dcc.Store(id='search-selected-card-store', data=None),
+
     # Role Filter Score Cards
     html.Div([
         html.Div([
@@ -3081,6 +3146,258 @@ def toggle_card_image_modal(view_clicks_list, close_clicks, modal_clicks, img_cl
                     print(f"[DEBUG MODAL] No image URL found for card '{card_name}'")
 
     return dash.no_update, dash.no_update
+
+
+# ============================================================================
+# Fuzzy Card Search Callbacks
+# ============================================================================
+
+@app.callback(
+    [Output('card-search-results', 'children'),
+     Output('clear-search-button', 'style')],
+    [Input('card-search-input', 'value'),
+     Input('clear-search-button', 'n_clicks')],
+    [State('current-deck-file-store', 'data'),
+     State('clear-search-button', 'style')],
+    prevent_initial_call=True
+)
+def handle_card_search(search_query, clear_clicks, current_deck_file, clear_button_style):
+    """Handle card search with fuzzy matching and display results"""
+    from src.utils.fuzzy_search import CardFuzzySearcher
+
+    ctx = callback_context
+    if not ctx.triggered:
+        return [], clear_button_style
+
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    # Handle clear button click
+    if trigger_id == 'clear-search-button':
+        clear_button_style['display'] = 'none'
+        return [], clear_button_style
+
+    # Handle search input
+    if not search_query or not current_deck_file:
+        clear_button_style['display'] = 'none'
+        return [], clear_button_style
+
+    try:
+        # Load current deck
+        with open(current_deck_file, 'r') as f:
+            deck_data = json.load(f)
+
+        cards = deck_data.get('cards', [])
+
+        if not cards:
+            return [html.Div("No cards in deck", style={'color': '#7f8c8d', 'fontSize': '12px', 'padding': '8px'})], clear_button_style
+
+        # Perform fuzzy search
+        searcher = CardFuzzySearcher()
+        matches = searcher.search(search_query, cards, limit=15)
+
+        if not matches:
+            return [html.Div(
+                f"No cards found matching '{search_query}'",
+                style={
+                    'color': '#7f8c8d',
+                    'fontSize': '12px',
+                    'padding': '8px',
+                    'fontStyle': 'italic'
+                }
+            )], clear_button_style
+
+        # Create result items
+        result_items = []
+        for i, (card, score, reason) in enumerate(matches):
+            card_name = card.get('name', 'Unknown')
+            card_type = card.get('type_line', '')
+            mana_cost = card.get('mana_cost', '')
+            colors = card.get('colors', [])
+
+            # Determine color badge
+            if not colors:
+                color_badge = '◯'  # Colorless
+                color_style = {'color': '#95a5a6'}
+            else:
+                color_badge = ''.join(colors)
+                color_map = {
+                    'W': '#f9f7e8',
+                    'U': '#0e68ab',
+                    'B': '#150b00',
+                    'R': '#d3202a',
+                    'G': '#00733e'
+                }
+                # Use first color for badge color
+                first_color = colors[0] if colors else 'W'
+                badge_color = color_map.get(first_color, '#95a5a6')
+                color_style = {
+                    'color': 'white' if first_color in ['U', 'B', 'R', 'G'] else '#333',
+                    'backgroundColor': badge_color,
+                    'padding': '2px 6px',
+                    'borderRadius': '3px',
+                    'fontSize': '10px',
+                    'fontWeight': 'bold'
+                }
+
+            result_items.append(
+                html.Div([
+                    html.Div([
+                        html.Div([
+                            html.Span(
+                                card_name,
+                                style={
+                                    'fontWeight': 'bold',
+                                    'color': '#2c3e50',
+                                    'fontSize': '13px',
+                                    'marginRight': '8px'
+                                }
+                            ),
+                            html.Span(
+                                color_badge,
+                                style=color_style
+                            ),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}),
+                        html.Div([
+                            html.Span(
+                                card_type[:40] + ('...' if len(card_type) > 40 else ''),
+                                style={
+                                    'color': '#7f8c8d',
+                                    'fontSize': '11px',
+                                    'marginRight': '8px'
+                                }
+                            ),
+                            html.Span(
+                                f"{int(score * 100)}% • {reason}",
+                                style={
+                                    'color': '#95a5a6',
+                                    'fontSize': '10px',
+                                    'fontStyle': 'italic'
+                                }
+                            )
+                        ])
+                    ], style={'flex': '1'}),
+                ],
+                id={'type': 'search-result-item', 'index': card_name},
+                n_clicks=0,
+                style={
+                    'display': 'flex',
+                    'padding': '10px',
+                    'borderBottom': '1px solid #ecf0f1',
+                    'cursor': 'pointer',
+                    'transition': 'background-color 0.2s',
+                    'backgroundColor': '#ffffff'
+                },
+                className='search-result-item'
+                )
+            )
+
+        # Show clear button
+        clear_button_style['display'] = 'block'
+
+        return result_items, clear_button_style
+
+    except Exception as e:
+        print(f"Error in card search: {e}")
+        import traceback
+        traceback.print_exc()
+        return [html.Div(
+            f"Error: {str(e)}",
+            style={'color': '#e74c3c', 'fontSize': '12px', 'padding': '8px'}
+        )], clear_button_style
+
+
+@app.callback(
+    [Output('search-selected-card-store', 'data'),
+     Output('card-graph', 'stylesheet', allow_duplicate=True)],
+    Input({'type': 'search-result-item', 'index': ALL}, 'n_clicks'),
+    [State('card-graph', 'stylesheet'),
+     State('current-deck-file-store', 'data')],
+    prevent_initial_call=True
+)
+def select_card_from_search(n_clicks_list, current_stylesheet, current_deck_file):
+    """Handle card selection from search results and highlight in graph"""
+    ctx = callback_context
+
+    if not ctx.triggered or not current_stylesheet:
+        return dash.no_update, dash.no_update
+
+    # Find which card was clicked
+    trigger = ctx.triggered[0]
+    if not trigger['value'] or trigger['value'] == 0:
+        return dash.no_update, dash.no_update
+
+    # Extract card name from trigger
+    try:
+        trigger_id = eval(trigger['prop_id'].split('.')[0])
+        card_name = trigger_id['index']
+    except:
+        return dash.no_update, dash.no_update
+
+    print(f"[DEBUG SEARCH] Selected card: {card_name}")
+
+    # Create new stylesheet with highlighted card
+    new_stylesheet = current_stylesheet.copy()
+
+    # Add highlight style for selected card
+    highlight_style = {
+        'selector': f'node[id = "{card_name}"]',
+        'style': {
+            'border-width': '6px',
+            'border-color': '#f39c12',
+            'border-style': 'solid',
+            'z-index': '9999',
+            'overlay-opacity': 0,
+            'background-opacity': 1
+        }
+    }
+
+    # Dim all other nodes
+    dim_style = {
+        'selector': 'node',
+        'style': {
+            'opacity': '0.3'
+        }
+    }
+
+    # Keep selected card and its neighbors bright
+    neighbor_style = {
+        'selector': f'node[id = "{card_name}"], edge[source = "{card_name}"], edge[target = "{card_name}"]',
+        'style': {
+            'opacity': '1'
+        }
+    }
+
+    # Also brighten connected nodes
+    connected_nodes_style = {
+        'selector': f'node[id = "{card_name}"]',
+        'style': {
+            'opacity': '1'
+        }
+    }
+
+    # Remove any existing search highlight styles
+    new_stylesheet = [s for s in new_stylesheet if 'search-highlight' not in str(s.get('selector', ''))]
+
+    # Add new search highlight styles
+    new_stylesheet.extend([
+        {**dim_style, 'search-highlight': True},
+        {**highlight_style, 'search-highlight': True},
+        {**neighbor_style, 'search-highlight': True}
+    ])
+
+    return card_name, new_stylesheet
+
+
+@app.callback(
+    Output('card-search-input', 'value'),
+    Input('clear-search-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def clear_search_input(n_clicks):
+    """Clear the search input when clear button is clicked"""
+    if n_clicks:
+        return ''
+    return dash.no_update
 
 
 if __name__ == '__main__':
