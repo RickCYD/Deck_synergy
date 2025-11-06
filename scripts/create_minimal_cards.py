@@ -37,6 +37,7 @@ def create_minimal_cards():
     # - Synergy detection (oracle_text, type_line, keywords, etc.)
     # - Role assignment (oracle_text, type_line, mana_cost, etc.)
     # - Graph visualization (name, image_uris)
+    # - Format legality validation (legalities)
     minimal_cards = []
     for card in full_cards:
         minimal = {
@@ -59,6 +60,9 @@ def create_minimal_cards():
 
             # Mana production (for ramp detection)
             'produced_mana': card.get('produced_mana', []),
+
+            # Format legality (needed to filter non-Commander legal cards)
+            'legalities': card.get('legalities', {}),
 
             # Visualization (for graph display and card preview)
             # Include all image formats: normal (full card), large, png, art_crop, border_crop, small
