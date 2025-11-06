@@ -64,18 +64,21 @@ ETB_MULTIPLIER_PATTERNS = [
 
 # Mill/Reanimate patterns
 MILL_PATTERNS = [
-    re.compile(r'mill \d+'),  # Must specify a number
-    re.compile(r'put.*top.*cards.*from.*library.*into.*graveyard'),
+    re.compile(r'mills? (a|\d+|one|two|three|four|five|that many) cards?'),  # "mill X cards" or "mills X card"
+    re.compile(r'put.*cards?.*from.*(your|their|that player\'?s) library.*into.*(your|their|that player\'?s) graveyard'),  # Long form
     re.compile(r'entomb'),
-    re.compile(r'buried alive')
+    re.compile(r'buried alive'),
+    re.compile(r'dredge \d+')  # Dredge is self-mill
 ]
 
 REANIMATE_PATTERNS = [
-    re.compile(r'return (target|a|up to) (creature|permanent).*card.*from.*graveyard.*to.*battlefield'),
-    re.compile(r'put.*creature.*card.*from.*graveyard.*onto.*battlefield'),
+    re.compile(r'return (target|a|an|up to|each).*creature.*card.*from.*(your|a) graveyard.*(to|onto) the battlefield'),
+    re.compile(r'put.*(a|all|each|target).*creature.*card.*from.*(your|a) graveyard onto the battlefield'),
+    re.compile(r'return (it|that card|them) to the battlefield'),  # Context-dependent but common in reanimator
     re.compile(r'reanimate'),
     re.compile(r'animate dead'),
-    re.compile(r'living death')
+    re.compile(r'living death'),
+    re.compile(r'puts all.*(cards|creatures).*onto the battlefield')  # Mass reanimate like Living Death
 ]
 
 # Spellslinger patterns
