@@ -27,12 +27,13 @@ TOKEN_PATTERNS = [
     re.compile(r'create (one|two|three|\d+|an?).*\d+/\d+.*token'),  # Must specify creating X/X tokens
     re.compile(r'at the beginning.*create.*\d+/\d+.*token'),  # Recurring token generation
     re.compile(r'create.*\d+/\d+.*creature token'),  # Explicit creature token creation
+    re.compile(r'create.*token.*copy of.*creature'),  # Copy tokens (e.g., Delina)
 ]
 
 SAC_OUTLET_PATTERNS = [
-    re.compile(r'sacrifice a creature\s*:'),  # Must be an activated ability (colon)
+    re.compile(r'sacrifice (a|one|two|three|\d+) creature(s)?\s*:'),  # Activated ability (colon) - allows singular or plural
     re.compile(r'sacrifice (a|an) (permanent|artifact)\s*:'),  # Can sac artifacts/permanents
-    re.compile(r'sacrifice.*creature.*:\s*(add|draw|deal|destroy|exile)'),  # Specific payoffs
+    re.compile(r'sacrifice.*(creature|permanent).*:\s*(add|draw|deal|destroy|exile|scry|create)'),  # Specific payoffs
 ]
 
 DEATH_PAYOFF_PATTERNS = [
