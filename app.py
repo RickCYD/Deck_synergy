@@ -410,125 +410,96 @@ app.layout = html.Div([
         ], style={'display': 'flex', 'gap': '12px'}),
     ], style={'padding': '0 20px', 'marginTop': '16px'}),
 
-    # Fuzzy Card Search Section
+    # Store for selected card from search
+    dcc.Store(id='search-selected-card-store', data=None),
+
+    # Compact Search and Roles Section (side by side)
     html.Div([
+        # Left: Search Box
         html.Div([
-            html.H3("Search Cards", style={
-                'color': '#2c3e50',
-                'marginBottom': '12px',
-                'fontSize': '16px',
-                'fontWeight': 'bold'
-            }),
             html.Div([
                 dcc.Input(
                     id='card-search-input',
                     type='text',
-                    placeholder='Type card name, type, or color...',
+                    placeholder='🔍 Search cards...',
                     debounce=True,
                     style={
                         'width': '100%',
-                        'padding': '10px',
-                        'fontSize': '14px',
-                        'border': '2px solid #bdc3c7',
-                        'borderRadius': '6px',
-                        'outline': 'none',
-                        'transition': 'border-color 0.2s'
+                        'padding': '8px 12px',
+                        'fontSize': '13px',
+                        'border': '1px solid #bdc3c7',
+                        'borderRadius': '4px',
                     }
                 ),
-            ], style={'marginBottom': '12px'}),
+            ]),
+            # Results dropdown (absolute positioned)
             html.Div(
                 id='card-search-results',
                 children=[],
                 style={
-                    'maxHeight': '300px',
+                    'position': 'absolute',
+                    'top': '40px',
+                    'left': '0',
+                    'right': '0',
+                    'maxHeight': '200px',
                     'overflowY': 'auto',
-                    'overflowX': 'hidden'
+                    'backgroundColor': 'white',
+                    'border': '1px solid #ddd',
+                    'borderRadius': '4px',
+                    'boxShadow': '0 4px 8px rgba(0,0,0,0.1)',
+                    'zIndex': '1000',
+                    'display': 'none'
                 }
             ),
+        ], style={
+            'position': 'relative',
+            'flex': '1',
+            'minWidth': '250px',
+            'marginRight': '12px'
+        }),
+
+        # Right: Role Filters (compact)
+        html.Div([
             html.Div([
-                html.Button(
-                    'Clear Search',
-                    id='clear-search-button',
-                    n_clicks=0,
+                html.Span("Roles: ", style={'fontSize': '13px', 'color': '#7f8c8d', 'marginRight': '8px'}),
+                html.Div(
+                    id='role-score-cards-container',
+                    children=[],
                     style={
-                        'padding': '6px 12px',
-                        'backgroundColor': '#95a5a6',
-                        'color': 'white',
-                        'border': 'none',
-                        'cursor': 'pointer',
-                        'fontSize': '12px',
-                        'fontWeight': 'bold',
-                        'borderRadius': '4px',
-                        'marginTop': '8px',
-                        'display': 'none'
+                        'display': 'inline-flex',
+                        'flexWrap': 'wrap',
+                        'gap': '6px',
+                        'alignItems': 'center'
                     }
                 ),
-            ], style={'display': 'flex', 'alignItems': 'center'})
-        ], style={
-            'backgroundColor': '#ffffff',
-            'borderRadius': '6px',
-            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-            'padding': '16px',
-        })
-    ], style={'padding': '0 20px', 'marginTop': '16px'}),
-
-    # Store for selected card from search
-    dcc.Store(id='search-selected-card-store', data=None),
-
-    # Role Filter Score Cards
-    html.Div([
-        html.Div([
-            html.H3("Card Roles", style={
-                'color': '#2c3e50',
-                'marginBottom': '12px',
-                'fontSize': '16px',
-                'fontWeight': 'bold'
-            }),
-            html.Div(
-                id='role-score-cards-container',
-                children=[],
-                style={
-                    'display': 'flex',
-                    'flexWrap': 'wrap',
-                    'gap': '8px',
-                    'marginBottom': '8px'
-                }
-            ),
-            html.Div([
                 html.Button(
-                    'Clear Filter',
+                    'Clear',
                     id='clear-role-filter-button',
                     n_clicks=0,
                     style={
-                        'padding': '6px 12px',
+                        'padding': '4px 8px',
                         'backgroundColor': '#e74c3c',
                         'color': 'white',
                         'border': 'none',
                         'cursor': 'pointer',
-                        'fontSize': '12px',
-                        'fontWeight': 'bold',
-                        'borderRadius': '4px',
+                        'fontSize': '11px',
+                        'borderRadius': '3px',
+                        'marginLeft': '8px',
                         'display': 'none'
                     }
                 ),
-                html.Div(
-                    id='active-role-filter-display',
-                    style={
-                        'marginLeft': '12px',
-                        'color': '#7f8c8d',
-                        'fontStyle': 'italic',
-                        'fontSize': '12px',
-                        'display': 'inline-block'
-                    }
-                )
-            ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '8px'})
-        ], style={
-            'backgroundColor': '#ffffff',
-            'borderRadius': '6px',
-            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-            'padding': '16px',
-        })
-    ], style={'padding': '0 20px', 'marginTop': '16px'}),
+            ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap'}),
+            html.Div(id='active-role-filter-display', style={'display': 'none'})
+        ], style={'flex': '2'}),
+    ], style={
+        'display': 'flex',
+        'padding': '8px 20px',
+        'backgroundColor': '#f8f9fa',
+        'borderBottom': '1px solid #dee2e6',
+        'alignItems': 'center',
+        'gap': '12px',
+        'flexWrap': 'wrap'
+    }),
 
     # Tabbed content: Synergy Graph and Mana Simulation
     dcc.Tabs(id='main-tabs', value='synergy', children=[
@@ -3154,32 +3125,33 @@ def toggle_card_image_modal(view_clicks_list, close_clicks, modal_clicks, img_cl
 
 @app.callback(
     [Output('card-search-results', 'children'),
-     Output('clear-search-button', 'style')],
-    [Input('card-search-input', 'value'),
-     Input('clear-search-button', 'n_clicks')],
-    [State('current-deck-file-store', 'data'),
-     State('clear-search-button', 'style')],
+     Output('card-search-results', 'style')],
+    Input('card-search-input', 'value'),
+    State('current-deck-file-store', 'data'),
     prevent_initial_call=True
 )
-def handle_card_search(search_query, clear_clicks, current_deck_file, clear_button_style):
+def handle_card_search(search_query, current_deck_file):
     """Handle card search with fuzzy matching and display results"""
     from src.utils.fuzzy_search import CardFuzzySearcher
 
-    ctx = callback_context
-    if not ctx.triggered:
-        return [], clear_button_style
+    # Base style for results container
+    base_style = {
+        'position': 'absolute',
+        'top': '40px',
+        'left': '0',
+        'right': '0',
+        'maxHeight': '200px',
+        'overflowY': 'auto',
+        'backgroundColor': 'white',
+        'border': '1px solid #ddd',
+        'borderRadius': '4px',
+        'boxShadow': '0 4px 8px rgba(0,0,0,0.1)',
+        'zIndex': '1000'
+    }
 
-    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    # Handle clear button click
-    if trigger_id == 'clear-search-button':
-        clear_button_style['display'] = 'none'
-        return [], clear_button_style
-
-    # Handle search input
+    # Hide if no query
     if not search_query or not current_deck_file:
-        clear_button_style['display'] = 'none'
-        return [], clear_button_style
+        return [], {**base_style, 'display': 'none'}
 
     try:
         # Load current deck
@@ -3189,112 +3161,70 @@ def handle_card_search(search_query, clear_clicks, current_deck_file, clear_butt
         cards = deck_data.get('cards', [])
 
         if not cards:
-            return [html.Div("No cards in deck", style={'color': '#7f8c8d', 'fontSize': '12px', 'padding': '8px'})], clear_button_style
+            return [html.Div("No cards", style={'padding': '8px', 'fontSize': '11px', 'color': '#999'})], {**base_style, 'display': 'block'}
 
         # Perform fuzzy search
         searcher = CardFuzzySearcher()
-        matches = searcher.search(search_query, cards, limit=15)
+        matches = searcher.search(search_query, cards, limit=10)
 
         if not matches:
             return [html.Div(
-                f"No cards found matching '{search_query}'",
-                style={
-                    'color': '#7f8c8d',
-                    'fontSize': '12px',
-                    'padding': '8px',
-                    'fontStyle': 'italic'
-                }
-            )], clear_button_style
+                f"No matches for '{search_query}'",
+                style={'padding': '8px', 'fontSize': '11px', 'color': '#999', 'fontStyle': 'italic'}
+            )], {**base_style, 'display': 'block'}
 
-        # Create result items
+        # Create compact result items
         result_items = []
-        for i, (card, score, reason) in enumerate(matches):
+        for card, score, reason in matches:
             card_name = card.get('name', 'Unknown')
-            card_type = card.get('type_line', '')
-            mana_cost = card.get('mana_cost', '')
             colors = card.get('colors', [])
 
-            # Determine color badge
-            if not colors:
-                color_badge = '◯'  # Colorless
-                color_style = {'color': '#95a5a6'}
-            else:
-                color_badge = ''.join(colors)
-                color_map = {
-                    'W': '#f9f7e8',
-                    'U': '#0e68ab',
-                    'B': '#150b00',
-                    'R': '#d3202a',
-                    'G': '#00733e'
-                }
-                # Use first color for badge color
-                first_color = colors[0] if colors else 'W'
-                badge_color = color_map.get(first_color, '#95a5a6')
-                color_style = {
-                    'color': 'white' if first_color in ['U', 'B', 'R', 'G'] else '#333',
-                    'backgroundColor': badge_color,
-                    'padding': '2px 6px',
-                    'borderRadius': '3px',
-                    'fontSize': '10px',
-                    'fontWeight': 'bold'
-                }
+            # Simple color indicator
+            color_badge = ''.join(colors) if colors else '◯'
 
             result_items.append(
                 html.Div([
-                    html.Div([
-                        html.Div([
-                            html.Span(
-                                card_name,
-                                style={
-                                    'fontWeight': 'bold',
-                                    'color': '#2c3e50',
-                                    'fontSize': '13px',
-                                    'marginRight': '8px'
-                                }
-                            ),
-                            html.Span(
-                                color_badge,
-                                style=color_style
-                            ),
-                        ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}),
-                        html.Div([
-                            html.Span(
-                                card_type[:40] + ('...' if len(card_type) > 40 else ''),
-                                style={
-                                    'color': '#7f8c8d',
-                                    'fontSize': '11px',
-                                    'marginRight': '8px'
-                                }
-                            ),
-                            html.Span(
-                                f"{int(score * 100)}% • {reason}",
-                                style={
-                                    'color': '#95a5a6',
-                                    'fontSize': '10px',
-                                    'fontStyle': 'italic'
-                                }
-                            )
-                        ])
-                    ], style={'flex': '1'}),
+                    html.Span(
+                        card_name,
+                        style={
+                            'fontWeight': '500',
+                            'color': '#2c3e50',
+                            'fontSize': '12px',
+                            'flex': '1'
+                        }
+                    ),
+                    html.Span(
+                        color_badge,
+                        style={
+                            'fontSize': '10px',
+                            'color': '#7f8c8d',
+                            'marginLeft': '8px'
+                        }
+                    ),
+                    html.Span(
+                        f"{int(score * 100)}%",
+                        style={
+                            'fontSize': '10px',
+                            'color': '#95a5a6',
+                            'marginLeft': '6px'
+                        }
+                    )
                 ],
                 id={'type': 'search-result-item', 'index': card_name},
                 n_clicks=0,
                 style={
                     'display': 'flex',
-                    'padding': '10px',
-                    'borderBottom': '1px solid #ecf0f1',
+                    'alignItems': 'center',
+                    'padding': '6px 10px',
+                    'borderBottom': '1px solid #f0f0f0',
                     'cursor': 'pointer',
-                    'transition': 'background-color 0.2s',
                     'backgroundColor': '#ffffff'
                 },
                 className='search-result-item'
                 )
             )
 
-        # Show clear button
-        clear_button_style['display'] = 'block'
-
-        return result_items, clear_button_style
+        return result_items, {**base_style, 'display': 'block'}
 
     except Exception as e:
         print(f"Error in card search: {e}")
@@ -3302,8 +3232,8 @@ def handle_card_search(search_query, clear_clicks, current_deck_file, clear_butt
         traceback.print_exc()
         return [html.Div(
             f"Error: {str(e)}",
-            style={'color': '#e74c3c', 'fontSize': '12px', 'padding': '8px'}
-        )], clear_button_style
+            style={'padding': '8px', 'fontSize': '11px', 'color': '#e74c3c'}
+        )], {**base_style, 'display': 'block'}
 
 
 @app.callback(
@@ -3335,69 +3265,39 @@ def select_card_from_search(n_clicks_list, current_stylesheet, current_deck_file
 
     print(f"[DEBUG SEARCH] Selected card: {card_name}")
 
-    # Create new stylesheet with highlighted card
-    new_stylesheet = current_stylesheet.copy()
+    # Remove any existing search highlight styles (identified by specific selector patterns)
+    new_stylesheet = [
+        s for s in current_stylesheet
+        if not (s.get('selector', '').startswith('.__search_') or
+                'node[id = ' in s.get('selector', '') and '__search_highlight' in s.get('selector', ''))
+    ]
 
-    # Add highlight style for selected card
-    highlight_style = {
+    # Add highlight styles with unique selector prefix
+    # Dim all nodes first
+    new_stylesheet.append({
+        'selector': '.__search_dim_all node',
+        'style': {'opacity': '0.3'}
+    })
+
+    # Highlight selected card
+    new_stylesheet.append({
         'selector': f'node[id = "{card_name}"]',
         'style': {
-            'border-width': '6px',
+            'border-width': '5px',
             'border-color': '#f39c12',
             'border-style': 'solid',
-            'z-index': '9999',
-            'overlay-opacity': 0,
-            'background-opacity': 1
+            'opacity': '1',
+            'z-index': '9999'
         }
-    }
+    })
 
-    # Dim all other nodes
-    dim_style = {
-        'selector': 'node',
-        'style': {
-            'opacity': '0.3'
-        }
-    }
-
-    # Keep selected card and its neighbors bright
-    neighbor_style = {
-        'selector': f'node[id = "{card_name}"], edge[source = "{card_name}"], edge[target = "{card_name}"]',
-        'style': {
-            'opacity': '1'
-        }
-    }
-
-    # Also brighten connected nodes
-    connected_nodes_style = {
-        'selector': f'node[id = "{card_name}"]',
-        'style': {
-            'opacity': '1'
-        }
-    }
-
-    # Remove any existing search highlight styles
-    new_stylesheet = [s for s in new_stylesheet if 'search-highlight' not in str(s.get('selector', ''))]
-
-    # Add new search highlight styles
-    new_stylesheet.extend([
-        {**dim_style, 'search-highlight': True},
-        {**highlight_style, 'search-highlight': True},
-        {**neighbor_style, 'search-highlight': True}
-    ])
+    # Keep edges connected to selected card visible
+    new_stylesheet.append({
+        'selector': f'edge[source = "{card_name}"], edge[target = "{card_name}"]',
+        'style': {'opacity': '1'}
+    })
 
     return card_name, new_stylesheet
-
-
-@app.callback(
-    Output('card-search-input', 'value'),
-    Input('clear-search-button', 'n_clicks'),
-    prevent_initial_call=True
-)
-def clear_search_input(n_clicks):
-    """Clear the search input when clear button is clicked"""
-    if n_clicks:
-        return ''
-    return dash.no_update
 
 
 if __name__ == '__main__':

@@ -1,61 +1,40 @@
-/* Fuzzy Card Search Styles */
+/* Compact Search Styles */
 
 /* Search result item hover effect */
 .search-result-item:hover {
-    background-color: #f8f9fa !important;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-    transform: translateX(4px);
+    background-color: #f0f7ff !important;
 }
 
 /* Search result item active/click effect */
 .search-result-item:active {
-    background-color: #e9ecef !important;
-    transform: translateX(2px);
+    background-color: #e3f2fd !important;
 }
 
 /* Search input focus effect */
 #card-search-input:focus {
     border-color: #3498db !important;
-    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1) !important;
+    outline: none;
 }
 
 /* Custom scrollbar for search results */
 #card-search-results::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
 }
 
 #card-search-results::-webkit-scrollbar-track {
     background: #f1f1f1;
-    border-radius: 4px;
 }
 
 #card-search-results::-webkit-scrollbar-thumb {
-    background: #bdc3c7;
-    border-radius: 4px;
+    background: #ccc;
+    border-radius: 3px;
 }
 
 #card-search-results::-webkit-scrollbar-thumb:hover {
-    background: #95a5a6;
-}
-
-/* Clear button hover effect */
-#clear-search-button:hover {
-    background-color: #7f8c8d !important;
-    transform: scale(1.05);
-}
-
-#clear-search-button:active {
-    transform: scale(0.98);
+    background: #999;
 }
 
 /* Smooth transitions */
-.search-result-item,
-#clear-search-button,
-#card-search-input {
-    transition: all 0.2s ease-in-out;
-}
-
-/* Color badge animations */
-.search-result-item:hover .color-badge {
-    transform: scale(1.1);
+.search-result-item {
+    transition: background-color 0.15s ease;
 }
