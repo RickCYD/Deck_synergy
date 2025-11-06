@@ -328,19 +328,6 @@ app.layout = html.Div([
         ], style={'flex': '1 1 220px', 'minWidth': '220px'}),
 
         html.Div([
-            html.Label("Search Cards:", style={'fontWeight': 'bold', 'marginBottom': '6px'}),
-            dcc.Dropdown(
-                id='card-search-dropdown',
-                options=[],
-                placeholder='Type at least 3 letters...',
-                searchable=True,
-                clearable=True,
-                style={'width': '100%'}
-            )
-        ], style={'flex': '1 1 220px', 'minWidth': '220px'}),
-
-
-        html.Div([
             dcc.Dropdown(
                 id='layout-selector',
                 options=[
@@ -483,6 +470,19 @@ app.layout = html.Div([
             html.Div([
                 # Graph Section - Left (3/4 of screen)
                 html.Div([
+                    # Card Search - Inside graph section
+                    html.Div([
+                        html.Label("Search Cards:", style={'fontWeight': 'bold', 'marginBottom': '6px', 'fontSize': '14px', 'color': '#2c3e50'}),
+                        dcc.Dropdown(
+                            id='card-search-dropdown',
+                            options=[],
+                            placeholder='Type at least 3 letters to search...',
+                            searchable=True,
+                            clearable=True,
+                            style={'width': '100%'}
+                        )
+                    ], style={'marginBottom': '16px'}),
+
                     cyto.Cytoscape(
                         id='card-graph',
                         layout={
@@ -499,7 +499,7 @@ app.layout = html.Div([
                             'minTemp': 1.0,
                             'nodeOverlap': 100
                         },
-                        style={'width': '100%', 'height': '650px'},
+                        style={'width': '100%', 'height': '620px'},
                         elements=[],
                         stylesheet=get_base_stylesheet()
                     )
@@ -1330,6 +1330,35 @@ def set_selected_card(card_name):
     return card_name
 
 
+# Callback to handle clicks on clickable card names
+@app.callback(
+    Output('selected-card-highlight', 'data', allow_duplicate=True),
+    Input({'type': 'clickable-card-name', 'index': dash.ALL}, 'n_clicks'),
+    State({'type': 'clickable-card-name', 'index': dash.ALL}, 'id'),
+    prevent_initial_call=True
+)
+def handle_card_name_click(n_clicks_list, ids_list):
+    """Handle clicks on card names in lists to highlight them in the graph."""
+    ctx = dash.callback_context
+
+    if not ctx.triggered:
+        return dash.no_update
+
+    # Find which button was clicked
+    triggered_id = ctx.triggered[0]['prop_id']
+
+    # Extract the card name from the triggered button
+    import json
+    for i, n_clicks in enumerate(n_clicks_list):
+        if n_clicks and n_clicks > 0:
+            card_name = ids_list[i]['index']
+            if card_name:
+                print(f"[DEBUG] Card name clicked: {card_name}")
+                return card_name
+
+    return dash.no_update
+
+
 # Simulation callback: runs Monte Carlo and updates outputs
 @app.callback(
     [Output('simulation-result-graph', 'figure'),
@@ -1720,7 +1749,25 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements, current_card_images):
                 # Card name and score
                 html.Div([
                     html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
-                    html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
+                    html.Button(
+                        card_name,
+                        id={'type': 'clickable-card-name', 'index': card_name},
+                        n_clicks=0,
+                        style={
+                            'fontSize': '14px',
+                            'color': '#2c3e50',
+                            'fontWeight': 'bold',
+                            'backgroundColor': 'transparent',
+                            'border': 'none',
+                            'padding': '0',
+                            'cursor': 'pointer',
+                            'textDecoration': 'underline',
+                            'textDecorationColor': '#3498db',
+                            'textDecorationThickness': '1px',
+                            'textUnderlineOffset': '2px'
+                        },
+                        title='Click to highlight in graph'
+                    ),
                     html.Span(f" ({rank_score:.1f})", style={'fontSize': '11px', 'color': '#2ecc71', 'marginLeft': '4px'}),
                     html.Button(
                         '🔍',
@@ -1918,7 +1965,25 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                     # Card name and score
                     html.Div([
                         html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
-                        html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
+                        html.Button(
+                            card_name,
+                            id={'type': 'clickable-card-name', 'index': card_name},
+                            n_clicks=0,
+                            style={
+                                'fontSize': '14px',
+                                'color': '#2c3e50',
+                                'fontWeight': 'bold',
+                                'backgroundColor': 'transparent',
+                                'border': 'none',
+                                'padding': '0',
+                                'cursor': 'pointer',
+                                'textDecoration': 'underline',
+                                'textDecorationColor': '#3498db',
+                                'textDecorationThickness': '1px',
+                                'textUnderlineOffset': '2px'
+                            },
+                            title='Click to highlight in graph'
+                        ),
                         html.Span(f" ({score:.0f})", style={'fontSize': '11px', 'color': '#9b59b6', 'marginLeft': '4px'}),
                         html.Button(
                             '🔍',
@@ -1990,7 +2055,25 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                 weakest_items = []
                 for i, weak_card in enumerate(weakest_cards, 1):
                     weakest_items.append(html.Li([
-                        html.Span(f"{weak_card['name']}", style={'fontWeight': 'bold', 'color': '#e74c3c'}),
+                        html.Button(
+                            weak_card['name'],
+                            id={'type': 'clickable-card-name', 'index': weak_card['name']},
+                            n_clicks=0,
+                            style={
+                                'fontSize': '11px',
+                                'color': '#e74c3c',
+                                'fontWeight': 'bold',
+                                'backgroundColor': 'transparent',
+                                'border': 'none',
+                                'padding': '0',
+                                'cursor': 'pointer',
+                                'textDecoration': 'underline',
+                                'textDecorationColor': '#3498db',
+                                'textDecorationThickness': '1px',
+                                'textUnderlineOffset': '2px'
+                            },
+                            title='Click to highlight in graph'
+                        ),
                         html.Span(f" ({weak_card['synergy_score']:.0f})", style={'color': '#95a5a6', 'fontSize': '10px', 'marginLeft': '4px'}),
                         html.Button(
                             '🔍',
@@ -2190,7 +2273,25 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                     # Card name and score
                     html.Div([
                         html.Span(f"{idx}. ", style={'fontWeight': 'bold', 'fontSize': '14px', 'color': '#7f8c8d'}),
-                        html.Strong(card_name, style={'fontSize': '14px', 'color': '#2c3e50'}),
+                        html.Button(
+                            card_name,
+                            id={'type': 'clickable-card-name', 'index': card_name},
+                            n_clicks=0,
+                            style={
+                                'fontSize': '14px',
+                                'color': '#2c3e50',
+                                'fontWeight': 'bold',
+                                'backgroundColor': 'transparent',
+                                'border': 'none',
+                                'padding': '0',
+                                'cursor': 'pointer',
+                                'textDecoration': 'underline',
+                                'textDecorationColor': '#3498db',
+                                'textDecorationThickness': '1px',
+                                'textUnderlineOffset': '2px'
+                            },
+                            title='Click to highlight in graph'
+                        ),
                         html.Span(f" ({score:.1f})", style={'fontSize': '11px', 'color': '#e74c3c', 'marginLeft': '4px'}),
                         html.Button(
                             '🔍',
@@ -2547,7 +2648,26 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
 
             # Build summary elements
             summary_elements = [
-                html.Strong(f"↔ {other_card}"),
+                html.Span("↔ ", style={'fontWeight': 'bold'}),
+                html.Button(
+                    other_card,
+                    id={'type': 'clickable-card-name', 'index': other_card},
+                    n_clicks=0,
+                    style={
+                        'fontSize': '14px',
+                        'color': '#2c3e50',
+                        'fontWeight': 'bold',
+                        'backgroundColor': 'transparent',
+                        'border': 'none',
+                        'padding': '0',
+                        'cursor': 'pointer',
+                        'textDecoration': 'underline',
+                        'textDecorationColor': '#3498db',
+                        'textDecorationThickness': '1px',
+                        'textUnderlineOffset': '2px'
+                    },
+                    title='Click to highlight in graph'
+                ),
                 html.Span(f" (Strength: {weight:.2f})", style={'color': '#7f8c8d', 'marginRight': '8px'}),
             ]
 
