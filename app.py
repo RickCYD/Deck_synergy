@@ -32,6 +32,12 @@ from src.simulation.mana_simulator import ManaSimulator, SimulationParams
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# Utility functions
+def hex_to_rgb(hex_color):
+    """Convert hex color to RGB tuple"""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
 # Initialize Dash app
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.title = "MTG Commander Synergy Visualizer"
@@ -412,94 +418,8 @@ app.layout = html.Div([
 
     # Store for selected card from search
     dcc.Store(id='search-selected-card-store', data=None),
-
-    # Compact Search and Roles Section (side by side)
-    html.Div([
-        # Left: Search Box
-        html.Div([
-            html.Div([
-                dcc.Input(
-                    id='card-search-input',
-                    type='text',
-                    placeholder='🔍 Search cards...',
-                    debounce=True,
-                    style={
-                        'width': '100%',
-                        'padding': '8px 12px',
-                        'fontSize': '13px',
-                        'border': '1px solid #bdc3c7',
-                        'borderRadius': '4px',
-                    }
-                ),
-            ]),
-            # Results dropdown (absolute positioned)
-            html.Div(
-                id='card-search-results',
-                children=[],
-                style={
-                    'position': 'absolute',
-                    'top': '40px',
-                    'left': '0',
-                    'right': '0',
-                    'maxHeight': '200px',
-                    'overflowY': 'auto',
-                    'backgroundColor': 'white',
-                    'border': '1px solid #ddd',
-                    'borderRadius': '4px',
-                    'boxShadow': '0 4px 8px rgba(0,0,0,0.1)',
-                    'zIndex': '1000',
-                    'display': 'none'
-                }
-            ),
-        ], style={
-            'position': 'relative',
-            'flex': '1',
-            'minWidth': '250px',
-            'marginRight': '12px'
-        }),
-
-        # Right: Role Filters (compact)
-        html.Div([
-            html.Div([
-                html.Span("Roles: ", style={'fontSize': '13px', 'color': '#7f8c8d', 'marginRight': '8px'}),
-                html.Div(
-                    id='role-score-cards-container',
-                    children=[],
-                    style={
-                        'display': 'inline-flex',
-                        'flexWrap': 'wrap',
-                        'gap': '6px',
-                        'alignItems': 'center'
-                    }
-                ),
-                html.Button(
-                    'Clear',
-                    id='clear-role-filter-button',
-                    n_clicks=0,
-                    style={
-                        'padding': '4px 8px',
-                        'backgroundColor': '#e74c3c',
-                        'color': 'white',
-                        'border': 'none',
-                        'cursor': 'pointer',
-                        'fontSize': '11px',
-                        'borderRadius': '3px',
-                        'marginLeft': '8px',
-                        'display': 'none'
-                    }
-                ),
-            ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap'}),
-            html.Div(id='active-role-filter-display', style={'display': 'none'})
-        ], style={'flex': '2'}),
-    ], style={
-        'display': 'flex',
-        'padding': '8px 20px',
-        'backgroundColor': '#f8f9fa',
-        'borderBottom': '1px solid #dee2e6',
-        'alignItems': 'center',
-        'gap': '12px',
-        'flexWrap': 'wrap'
-    }),
+    # Store for active role filter display
+    dcc.Store(id='active-role-filter-display', data=None),
 
     # Tabbed content: Synergy Graph and Mana Simulation
     dcc.Tabs(id='main-tabs', value='synergy', children=[
@@ -507,6 +427,97 @@ app.layout = html.Div([
             html.Div([
                 # Graph Section - Left (3/4 of screen)
                 html.Div([
+                    # Floating Search Box (Top-Left Overlay)
+                    html.Div([
+                        dcc.Input(
+                            id='card-search-input',
+                            type='text',
+                            placeholder='🔍 Search cards',
+                            debounce=True,
+                            style={
+                                'width': '100%',
+                                'padding': '10px 14px',
+                                'fontSize': '13px',
+                                'border': 'none',
+                                'borderRadius': '8px',
+                                'boxShadow': '0 2px 8px rgba(0,0,0,0.15)',
+                                'backgroundColor': 'rgba(255,255,255,0.95)',
+                                'backdropFilter': 'blur(10px)'
+                            }
+                        ),
+                        # Results dropdown
+                        html.Div(
+                            id='card-search-results',
+                            children=[],
+                            style={
+                                'position': 'absolute',
+                                'top': '48px',
+                                'left': '0',
+                                'right': '0',
+                                'maxHeight': '280px',
+                                'overflowY': 'auto',
+                                'backgroundColor': 'rgba(255,255,255,0.98)',
+                                'backdropFilter': 'blur(10px)',
+                                'border': 'none',
+                                'borderRadius': '8px',
+                                'boxShadow': '0 4px 12px rgba(0,0,0,0.15)',
+                                'zIndex': '1001',
+                                'display': 'none'
+                            }
+                        ),
+                    ], style={
+                        'position': 'absolute',
+                        'top': '16px',
+                        'left': '16px',
+                        'width': '280px',
+                        'zIndex': '1000'
+                    }),
+
+                    # Floating Filter Chips (Top-Right Overlay)
+                    html.Div([
+                        html.Div(
+                            id='role-score-cards-container',
+                            children=[],
+                            style={
+                                'display': 'flex',
+                                'flexWrap': 'wrap',
+                                'gap': '6px',
+                                'justifyContent': 'flex-end'
+                            }
+                        ),
+                    ], style={
+                        'position': 'absolute',
+                        'top': '16px',
+                        'right': '16px',
+                        'maxWidth': '400px',
+                        'zIndex': '1000'
+                    }),
+
+                    # Clear Filter Button (appears when filter is active)
+                    html.Button(
+                        '✕ Clear Filter',
+                        id='clear-role-filter-button',
+                        n_clicks=0,
+                        style={
+                            'position': 'absolute',
+                            'top': '60px',
+                            'right': '16px',
+                            'padding': '6px 12px',
+                            'backgroundColor': 'rgba(231,76,60,0.9)',
+                            'backdropFilter': 'blur(10px)',
+                            'color': 'white',
+                            'border': 'none',
+                            'cursor': 'pointer',
+                            'fontSize': '11px',
+                            'fontWeight': '500',
+                            'borderRadius': '6px',
+                            'boxShadow': '0 2px 6px rgba(0,0,0,0.15)',
+                            'zIndex': '1000',
+                            'display': 'none'
+                        }
+                    ),
+
+                    # The Graph Canvas
                     cyto.Cytoscape(
                         id='card-graph',
                         layout={
@@ -528,6 +539,7 @@ app.layout = html.Div([
                         stylesheet=get_base_stylesheet()
                     )
                 ], style={
+                    'position': 'relative',  # Important for absolute positioning of overlays
                     'flex': '1 1 70%',
                     'backgroundColor': '#ffffff',
                     'borderRadius': '6px',
@@ -1107,30 +1119,35 @@ def update_graph(deck_file):
 
 @app.callback(
     [Output('role-score-cards-container', 'children'),
-     Output('active-role-filter-display', 'children'),
      Output('clear-role-filter-button', 'style')],
     [Input('role-filter-data', 'data'),
      Input('active-role-filter', 'data')],
     prevent_initial_call=False
 )
 def update_role_score_cards(role_data, active_filter):
-    """Populate the role score cards and show the current selection."""
+    """Populate the role filter chips in compact pill style."""
     if not role_data:
-        return [], "No roles detected.", {
+        return [], {
+            'position': 'absolute',
+            'top': '60px',
+            'right': '16px',
             'padding': '6px 12px',
-            'backgroundColor': '#e74c3c',
+            'backgroundColor': 'rgba(231,76,60,0.9)',
+            'backdropFilter': 'blur(10px)',
             'color': 'white',
             'border': 'none',
             'cursor': 'pointer',
-            'fontSize': '12px',
-            'fontWeight': 'bold',
-            'borderRadius': '4px',
+            'fontSize': '11px',
+            'fontWeight': '500',
+            'borderRadius': '6px',
+            'boxShadow': '0 2px 6px rgba(0,0,0,0.15)',
+            'zIndex': '1000',
             'display': 'none'
         }
 
-    score_cards = []
+    chips = []
 
-    # Define colors for each category
+    # Compact color scheme for chips
     category_colors = {
         'role_interaction': '#3498db',  # Blue
         'benefits': '#2ecc71',           # Green
@@ -1138,26 +1155,10 @@ def update_role_score_cards(role_data, active_filter):
         'card_advantage': '#e67e22'      # Orange
     }
 
+    # Collect all non-zero roles into compact chips
     for category_key, category_def in ROLE_CATEGORIES.items():
         category_summary = role_data.get(category_key, {'roles': {}})
         role_entries = category_summary.get('roles', {})
-
-        # Add category header
-        score_cards.append(
-            html.Div(
-                category_def['label'],
-                style={
-                    'width': '100%',
-                    'fontSize': '12px',
-                    'fontWeight': 'bold',
-                    'color': '#2c3e50',
-                    'marginTop': '8px',
-                    'marginBottom': '4px',
-                    'paddingLeft': '4px',
-                    'borderLeft': f'3px solid {category_colors.get(category_key, "#95a5a6")}',
-                }
-            )
-        )
 
         for role_def in category_def['roles']:
             role_key = role_def['key']
@@ -1165,83 +1166,59 @@ def update_role_score_cards(role_data, active_filter):
             cards = role_entries.get(role_key, {}).get('cards', []) or []
             count = len(cards)
 
+            # Only show roles with cards
+            if count == 0:
+                continue
+
             is_active = (active_filter and
                         active_filter.get('category') == category_key and
                         active_filter.get('role') == role_key)
 
-            # Create score card button
-            if count > 0:
-                card_style = {
-                    'padding': '8px 12px',
-                    'backgroundColor': category_colors.get(category_key, '#95a5a6') if is_active else '#f8f9fa',
-                    'color': 'white' if is_active else '#2c3e50',
-                    'border': f'2px solid {category_colors.get(category_key, "#95a5a6")}',
-                    'borderRadius': '6px',
-                    'cursor': 'pointer',
-                    'fontSize': '12px',
-                    'fontWeight': 'bold' if is_active else 'normal',
-                    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)' if is_active else 'none',
-                    'transition': 'all 0.2s',
-                    'minWidth': '80px',
-                    'textAlign': 'center'
-                }
-            else:
-                card_style = {
-                    'padding': '8px 12px',
-                    'backgroundColor': '#ecf0f1',
-                    'color': '#95a5a6',
-                    'border': '2px solid #bdc3c7',
-                    'borderRadius': '6px',
-                    'cursor': 'not-allowed',
-                    'fontSize': '12px',
-                    'opacity': '0.5',
-                    'minWidth': '80px',
-                    'textAlign': 'center'
-                }
+            # Compact chip style
+            chip_style = {
+                'padding': '6px 12px',
+                'backgroundColor': f'rgba({",".join(map(str, hex_to_rgb(category_colors.get(category_key, "#95a5a6"))))}, {"0.95" if is_active else "0.85"})',
+                'backdropFilter': 'blur(10px)',
+                'color': 'white',
+                'border': 'none' if is_active else f'1px solid rgba(255,255,255,0.3)',
+                'borderRadius': '16px',
+                'cursor': 'pointer',
+                'fontSize': '11px',
+                'fontWeight': '600' if is_active else '500',
+                'boxShadow': '0 2px 6px rgba(0,0,0,0.15)' if is_active else '0 1px 3px rgba(0,0,0,0.1)',
+                'whiteSpace': 'nowrap'
+            }
 
-            score_cards.append(
+            chips.append(
                 html.Button(
-                    [
-                        html.Div(role_label, style={'fontSize': '11px', 'marginBottom': '2px'}),
-                        html.Div(str(count), style={'fontSize': '18px', 'fontWeight': 'bold'})
-                    ],
+                    f"{role_label} {count}",
                     id={'type': 'role-card', 'category': category_key, 'role': role_key},
                     n_clicks=0,
-                    disabled=(count == 0),
-                    style=card_style
+                    style=chip_style,
+                    className='role-chip'
                 )
             )
 
-    active_message = "Click a role to filter cards"
+    # Show/hide clear button based on active filter
     clear_button_style = {
+        'position': 'absolute',
+        'top': '60px',
+        'right': '16px',
         'padding': '6px 12px',
-        'backgroundColor': '#e74c3c',
+        'backgroundColor': 'rgba(231,76,60,0.9)',
+        'backdropFilter': 'blur(10px)',
         'color': 'white',
         'border': 'none',
         'cursor': 'pointer',
-        'fontSize': '12px',
-        'fontWeight': 'bold',
-        'borderRadius': '4px',
-        'display': 'none'
+        'fontSize': '11px',
+        'fontWeight': '500',
+        'borderRadius': '6px',
+        'boxShadow': '0 2px 6px rgba(0,0,0,0.15)',
+        'zIndex': '1000',
+        'display': 'block' if active_filter else 'none'
     }
 
-    if active_filter:
-        category_key = active_filter.get('category')
-        role_key = active_filter.get('role')
-        if category_key and role_key:
-            category_def = ROLE_CATEGORIES.get(category_key)
-            category_label = category_def['label'] if category_def else category_key.replace('_', ' ').title()
-            role_label = role_key.replace('_', ' ').title()
-            if category_def:
-                for role_def in category_def['roles']:
-                    if role_def['key'] == role_key:
-                        role_label = role_def['label']
-                        break
-            count = len(role_data.get(category_key, {}).get('roles', {}).get(role_key, {}).get('cards', [])) if role_data else 0
-            active_message = f"Showing {count} {role_label} cards"
-            clear_button_style['display'] = 'inline-block'
-
-    return score_cards, active_message, clear_button_style
+    return chips, clear_button_style
 
 
 @app.callback(
