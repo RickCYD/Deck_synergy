@@ -3003,6 +3003,1821 @@ def detect_stax_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     return None
 
 
+def detect_sacrifice_outlet_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect synergies between free sacrifice outlets and sacrifice payoffs
+    """
+    sac_outlet_patterns = [
+        r'sacrifice.*:',
+        r'sacrifice.*as an additional cost',
+        r'you may sacrifice',
+        r'sacrifice a creature'
+    ]
+
+    sac_payoff_patterns = [
+        r'whenever.*you sacrifice',
+        r'whenever.*is put into.*graveyard from the battlefield',
+        r'when.*dies'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_outlet = any(re.search(pattern, card1_text) for pattern in sac_outlet_patterns)
+    card2_outlet = any(re.search(pattern, card2_text) for pattern in sac_outlet_patterns)
+    card1_payoff = any(re.search(pattern, card1_text) for pattern in sac_payoff_patterns)
+    card2_payoff = any(re.search(pattern, card2_text) for pattern in sac_payoff_patterns)
+
+    if card1_outlet and card2_payoff:
+        return {
+            'name': 'Sacrifice Engine',
+            'description': f"{card1['name']} provides sacrifice outlet for {card2['name']}'s death triggers",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'sacrifice'
+        }
+
+    if card2_outlet and card1_payoff:
+        return {
+            'name': 'Sacrifice Engine',
+            'description': f"{card2['name']} provides sacrifice outlet for {card1['name']}'s death triggers",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'sacrifice'
+        }
+
+    return None
+
+
+def detect_blink_etb_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect flicker/blink effects with strong ETB creatures
+    """
+    blink_patterns = [
+        r'exile.*return.*battlefield',
+        r'\bblink\b',
+        r'\bflicker\b'
+    ]
+
+    strong_etb_patterns = [
+        r'when.*enters.*draw',
+        r'when.*enters.*destroy',
+        r'when.*enters.*exile',
+        r'when.*enters.*create.*token',
+        r'when.*enters.*return.*from.*graveyard'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_blink = any(re.search(pattern, card1_text) for pattern in blink_patterns)
+    card2_blink = any(re.search(pattern, card2_text) for pattern in blink_patterns)
+    card1_etb = any(re.search(pattern, card1_text) for pattern in strong_etb_patterns)
+    card2_etb = any(re.search(pattern, card2_text) for pattern in strong_etb_patterns)
+
+    if (card1_blink and card2_etb) or (card2_blink and card1_etb):
+        return {
+            'name': 'Blink Value',
+            'description': f"Blinking {card2['name'] if card1_blink else card1['name']} generates repeated value",
+            'value': 4.0,
+            'category': 'combo',
+            'subcategory': 'etb'
+        }
+
+    return None
+
+
+def detect_proliferate_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect proliferate with counters/poison/planeswalkers
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_proliferate = 'proliferate' in card1_text
+    card2_proliferate = 'proliferate' in card2_text
+
+    counter_patterns = [
+        r'\+1/\+1 counter',
+        r'poison counter',
+        r'loyalty counter',
+        r'charge counter',
+        r'experience counter'
+    ]
+
+    card1_counters = any(pattern in card1_text for pattern in counter_patterns) or 'planeswalker' in card1.get('type_line', '').lower()
+    card2_counters = any(pattern in card2_text for pattern in counter_patterns) or 'planeswalker' in card2.get('type_line', '').lower()
+
+    if card1_proliferate and card2_counters:
+        return {
+            'name': 'Proliferate Synergy',
+            'description': f"{card1['name']} proliferates {card2['name']}'s counters",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'counters'
+        }
+
+    if card2_proliferate and card1_counters:
+        return {
+            'name': 'Proliferate Synergy',
+            'description': f"{card2['name']} proliferates {card1['name']}'s counters",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'counters'
+        }
+
+    return None
+
+
+def detect_infect_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect infect/poison with damage doubling or direct damage
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_infect = 'infect' in card1_text or 'poison counter' in card1_text or 'poisonous' in card1_text
+    card2_infect = 'infect' in card2_text or 'poison counter' in card2_text or 'poisonous' in card2_text
+
+    damage_double_patterns = [
+        r'double.*damage',
+        r'deals double',
+        r'deals.*twice'
+    ]
+
+    card1_double = any(re.search(pattern, card1_text) for pattern in damage_double_patterns)
+    card2_double = any(re.search(pattern, card2_text) for pattern in damage_double_patterns)
+
+    if (card1_infect and card2_double) or (card2_infect and card1_double):
+        return {
+            'name': 'Poison Amplifier',
+            'description': f"Doubling poison counters for faster kills",
+            'value': 4.5,
+            'category': 'combo',
+            'subcategory': 'infect'
+        }
+
+    return None
+
+
+def detect_mill_self_payoff(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect self-mill with graveyard payoffs like threshold/delirium
+    """
+    mill_self_patterns = [
+        r'mill.*yourself',
+        r'put.*top.*cards.*library.*graveyard',
+        r'surveil',
+        r'dredge'
+    ]
+
+    graveyard_count_patterns = [
+        r'threshold',
+        r'delirium',
+        r'undergrowth',
+        r'cards in your graveyard'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_self_mill = any(re.search(pattern, card1_text) for pattern in mill_self_patterns)
+    card2_self_mill = any(re.search(pattern, card2_text) for pattern in mill_self_patterns)
+    card1_gy_count = any(pattern in card1_text for pattern in graveyard_count_patterns)
+    card2_gy_count = any(pattern in card2_text for pattern in graveyard_count_patterns)
+
+    if card1_self_mill and card2_gy_count:
+        return {
+            'name': 'Self-Mill Payoff',
+            'description': f"{card1['name']} fills graveyard for {card2['name']}'s ability",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'graveyard'
+        }
+
+    if card2_self_mill and card1_gy_count:
+        return {
+            'name': 'Self-Mill Payoff',
+            'description': f"{card2['name']} fills graveyard for {card1['name']}'s ability",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'graveyard'
+        }
+
+    return None
+
+
+def detect_flash_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect flash enablers with powerful instants/creatures
+    """
+    flash_grant_patterns = [
+        r'you may cast.*as though.*had flash',
+        r'flash to',
+        r'creatures you control have flash',
+        r'may cast.*any time'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_grants_flash = any(re.search(pattern, card1_text) for pattern in flash_grant_patterns)
+    card2_grants_flash = any(re.search(pattern, card2_text) for pattern in flash_grant_patterns)
+
+    # Check if the other card would benefit from flash
+    card1_cmc = card1.get('cmc', 0)
+    card2_cmc = card2.get('cmc', 0)
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+
+    # High CMC creatures or sorceries benefit from flash
+    if card1_grants_flash and ('creature' in card2_type or 'sorcery' in card2_type) and card2_cmc >= 4:
+        return {
+            'name': 'Flash Enabler',
+            'description': f"{card1['name']} lets you cast {card2['name']} at instant speed",
+            'value': 3.0,
+            'category': 'role_interaction',
+            'subcategory': 'flash'
+        }
+
+    if card2_grants_flash and ('creature' in card1_type or 'sorcery' in card1_type) and card1_cmc >= 4:
+        return {
+            'name': 'Flash Enabler',
+            'description': f"{card2['name']} lets you cast {card1['name']} at instant speed",
+            'value': 3.0,
+            'category': 'role_interaction',
+            'subcategory': 'flash'
+        }
+
+    return None
+
+
+def detect_haste_enabler_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect haste enablers with high-power creatures
+    """
+    haste_grant_patterns = [
+        r'creatures you control have haste',
+        r'gains haste',
+        r'has haste'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+
+    card1_grants_haste = any(re.search(pattern, card1_text) for pattern in haste_grant_patterns)
+    card2_grants_haste = any(re.search(pattern, card2_text) for pattern in haste_grant_patterns)
+
+    card1_power = card1.get('power', '')
+    card2_power = card2.get('power', '')
+
+    # Check for high power creatures
+    try:
+        if card1_grants_haste and 'creature' in card2_type and card2_power and int(card2_power) >= 4:
+            return {
+                'name': 'Haste Enabler',
+                'description': f"{card1['name']} gives {card2['name']} immediate impact",
+                'value': 2.5,
+                'category': 'role_interaction',
+                'subcategory': 'haste'
+            }
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        if card2_grants_haste and 'creature' in card1_type and card1_power and int(card1_power) >= 4:
+            return {
+                'name': 'Haste Enabler',
+                'description': f"{card2['name']} gives {card1['name']} immediate impact",
+                'value': 2.5,
+                'category': 'role_interaction',
+                'subcategory': 'haste'
+            }
+    except (ValueError, TypeError):
+        pass
+
+    return None
+
+
+def detect_vigilance_tap_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect vigilance with tap abilities
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    vigilance_patterns = [r'\bvigilance\b', r'doesn\'t tap', r'attacks each combat if able']
+    tap_ability_patterns = [r'{t}:', r'tap.*:']
+
+    card1_vigilance = any(re.search(pattern, card1_text) for pattern in vigilance_patterns)
+    card2_vigilance = any(re.search(pattern, card2_text) for pattern in vigilance_patterns)
+    card1_tap_ability = any(re.search(pattern, card1_text) for pattern in tap_ability_patterns)
+    card2_tap_ability = any(re.search(pattern, card2_text) for pattern in tap_ability_patterns)
+
+    if card1_vigilance and card1_tap_ability:
+        return {
+            'name': 'Vigilance Value',
+            'description': f"{card1['name']} can attack and still use tap ability",
+            'value': 2.0,
+            'category': 'role_interaction',
+            'subcategory': 'vigilance'
+        }
+
+    if card2_vigilance and card2_tap_ability:
+        return {
+            'name': 'Vigilance Value',
+            'description': f"{card2['name']} can attack and still use tap ability",
+            'value': 2.0,
+            'category': 'role_interaction',
+            'subcategory': 'vigilance'
+        }
+
+    return None
+
+
+def detect_hexproof_aura_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect hexproof/shroud with auras/equipment for voltron
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+
+    protection_keywords = [r'\bhexproof\b', r'\bshroud\b', r'protection from', r'\bward\b']
+
+    card1_protected = any(re.search(pattern, card1_text) for pattern in protection_keywords)
+    card2_protected = any(re.search(pattern, card2_text) for pattern in protection_keywords)
+
+    card1_is_aura = 'aura' in card1_type or 'equipment' in card1_type
+    card2_is_aura = 'aura' in card2_type or 'equipment' in card2_type
+
+    if card1_protected and card2_is_aura and 'creature' in card1_type:
+        return {
+            'name': 'Protected Voltron',
+            'description': f"{card1['name']} is protected while being enhanced by {card2['name']}",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'voltron'
+        }
+
+    if card2_protected and card1_is_aura and 'creature' in card2_type:
+        return {
+            'name': 'Protected Voltron',
+            'description': f"{card2['name']} is protected while being enhanced by {card1['name']}",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'voltron'
+        }
+
+    return None
+
+
+def detect_trample_pump_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect trample with pump spells for damage
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_trample = 'trample' in card1_text or 'trample' in card1.get('keywords', [])
+    card2_trample = 'trample' in card2_text or 'trample' in card2.get('keywords', [])
+
+    pump_patterns = [
+        r'gets \+[0-9]+/\+[0-9]+',
+        r'target creature gets',
+        r'enchanted creature gets \+[0-9]+/\+[0-9]+'
+    ]
+
+    card1_pump = any(re.search(pattern, card1_text) for pattern in pump_patterns)
+    card2_pump = any(re.search(pattern, card2_text) for pattern in pump_patterns)
+
+    if card1_trample and card2_pump:
+        return {
+            'name': 'Trample Pump',
+            'description': f"Pumping {card1['name']} with trample for massive damage",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'combat'
+        }
+
+    if card2_trample and card1_pump:
+        return {
+            'name': 'Trample Pump',
+            'description': f"Pumping {card2['name']} with trample for massive damage",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'combat'
+        }
+
+    return None
+
+
+def detect_lifelink_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect lifelink with damage multiplication
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_lifelink = 'lifelink' in card1_text or 'lifelink' in card1.get('keywords', [])
+    card2_lifelink = 'lifelink' in card2_text or 'lifelink' in card2.get('keywords', [])
+
+    damage_mult_patterns = [
+        r'double.*damage',
+        r'deals double',
+        r'additional.*damage'
+    ]
+
+    card1_mult = any(re.search(pattern, card1_text) for pattern in damage_mult_patterns)
+    card2_mult = any(re.search(pattern, card2_text) for pattern in damage_mult_patterns)
+
+    if card1_lifelink and card2_mult:
+        return {
+            'name': 'Lifelink Multiplier',
+            'description': f"Multiplying {card1['name']}'s lifelink damage for massive lifegain",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'lifegain'
+        }
+
+    if card2_lifelink and card1_mult:
+        return {
+            'name': 'Lifelink Multiplier',
+            'description': f"Multiplying {card2['name']}'s lifelink damage for massive lifegain",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'lifegain'
+        }
+
+    return None
+
+
+def detect_flying_evasion_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect flying matters cards with flying creatures
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    flying_matters_patterns = [
+        r'flying.*you control',
+        r'whenever.*flying.*deals',
+        r'creatures with flying you control get'
+    ]
+
+    card1_flying_matters = any(re.search(pattern, card1_text) for pattern in flying_matters_patterns)
+    card2_flying_matters = any(re.search(pattern, card2_text) for pattern in flying_matters_patterns)
+
+    card1_flying = 'flying' in card1_text or 'flying' in card1.get('keywords', [])
+    card2_flying = 'flying' in card2_text or 'flying' in card2.get('keywords', [])
+
+    if card1_flying_matters and card2_flying:
+        return {
+            'name': 'Flying Tribal',
+            'description': f"{card1['name']} rewards {card2['name']}'s flying",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'tribal'
+        }
+
+    if card2_flying_matters and card1_flying:
+        return {
+            'name': 'Flying Tribal',
+            'description': f"{card2['name']} rewards {card1['name']}'s flying",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'tribal'
+        }
+
+    return None
+
+
+def detect_menace_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect menace/unblockable with go-wide token strategies
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    evasion_keywords = ['menace', 'unblockable', 'can\'t be blocked']
+
+    card1_evasion = any(keyword in card1_text for keyword in evasion_keywords)
+    card2_evasion = any(keyword in card2_text for keyword in evasion_keywords)
+
+    token_gen_patterns = [r'create.*token', r'create.*\d+/\d+']
+
+    card1_tokens = any(re.search(pattern, card1_text) for pattern in token_gen_patterns)
+    card2_tokens = any(re.search(pattern, card2_text) for pattern in token_gen_patterns)
+
+    if card1_evasion and card2_tokens:
+        return {
+            'name': 'Evasive Tokens',
+            'description': f"{card1['name']}'s evasion makes {card2['name']}'s tokens hard to block",
+            'value': 2.0,
+            'category': 'role_interaction',
+            'subcategory': 'tokens'
+        }
+
+    if card2_evasion and card1_tokens:
+        return {
+            'name': 'Evasive Tokens',
+            'description': f"{card2['name']}'s evasion makes {card1['name']}'s tokens hard to block",
+            'value': 2.0,
+            'category': 'role_interaction',
+            'subcategory': 'tokens'
+        }
+
+    return None
+
+
+def detect_first_strike_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect first strike with deathtouch or high power
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    first_strike_keywords = ['first strike', 'double strike']
+
+    card1_first_strike = any(keyword in card1_text for keyword in first_strike_keywords)
+    card2_first_strike = any(keyword in card2_text for keyword in first_strike_keywords)
+
+    card1_deathtouch = 'deathtouch' in card1_text
+    card2_deathtouch = 'deathtouch' in card2_text
+
+    if (card1_first_strike and card2_deathtouch) or (card2_first_strike and card1_deathtouch):
+        return {
+            'name': 'First Strike Deathtouch',
+            'description': f"First strike + deathtouch kills blockers before damage",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'combat'
+        }
+
+    return None
+
+
+def detect_planeswalker_proliferate_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect planeswalkers with proliferate engines
+    """
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_walker = 'planeswalker' in card1_type
+    card2_walker = 'planeswalker' in card2_type
+
+    card1_proliferate = 'proliferate' in card1_text
+    card2_proliferate = 'proliferate' in card2_text
+
+    if card1_walker and card2_proliferate:
+        return {
+            'name': 'Superfriends Proliferate',
+            'description': f"{card2['name']} accelerates {card1['name']}'s loyalty",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'planeswalker'
+        }
+
+    if card2_walker and card1_proliferate:
+        return {
+            'name': 'Superfriends Proliferate',
+            'description': f"{card1['name']} accelerates {card2['name']}'s loyalty",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'planeswalker'
+        }
+
+    return None
+
+
+def detect_planeswalker_protection_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect planeswalkers with creature protection (blockers/fogs)
+    """
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_walker = 'planeswalker' in card1_type
+    card2_walker = 'planeswalker' in card2_type
+
+    protection_patterns = [
+        r'prevent all combat damage',
+        r'creatures can\'t attack',
+        r'defender',
+        r'fog'
+    ]
+
+    card1_protection = any(re.search(pattern, card1_text) for pattern in protection_patterns) or ('creature' in card1_type and 'defender' in card1.get('keywords', []))
+    card2_protection = any(re.search(pattern, card2_text) for pattern in protection_patterns) or ('creature' in card2_type and 'defender' in card2.get('keywords', []))
+
+    if card1_walker and card2_protection:
+        return {
+            'name': 'Walker Protection',
+            'description': f"{card2['name']} protects {card1['name']} from attacks",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'planeswalker'
+        }
+
+    if card2_walker and card1_protection:
+        return {
+            'name': 'Walker Protection',
+            'description': f"{card1['name']} protects {card2['name']} from attacks",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'planeswalker'
+        }
+
+    return None
+
+
+def detect_commander_damage_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect commander damage enablers with power boosts
+    """
+    pump_patterns = [
+        r'gets \+[3-9]/\+[0-9]',
+        r'double.*power',
+        r'power equal to'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_pump = any(re.search(pattern, card1_text) for pattern in pump_patterns)
+    card2_pump = any(re.search(pattern, card2_text) for pattern in pump_patterns)
+
+    # Check if either is legendary creature (potential commander)
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+
+    card1_commander = 'legendary' in card1_type and 'creature' in card1_type
+    card2_commander = 'legendary' in card2_type and 'creature' in card2_type
+
+    if card1_commander and card2_pump:
+        return {
+            'name': 'Commander Damage',
+            'description': f"{card2['name']} enables faster commander damage kills with {card1['name']}",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'voltron'
+        }
+
+    if card2_commander and card1_pump:
+        return {
+            'name': 'Commander Damage',
+            'description': f"{card1['name']} enables faster commander damage kills with {card2['name']}",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'voltron'
+        }
+
+    return None
+
+
+def detect_untap_land_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect land untap effects with utility lands
+    """
+    untap_land_patterns = [
+        r'untap.*land',
+        r'untap up to',
+        r'untap target land'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+
+    card1_untaps = any(re.search(pattern, card1_text) for pattern in untap_land_patterns)
+    card2_untaps = any(re.search(pattern, card2_text) for pattern in untap_land_patterns)
+
+    # Check for utility lands with tap abilities
+    tap_ability = r'{t}:.*(?:add|draw|create|deal)'
+
+    card1_utility = 'land' in card1_type and re.search(tap_ability, card1_text)
+    card2_utility = 'land' in card2_type and re.search(tap_ability, card2_text)
+
+    if card1_untaps and card2_utility:
+        return {
+            'name': 'Land Untap Engine',
+            'description': f"{card1['name']} untaps {card2['name']} for extra value",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'ramp'
+        }
+
+    if card2_untaps and card1_utility:
+        return {
+            'name': 'Land Untap Engine',
+            'description': f"{card2['name']} untaps {card1['name']} for extra value",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'ramp'
+        }
+
+    return None
+
+
+def detect_fetch_land_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect fetchlands with landfall triggers
+    """
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # Fetch land pattern
+    fetch_pattern = r'search.*library.*land.*battlefield'
+
+    card1_fetch = 'land' in card1_type and re.search(fetch_pattern, card1_text)
+    card2_fetch = 'land' in card2_type and re.search(fetch_pattern, card2_text)
+
+    # Landfall pattern
+    landfall_pattern = r'landfall|whenever.*land enters'
+
+    card1_landfall = re.search(landfall_pattern, card1_text)
+    card2_landfall = re.search(landfall_pattern, card2_text)
+
+    if card1_fetch and card2_landfall:
+        return {
+            'name': 'Fetch Landfall',
+            'description': f"{card1['name']} triggers {card2['name']}'s landfall twice",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'landfall'
+        }
+
+    if card2_fetch and card1_landfall:
+        return {
+            'name': 'Fetch Landfall',
+            'description': f"{card2['name']} triggers {card1['name']}'s landfall twice",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'landfall'
+        }
+
+    return None
+
+
+def detect_artifact_sac_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect artifact sacrifice outlets with artifact death triggers
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    artifact_sac_patterns = [
+        r'sacrifice.*artifact:',
+        r'sacrifice an artifact'
+    ]
+
+    artifact_death_patterns = [
+        r'whenever.*artifact.*put into.*graveyard',
+        r'whenever you sacrifice.*artifact',
+        r'whenever an artifact.*dies'
+    ]
+
+    card1_sac = any(re.search(pattern, card1_text) for pattern in artifact_sac_patterns)
+    card2_sac = any(re.search(pattern, card2_text) for pattern in artifact_sac_patterns)
+    card1_payoff = any(re.search(pattern, card1_text) for pattern in artifact_death_patterns)
+    card2_payoff = any(re.search(pattern, card2_text) for pattern in artifact_death_patterns)
+
+    if card1_sac and card2_payoff:
+        return {
+            'name': 'Artifact Sacrifice Engine',
+            'description': f"{card1['name']} sacrifices artifacts to trigger {card2['name']}",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    if card2_sac and card1_payoff:
+        return {
+            'name': 'Artifact Sacrifice Engine',
+            'description': f"{card2['name']} sacrifices artifacts to trigger {card1['name']}",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    return None
+
+
+def detect_enchantment_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect enchantment matters cards with enchantments
+    """
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    enchantment_matters_patterns = [
+        r'enchantments you control',
+        r'whenever.*enchantment enters',
+        r'whenever you cast.*enchantment'
+    ]
+
+    card1_matters = any(re.search(pattern, card1_text) for pattern in enchantment_matters_patterns)
+    card2_matters = any(re.search(pattern, card2_text) for pattern in enchantment_matters_patterns)
+
+    card1_is_enchantment = 'enchantment' in card1_type
+    card2_is_enchantment = 'enchantment' in card2_type
+
+    if card1_matters and card2_is_enchantment:
+        return {
+            'name': 'Enchantment Synergy',
+            'description': f"{card1['name']} rewards playing {card2['name']}",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'enchantments'
+        }
+
+    if card2_matters and card1_is_enchantment:
+        return {
+            'name': 'Enchantment Synergy',
+            'description': f"{card2['name']} rewards playing {card1['name']}",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'enchantments'
+        }
+
+    return None
+
+
+def detect_saga_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect saga doublers or saga proliferate
+    """
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_saga = 'saga' in card1_type
+    card2_saga = 'saga' in card2_type
+
+    saga_synergy_patterns = [
+        r'proliferate',
+        r'chapter abilities.*trigger.*additional time',
+        r'lore counter'
+    ]
+
+    card1_synergy = any(re.search(pattern, card1_text) for pattern in saga_synergy_patterns)
+    card2_synergy = any(re.search(pattern, card2_text) for pattern in saga_synergy_patterns)
+
+    if card1_saga and card2_synergy:
+        return {
+            'name': 'Saga Accelerator',
+            'description': f"{card2['name']} accelerates or doubles {card1['name']}'s chapters",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'enchantments'
+        }
+
+    if card2_saga and card1_synergy:
+        return {
+            'name': 'Saga Accelerator',
+            'description': f"{card1['name']} accelerates or doubles {card2['name']}'s chapters",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'enchantments'
+        }
+
+    return None
+
+
+def detect_room_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect room cards with bounce/flicker effects
+    """
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # Room is a newer card type (Duskmourn)
+    card1_room = 'room' in card1_type
+    card2_room = 'room' in card2_type
+
+    bounce_patterns = [
+        r'return.*to.*hand',
+        r'bounce'
+    ]
+
+    card1_bounce = any(re.search(pattern, card1_text) for pattern in bounce_patterns)
+    card2_bounce = any(re.search(pattern, card2_text) for pattern in bounce_patterns)
+
+    if card1_room and card2_bounce:
+        return {
+            'name': 'Room Reset',
+            'description': f"{card2['name']} bounces {card1['name']} to unlock different doors",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'enchantments'
+        }
+
+    if card2_room and card1_bounce:
+        return {
+            'name': 'Room Reset',
+            'description': f"{card1['name']} bounces {card2['name']} to unlock different doors",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'enchantments'
+        }
+
+    return None
+
+
+def detect_vehicle_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect vehicles with token generators or creatures
+    """
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_vehicle = 'vehicle' in card1_type
+    card2_vehicle = 'vehicle' in card2_type
+
+    crew_enabler_patterns = [
+        r'create.*token.*creature',
+        r'servo',
+        r'myr'
+    ]
+
+    card1_enabler = any(re.search(pattern, card1_text) for pattern in crew_enabler_patterns) or 'creature' in card1_type
+    card2_enabler = any(re.search(pattern, card2_text) for pattern in crew_enabler_patterns) or 'creature' in card2_type
+
+    if card1_vehicle and card2_enabler:
+        return {
+            'name': 'Vehicle Crew',
+            'description': f"{card2['name']} crews {card1['name']}",
+            'value': 2.0,
+            'category': 'role_interaction',
+            'subcategory': 'artifacts'
+        }
+
+    if card2_vehicle and card1_enabler:
+        return {
+            'name': 'Vehicle Crew',
+            'description': f"{card1['name']} crews {card2['name']}",
+            'value': 2.0,
+            'category': 'role_interaction',
+            'subcategory': 'artifacts'
+        }
+
+    return None
+
+
+def detect_food_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect food token generation with sacrifice payoffs
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_food = 'food' in card1_text
+    card2_food = 'food' in card2_text
+
+    artifact_sac_matters = [
+        r'whenever you sacrifice.*artifact',
+        r'artifacts you control',
+        r'artifact.*enters'
+    ]
+
+    card1_matters = any(re.search(pattern, card1_text) for pattern in artifact_sac_matters)
+    card2_matters = any(re.search(pattern, card2_text) for pattern in artifact_sac_matters)
+
+    if card1_food and card2_matters:
+        return {
+            'name': 'Food Synergy',
+            'description': f"{card1['name']}'s food tokens synergize with {card2['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    if card2_food and card1_matters:
+        return {
+            'name': 'Food Synergy',
+            'description': f"{card2['name']}'s food tokens synergize with {card1['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    return None
+
+
+def detect_blood_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect blood token generation with discard payoffs
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_blood = 'blood' in card1_text
+    card2_blood = 'blood' in card2_text
+
+    discard_matters_patterns = [
+        r'whenever you discard',
+        r'madness',
+        r'when.*discarded'
+    ]
+
+    card1_matters = any(re.search(pattern, card1_text) for pattern in discard_matters_patterns)
+    card2_matters = any(re.search(pattern, card2_text) for pattern in discard_matters_patterns)
+
+    if card1_blood and card2_matters:
+        return {
+            'name': 'Blood Discard',
+            'description': f"{card1['name']}'s blood tokens enable {card2['name']}'s discard payoffs",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'discard'
+        }
+
+    if card2_blood and card1_matters:
+        return {
+            'name': 'Blood Discard',
+            'description': f"{card2['name']}'s blood tokens enable {card1['name']}'s discard payoffs",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'discard'
+        }
+
+    return None
+
+
+def detect_investigate_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect investigate with clue/artifact payoffs
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_investigate = 'investigate' in card1_text or 'clue' in card1_text
+    card2_investigate = 'investigate' in card2_text or 'clue' in card2_text
+
+    artifact_payoff_patterns = [
+        r'whenever.*artifact enters',
+        r'artifacts you control',
+        r'affinity'
+    ]
+
+    card1_payoff = any(re.search(pattern, card1_text) for pattern in artifact_payoff_patterns)
+    card2_payoff = any(re.search(pattern, card2_text) for pattern in artifact_payoff_patterns)
+
+    if card1_investigate and card2_payoff:
+        return {
+            'name': 'Investigate Payoff',
+            'description': f"{card1['name']}'s clues trigger {card2['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    if card2_investigate and card1_payoff:
+        return {
+            'name': 'Investigate Payoff',
+            'description': f"{card2['name']}'s clues trigger {card1['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    return None
+
+
+def detect_role_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect role token generation with aura/enchantment synergies
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # Role tokens are enchantment tokens (Wilds of Eldraine)
+    role_patterns = [r'\brole\b', r'role token']
+
+    card1_role = any(re.search(pattern, card1_text) for pattern in role_patterns)
+    card2_role = any(re.search(pattern, card2_text) for pattern in role_patterns)
+
+    enchantment_matters = [
+        r'whenever.*enchantment enters',
+        r'enchantments you control',
+        r'constellation'
+    ]
+
+    card1_matters = any(re.search(pattern, card1_text) for pattern in enchantment_matters)
+    card2_matters = any(re.search(pattern, card2_text) for pattern in enchantment_matters)
+
+    if card1_role and card2_matters:
+        return {
+            'name': 'Role Enchantment Synergy',
+            'description': f"{card1['name']}'s roles trigger {card2['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'enchantments'
+        }
+
+    if card2_role and card1_matters:
+        return {
+            'name': 'Role Enchantment Synergy',
+            'description': f"{card2['name']}'s roles trigger {card1['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'enchantments'
+        }
+
+    return None
+
+
+def detect_bargain_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect bargain with treasure/artifact generation
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_bargain = 'bargain' in card1_text
+    card2_bargain = 'bargain' in card2_text
+
+    artifact_token_patterns = [
+        r'treasure',
+        r'create.*artifact.*token',
+        r'food',
+        r'clue'
+    ]
+
+    card1_artifacts = any(pattern in card1_text for pattern in artifact_token_patterns)
+    card2_artifacts = any(pattern in card2_text for pattern in artifact_token_patterns)
+
+    if card1_bargain and card2_artifacts:
+        return {
+            'name': 'Bargain Enabler',
+            'description': f"{card2['name']} creates artifacts to enable {card1['name']}'s bargain",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    if card2_bargain and card1_artifacts:
+        return {
+            'name': 'Bargain Enabler',
+            'description': f"{card1['name']} creates artifacts to enable {card2['name']}'s bargain",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    return None
+
+
+def detect_modified_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect modified matters with auras/equipment/counters
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    modified_matters_patterns = [
+        r'modified',
+        r'equipped.*you control',
+        r'enchanted creatures you control'
+    ]
+
+    card1_matters = any(re.search(pattern, card1_text) for pattern in modified_matters_patterns)
+    card2_matters = any(re.search(pattern, card2_text) for pattern in modified_matters_patterns)
+
+    modifier_patterns = [
+        r'equipment',
+        r'aura',
+        r'\+1/\+1 counter',
+        r'attach'
+    ]
+
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+
+    card1_modifier = any(pattern in card1_text for pattern in modifier_patterns) or 'equipment' in card1_type or 'aura' in card1_type
+    card2_modifier = any(pattern in card2_text for pattern in modifier_patterns) or 'equipment' in card2_type or 'aura' in card2_type
+
+    if card1_matters and card2_modifier:
+        return {
+            'name': 'Modified Synergy',
+            'description': f"{card2['name']} modifies creatures for {card1['name']}'s payoff",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'equipment'
+        }
+
+    if card2_matters and card1_modifier:
+        return {
+            'name': 'Modified Synergy',
+            'description': f"{card1['name']} modifies creatures for {card2['name']}'s payoff",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'equipment'
+        }
+
+    return None
+
+
+def detect_ninjutsu_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect ninjutsu with unblockable creatures
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_ninjutsu = 'ninjutsu' in card1_text
+    card2_ninjutsu = 'ninjutsu' in card2_text
+
+    evasion_patterns = [
+        r'unblockable',
+        r'can\'t be blocked',
+        r'flying',
+        r'shadow',
+        r'horsemanship'
+    ]
+
+    card1_evasion = any(re.search(pattern, card1_text) for pattern in evasion_patterns)
+    card2_evasion = any(re.search(pattern, card2_text) for pattern in evasion_patterns)
+
+    if card1_ninjutsu and card2_evasion:
+        return {
+            'name': 'Ninjutsu Enabler',
+            'description': f"{card2['name']}'s evasion enables {card1['name']}'s ninjutsu",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'tribal'
+        }
+
+    if card2_ninjutsu and card1_evasion:
+        return {
+            'name': 'Ninjutsu Enabler',
+            'description': f"{card1['name']}'s evasion enables {card2['name']}'s ninjutsu",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'tribal'
+        }
+
+    return None
+
+
+def detect_mutate_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect mutate with ETB or mutation payoffs
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_mutate = 'mutate' in card1_text
+    card2_mutate = 'mutate' in card2_text
+
+    mutate_payoff_patterns = [
+        r'whenever.*mutates',
+        r'when.*enters.*draw',
+        r'whenever.*creature enters'
+    ]
+
+    card1_payoff = any(re.search(pattern, card1_text) for pattern in mutate_payoff_patterns)
+    card2_payoff = any(re.search(pattern, card2_text) for pattern in mutate_payoff_patterns)
+
+    if card1_mutate and card2_payoff:
+        return {
+            'name': 'Mutate Synergy',
+            'description': f"{card1['name']}'s mutate triggers {card2['name']}",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'mutate'
+        }
+
+    if card2_mutate and card1_payoff:
+        return {
+            'name': 'Mutate Synergy',
+            'description': f"{card2['name']}'s mutate triggers {card1['name']}",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'mutate'
+        }
+
+    return None
+
+
+def detect_companion_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect companion restriction synergy with deck building
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # This is a weak detection - companions have specific deck building restrictions
+    card1_companion = 'companion' in card1_text
+    card2_companion = 'companion' in card2_text
+
+    if card1_companion or card2_companion:
+        # This is tricky without full deck context
+        # Basic detection for now
+        return {
+            'name': 'Companion Synergy',
+            'description': f"Cards work within companion restrictions",
+            'value': 1.5,
+            'category': 'role_interaction',
+            'subcategory': 'companion'
+        }
+
+    return None
+
+
+def detect_party_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect party mechanics with Cleric/Rogue/Warrior/Wizard
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+
+    party_matters = 'party' in card1_text or 'party' in card2_text
+
+    party_types = ['cleric', 'rogue', 'warrior', 'wizard']
+
+    card1_party_member = any(ptype in card1_type for ptype in party_types)
+    card2_party_member = any(ptype in card2_type for ptype in party_types)
+
+    if party_matters and (card1_party_member or card2_party_member):
+        return {
+            'name': 'Party Member',
+            'description': f"Party synergy between cards",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'tribal'
+        }
+
+    return None
+
+
+def detect_foretell_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect foretell with cost reduction or extra value
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_foretell = 'foretell' in card1_text
+    card2_foretell = 'foretell' in card2_text
+
+    exile_matters_patterns = [
+        r'whenever.*exile',
+        r'cards in exile',
+        r'cast.*from exile'
+    ]
+
+    card1_exile = any(re.search(pattern, card1_text) for pattern in exile_matters_patterns)
+    card2_exile = any(re.search(pattern, card2_text) for pattern in exile_matters_patterns)
+
+    if card1_foretell and card2_exile:
+        return {
+            'name': 'Foretell Payoff',
+            'description': f"{card1['name']}'s foretell synergizes with {card2['name']}'s exile matters",
+            'value': 2.0,
+            'category': 'combo',
+            'subcategory': 'exile'
+        }
+
+    if card2_foretell and card1_exile:
+        return {
+            'name': 'Foretell Payoff',
+            'description': f"{card2['name']}'s foretell synergizes with {card1['name']}'s exile matters",
+            'value': 2.0,
+            'category': 'combo',
+            'subcategory': 'exile'
+        }
+
+    return None
+
+
+def detect_boast_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect boast with untap effects
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_boast = 'boast' in card1_text
+    card2_boast = 'boast' in card2_text
+
+    untap_creature_patterns = [
+        r'untap.*creature',
+        r'untap all creatures',
+        r'vigilance'
+    ]
+
+    card1_untap = any(re.search(pattern, card1_text) for pattern in untap_creature_patterns)
+    card2_untap = any(re.search(pattern, card2_text) for pattern in untap_creature_patterns)
+
+    if card1_boast and card2_untap:
+        return {
+            'name': 'Boast Enabler',
+            'description': f"{card2['name']} untaps {card1['name']} for multiple boast activations",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'activated_ability'
+        }
+
+    if card2_boast and card1_untap:
+        return {
+            'name': 'Boast Enabler',
+            'description': f"{card1['name']} untaps {card2['name']} for multiple boast activations",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'activated_ability'
+        }
+
+    return None
+
+
+def detect_backup_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect backup with counter synergies
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_backup = 'backup' in card1_text
+    card2_backup = 'backup' in card2_text
+
+    counter_payoff_patterns = [
+        r'whenever.*\+1/\+1 counter',
+        r'for each \+1/\+1 counter',
+        r'remove.*\+1/\+1 counter'
+    ]
+
+    card1_payoff = any(re.search(pattern, card1_text) for pattern in counter_payoff_patterns)
+    card2_payoff = any(re.search(pattern, card2_text) for pattern in counter_payoff_patterns)
+
+    if card1_backup and card2_payoff:
+        return {
+            'name': 'Backup Counter Synergy',
+            'description': f"{card1['name']}'s backup counters synergize with {card2['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'counters'
+        }
+
+    if card2_backup and card1_payoff:
+        return {
+            'name': 'Backup Counter Synergy',
+            'description': f"{card2['name']}'s backup counters synergize with {card1['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'counters'
+        }
+
+    return None
+
+
+def detect_blitz_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect blitz with death triggers
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_blitz = 'blitz' in card1_text
+    card2_blitz = 'blitz' in card2_text
+
+    death_matters_patterns = [
+        r'whenever.*dies',
+        r'whenever.*creature.*put into.*graveyard',
+        r'when.*dies'
+    ]
+
+    card1_death = any(re.search(pattern, card1_text) for pattern in death_matters_patterns)
+    card2_death = any(re.search(pattern, card2_text) for pattern in death_matters_patterns)
+
+    if card1_blitz and card2_death:
+        return {
+            'name': 'Blitz Sacrifice',
+            'description': f"{card1['name']}'s blitz triggers {card2['name']}'s death payoff",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'sacrifice'
+        }
+
+    if card2_blitz and card1_death:
+        return {
+            'name': 'Blitz Sacrifice',
+            'description': f"{card2['name']}'s blitz triggers {card1['name']}'s death payoff",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'sacrifice'
+        }
+
+    return None
+
+
+def detect_craft_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect craft with artifact tokens
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_craft = 'craft' in card1_text and 'exile' in card1_text
+    card2_craft = 'craft' in card2_text and 'exile' in card2_text
+
+    artifact_generation = [
+        r'treasure',
+        r'create.*artifact',
+        r'powerstone'
+    ]
+
+    card1_artifacts = any(pattern in card1_text for pattern in artifact_generation)
+    card2_artifacts = any(pattern in card2_text for pattern in artifact_generation)
+
+    if card1_craft and card2_artifacts:
+        return {
+            'name': 'Craft Enabler',
+            'description': f"{card2['name']} creates artifacts for {card1['name']}'s craft cost",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    if card2_craft and card1_artifacts:
+        return {
+            'name': 'Craft Enabler',
+            'description': f"{card1['name']} creates artifacts for {card2['name']}'s craft cost",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    return None
+
+
+def detect_discover_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect discover with low CMC powerful spells
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_discover = 'discover' in card1_text
+    card2_discover = 'discover' in card2_text
+
+    # Discover finds low CMC spells, so high-value low CMC cards synergize
+    card1_cmc = card1.get('cmc', 999)
+    card2_cmc = card2.get('cmc', 999)
+
+    if card1_discover and card2_cmc <= 3:
+        return {
+            'name': 'Discover Target',
+            'description': f"{card1['name']}'s discover can find {card2['name']}",
+            'value': 2.0,
+            'category': 'combo',
+            'subcategory': 'cascade'
+        }
+
+    if card2_discover and card1_cmc <= 3:
+        return {
+            'name': 'Discover Target',
+            'description': f"{card2['name']}'s discover can find {card1['name']}",
+            'value': 2.0,
+            'category': 'combo',
+            'subcategory': 'cascade'
+        }
+
+    return None
+
+
+def detect_incubate_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect incubate with artifact/creature matters
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_incubate = 'incubate' in card1_text
+    card2_incubate = 'incubate' in card2_text
+
+    token_synergy_patterns = [
+        r'whenever.*artifact enters',
+        r'whenever.*creature enters',
+        r'artifacts you control'
+    ]
+
+    card1_synergy = any(re.search(pattern, card1_text) for pattern in token_synergy_patterns)
+    card2_synergy = any(re.search(pattern, card2_text) for pattern in token_synergy_patterns)
+
+    if card1_incubate and card2_synergy:
+        return {
+            'name': 'Incubate Payoff',
+            'description': f"{card1['name']}'s incubate tokens trigger {card2['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    if card2_incubate and card1_synergy:
+        return {
+            'name': 'Incubate Payoff',
+            'description': f"{card2['name']}'s incubate tokens trigger {card1['name']}",
+            'value': 2.5,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    return None
+
+
+def detect_affinity_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect affinity cost reduction with artifact generation
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_affinity = 'affinity for' in card1_text
+    card2_affinity = 'affinity for' in card2_text
+
+    artifact_gen_patterns = [
+        r'create.*artifact.*token',
+        r'treasure',
+        r'servo',
+        r'clue',
+        r'food',
+        r'powerstone'
+    ]
+
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+
+    card1_artifacts = any(pattern in card1_text for pattern in artifact_gen_patterns) or 'artifact' in card1_type
+    card2_artifacts = any(pattern in card2_text for pattern in artifact_gen_patterns) or 'artifact' in card2_type
+
+    if card1_affinity and card2_artifacts:
+        return {
+            'name': 'Affinity Cost Reduction',
+            'description': f"{card2['name']} reduces {card1['name']}'s affinity cost",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    if card2_affinity and card1_artifacts:
+        return {
+            'name': 'Affinity Cost Reduction',
+            'description': f"{card1['name']} reduces {card2['name']}'s affinity cost",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'artifacts'
+        }
+
+    return None
+
+
+def detect_kicker_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect kicker/multikicker with mana generation or cost reduction
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    kicker_patterns = [r'\bkicker\b', r'multikicker', r'was kicked']
+
+    card1_kicker = any(re.search(pattern, card1_text) for pattern in kicker_patterns)
+    card2_kicker = any(re.search(pattern, card2_text) for pattern in kicker_patterns)
+
+    mana_gen_patterns = [
+        r'add.*{[wubrgc]}',
+        r'treasure',
+        r'ritual',
+        r'cost.*less to cast'
+    ]
+
+    card1_mana = any(re.search(pattern, card1_text) for pattern in mana_gen_patterns)
+    card2_mana = any(re.search(pattern, card2_text) for pattern in mana_gen_patterns)
+
+    if card1_kicker and card2_mana:
+        return {
+            'name': 'Kicker Enabler',
+            'description': f"{card2['name']} provides mana to kick {card1['name']}",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'ramp'
+        }
+
+    if card2_kicker and card1_mana:
+        return {
+            'name': 'Kicker Enabler',
+            'description': f"{card1['name']} provides mana to kick {card2['name']}",
+            'value': 2.5,
+            'category': 'role_interaction',
+            'subcategory': 'ramp'
+        }
+
+    return None
+
+
+def detect_overload_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect overload with mana generation
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_overload = 'overload' in card1_text
+    card2_overload = 'overload' in card2_text
+
+    big_mana_patterns = [
+        r'add.*{[wubrg]}.*{[wubrg]}.*{[wubrg]}',  # 3+ mana
+        r'untap all',
+        r'add.*mana equal to',
+        r'ritual'
+    ]
+
+    card1_big_mana = any(re.search(pattern, card1_text) for pattern in big_mana_patterns)
+    card2_big_mana = any(re.search(pattern, card2_text) for pattern in big_mana_patterns)
+
+    if card1_overload and card2_big_mana:
+        return {
+            'name': 'Overload Enabler',
+            'description': f"{card2['name']} provides mana to overload {card1['name']}",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'ramp'
+        }
+
+    if card2_overload and card1_big_mana:
+        return {
+            'name': 'Overload Enabler',
+            'description': f"{card1['name']} provides mana to overload {card2['name']}",
+            'value': 3.0,
+            'category': 'combo',
+            'subcategory': 'ramp'
+        }
+
+    return None
+
+
+def detect_miracle_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect miracle with top deck manipulation
+    """
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    card1_miracle = 'miracle' in card1_text
+    card2_miracle = 'miracle' in card2_text
+
+    topdeck_patterns = [
+        r'top.*library',
+        r'put.*on top',
+        r'scry',
+        r'brainstorm',
+        r'sensei\'s divining top'
+    ]
+
+    card1_topdeck = any(re.search(pattern, card1_text) for pattern in topdeck_patterns)
+    card2_topdeck = any(re.search(pattern, card2_text) for pattern in topdeck_patterns)
+
+    if card1_miracle and card2_topdeck:
+        return {
+            'name': 'Miracle Setup',
+            'description': f"{card2['name']} sets up {card1['name']}'s miracle cast",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'top_deck_manipulation'
+        }
+
+    if card2_miracle and card1_topdeck:
+        return {
+            'name': 'Miracle Setup',
+            'description': f"{card1['name']} sets up {card2['name']}'s miracle cast",
+            'value': 3.5,
+            'category': 'combo',
+            'subcategory': 'top_deck_manipulation'
+        }
+
+    return None
+
+
 # List of all detection functions
 ALL_RULES = [
     detect_etb_triggers,
@@ -3050,5 +4865,51 @@ ALL_RULES = [
     detect_copy_synergy,
     detect_storm_synergy,
     detect_energy_synergy,
-    detect_stax_synergy
-] + CARD_ADVANTAGE_SYNERGY_RULES  # Add card advantage synergies
+    detect_stax_synergy,
+    # New comprehensive synergy rules (46 new rules added)
+    detect_sacrifice_outlet_synergy,
+    detect_blink_etb_synergy,
+    detect_proliferate_synergy,
+    detect_infect_damage_synergy,
+    detect_mill_self_payoff,
+    detect_flash_synergy,
+    detect_haste_enabler_synergy,
+    detect_vigilance_tap_synergy,
+    detect_hexproof_aura_synergy,
+    detect_trample_pump_synergy,
+    detect_lifelink_damage_synergy,
+    detect_flying_evasion_synergy,
+    detect_menace_token_synergy,
+    detect_first_strike_damage_synergy,
+    detect_planeswalker_proliferate_synergy,
+    detect_planeswalker_protection_synergy,
+    detect_commander_damage_synergy,
+    detect_untap_land_synergy,
+    detect_fetch_land_synergy,
+    detect_artifact_sac_synergy,
+    detect_enchantment_synergy,
+    detect_saga_synergy,
+    detect_room_synergy,
+    detect_vehicle_synergy,
+    detect_food_synergy,
+    detect_blood_synergy,
+    detect_investigate_synergy,
+    detect_role_token_synergy,
+    detect_bargain_synergy,
+    detect_modified_synergy,
+    detect_ninjutsu_synergy,
+    detect_mutate_synergy,
+    detect_companion_synergy,
+    detect_party_synergy,
+    detect_foretell_synergy,
+    detect_boast_synergy,
+    detect_backup_synergy,
+    detect_blitz_synergy,
+    detect_craft_synergy,
+    detect_discover_synergy,
+    detect_incubate_synergy,
+    detect_affinity_synergy,
+    detect_kicker_synergy,
+    detect_overload_synergy,
+    detect_miracle_synergy
+] + CARD_ADVANTAGE_SYNERGY_RULES  # Add card advantage synergies (5 rules + 6 recursion rules = 11 total)
