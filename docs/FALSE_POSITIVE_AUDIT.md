@@ -25,11 +25,26 @@ This document tracks false positives in the synergy detection system based on re
 **Status**: Fixed with Aura/Equipment-specific trigger exclusions
 **See**: `docs/BUG_FIXES_2025_11_06.md`
 
+### 4. ✅ Equipment Synergy Descriptions Backwards (FIXED)
+**Problem**: Descriptions implied non-equipment cards WERE equipment
+**Examples**:
+- "Robe of Stars synergizes with equipment like Steelshaper's Gift" (implies Steelshaper's Gift is equipment - WRONG!)
+- "Robe of Stars synergizes with equipment like Firion" (implies Firion is equipment - WRONG!)
+
+**Root Cause**: Description pattern was `"{X} synergizes with equipment like {Y}"` where Y IS the equipment, making it sound like Y was NOT equipment
+
+**Fixed Descriptions**:
+- Tutors: "Steelshaper's Gift can tutor for equipment like Robe of Stars" ✅
+- Equipment matters: "Firion cares about equipment, Robe of Stars is equipment" ✅
+
+**Status**: Fixed with separated detection for tutors, recursion, and general equipment matters
+**Commit**: 0165156
+
 ---
 
 ## 🟠 **REMAINING** - Known Issues
 
-### 4. 🟠 Generic Death Trigger Matching (Needs Fix)
+### 5. 🟠 Generic Death Trigger Matching (Needs Fix)
 
 **Example false positive reported by user:**
 ```
@@ -78,7 +93,7 @@ Generic death trigger overlap may not be worth detecting at all.
 
 ---
 
-### 5. 🟡 Firion "Cheat" Detection (Needs Investigation)
+### 6. 🟡 Firion "Cheat" Detection (Needs Investigation)
 
 **Example false positive reported by user:**
 ```
@@ -95,7 +110,7 @@ Generic death trigger overlap may not be worth detecting at all.
 
 ---
 
-### 6. 🟡 Professor Hojo "Cheat" Detection (Needs Investigation)
+### 7. 🟡 Professor Hojo "Cheat" Detection (Needs Investigation)
 
 **Example false positive reported by user:**
 ```
@@ -119,6 +134,7 @@ Generic death trigger overlap may not be worth detecting at all.
 | **Opponent Tokens** | 🔴 Critical | High | Low | P0 | ✅ Fixed |
 | **Ramp as Cheat** | 🔴 Critical | High | Low | P0 | ✅ Fixed |
 | **Aura/Equipment Spellslinger** | 🔴 Critical | High | Medium | P0 | ✅ Fixed |
+| **Equipment Descriptions Backwards** | 🔴 Critical | Medium | Low | P0 | ✅ Fixed |
 | **Generic Death Triggers** | 🟠 High | Medium | Low | P1 | ⏳ Needs decision |
 | **Firion Cheat Detection** | 🟡 Medium | Low | Low | P2 | ⏳ Needs investigation |
 | **Professor Hojo Cheat** | 🟡 Medium | Low | Low | P2 | ⏳ Needs investigation |
@@ -283,11 +299,12 @@ Thank you to our users for:
 - ✅ Fixed: Opponent token detection (Generous Gift)
 - ✅ Fixed: Ramp vs cheat detection (Cultivate)
 - ✅ Fixed: Aura/Equipment trigger specificity (Sram)
+- ✅ Fixed: Equipment synergy descriptions backwards (Steelshaper's Gift, Firion)
 - 📝 Documented: Generic death trigger issue
 - 🔍 Identified: Firion & Professor Hojo need investigation
 
 ---
 
 **Last Updated**: November 6, 2025
-**Status**: 3 critical bugs fixed, 3 issues remaining
+**Status**: 4 critical bugs fixed, 3 issues remaining
 **Next Review**: After investigating Firion & Professor Hojo
