@@ -977,14 +977,7 @@ def load_deck(n_clicks, url, current_data):
         # Analyze synergies
         print(f"[DECK LOAD] Step 5: Analyzing synergies for {len(cards_with_details)} cards...")
         print(f"[DECK LOAD] This may take 1-2 minutes for large decks. Please wait...")
-
-        # Disable three-way synergies for large decks to prevent timeout (>80 cards)
-        # Three-way analysis is O(n³) and can take several minutes for 100+ card decks
-        include_three_way = len(cards_with_details) <= 80
-        if not include_three_way:
-            print(f"[DECK LOAD] Disabling three-way synergy detection for deck size {len(cards_with_details)} to prevent timeout")
-
-        synergy_result = analyze_deck_synergies(cards_with_details, include_three_way=include_three_way)
+        synergy_result = analyze_deck_synergies(cards_with_details, include_three_way=True)
 
         # Handle both old and new return formats
         if isinstance(synergy_result, dict) and 'two_way' in synergy_result:
