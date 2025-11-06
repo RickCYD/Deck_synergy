@@ -267,8 +267,9 @@ def detect_equipment_matters_three_way(card1: Dict, card2: Dict, card3: Dict) ->
     creature_card = next((d['card'] for d in cards_data if d['is_creature'] and not d['is_equipment']), None)
     matters_card = next((d['card'] for d in cards_data if d['matters'] and d['card'] != equipment_card), None)
 
-    # Need all three components
-    if equipment_card and creature_card and matters_card:
+    # Need all three components and ensure they're unique
+    if equipment_card and creature_card and matters_card and \
+       len({equipment_card['name'], creature_card['name'], matters_card['name']}) == 3:
         return {
             'name': 'Equipment Engine',
             'description': f"{equipment_card['name']} equips {creature_card['name']}, {matters_card['name']} provides additional value for equipped creatures",
@@ -305,7 +306,9 @@ def detect_token_aristocrats_three_way(card1: Dict, card2: Dict, card3: Dict) ->
     sac_outlet = next((d['card'] for d in cards_data if d['is_sac_outlet']), None)
     death_payoff = next((d['card'] for d in cards_data if d['is_death_payoff']), None)
 
-    if token_gen and sac_outlet and death_payoff:
+    # Ensure all three cards are unique
+    if token_gen and sac_outlet and death_payoff and \
+       len({token_gen['name'], sac_outlet['name'], death_payoff['name']}) == 3:
         return {
             'name': 'Aristocrats Engine',
             'description': f"{token_gen['name']} creates tokens, {sac_outlet['name']} sacrifices them, {death_payoff['name']} triggers on each death",
@@ -345,7 +348,9 @@ def detect_etb_flicker_payoff_three_way(card1: Dict, card2: Dict, card3: Dict) -
     flicker = next((d['card'] for d in cards_data if d['is_flicker']), None)
     multiplier = next((d['card'] for d in cards_data if d['is_multiplier']), None)
 
-    if etb_creature and flicker and multiplier:
+    # Ensure all three cards are unique
+    if etb_creature and flicker and multiplier and \
+       len({etb_creature['name'], flicker['name'], multiplier['name']}) == 3:
         return {
             'name': 'ETB Value Engine',
             'description': f"{flicker['name']} flickers {etb_creature['name']}, {multiplier['name']} multiplies the ETB triggers",
@@ -386,7 +391,9 @@ def detect_mill_reanimate_target_three_way(card1: Dict, card2: Dict, card3: Dict
     reanimate_card = next((d['card'] for d in cards_data if d['is_reanimate']), None)
     target = next((d['card'] for d in cards_data if d['is_big_creature']), None)
 
-    if mill_card and reanimate_card and target:
+    # Ensure all three cards are unique
+    if mill_card and reanimate_card and target and \
+       len({mill_card['name'], reanimate_card['name'], target['name']}) == 3:
         return {
             'name': 'Reanimator Engine',
             'description': f"{mill_card['name']} puts {target['name']} in graveyard, {reanimate_card['name']} brings it back",
@@ -429,7 +436,9 @@ def detect_cost_reducer_cantrip_payoff_three_way(card1: Dict, card2: Dict, card3
     cantrip = next((d['card'] for d in cards_data if d['is_cantrip']), None)
     payoff = next((d['card'] for d in cards_data if d['is_payoff']), None)
 
-    if cost_reducer and cantrip and payoff:
+    # Ensure all three cards are unique
+    if cost_reducer and cantrip and payoff and \
+       len({cost_reducer['name'], cantrip['name'], payoff['name']}) == 3:
         return {
             'name': 'Spellslinger Engine',
             'description': f"{cost_reducer['name']} reduces cost of {cantrip['name']}, {payoff['name']} rewards each cast",
@@ -464,7 +473,9 @@ def detect_tap_untap_combo_three_way(card1: Dict, card2: Dict, card3: Dict) -> O
     tap_card = next((d['card'] for d in cards_data if d['is_tap_value']), None)
     untappers = [d['card'] for d in cards_data if d['is_untapper']]
 
-    if tap_card and len(untappers) >= 2:
+    # Ensure all three cards are unique
+    if tap_card and len(untappers) >= 2 and \
+       len({tap_card['name'], untappers[0]['name'], untappers[1]['name']}) == 3:
         return {
             'name': 'Tap/Untap Engine',
             'description': f"{tap_card['name']} taps for value, {untappers[0]['name']} and {untappers[1]['name']} keep untapping it",
@@ -504,7 +515,9 @@ def detect_draw_discard_madness_three_way(card1: Dict, card2: Dict, card3: Dict)
     discard_synergy = next((d['card'] for d in cards_data if d['is_discard_synergy']), None)
     madness_card = next((d['card'] for d in cards_data if d['is_madness']), None)
 
-    if draw_card and discard_synergy and madness_card:
+    # Ensure all three cards are unique
+    if draw_card and discard_synergy and madness_card and \
+       len({draw_card['name'], discard_synergy['name'], madness_card['name']}) == 3:
         return {
             'name': 'Discard Value Engine',
             'description': f"{draw_card['name']} draws cards, {discard_synergy['name']} rewards discarding, {madness_card['name']} gets value from being discarded",
