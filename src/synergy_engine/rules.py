@@ -9,6 +9,8 @@ from typing import Dict, List, Optional, Set
 from functools import lru_cache
 from src.utils.damage_extractors import classify_damage_effect
 from src.synergy_engine.card_advantage_synergies import CARD_ADVANTAGE_SYNERGY_RULES
+from src.utils.token_extractors import extract_token_creation, extract_token_type_preferences
+from src.utils.recursion_extractors import extract_treasure_tokens
 
 # Cache for damage classifications to avoid recomputing for same cards
 _damage_classification_cache = {}
@@ -590,16 +592,20 @@ def detect_protection_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
 
 def detect_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
-    """Detect token generation and payoff synergies"""
-    # Token generation patterns (must be under YOUR control)
-    token_generation = [
-        r'you create.*token',
-        r'create.*token.*under your control',
-        r'put.*token.*onto the battlefield under your control',
-        r'create a .*token'  # Most token creation is for you unless specified
-    ]
+    """Detect token generation and payoff synergies with specific token type matching"""
+
+    # Extract token generation info for both cards
+    card1_token_gen = extract_token_creation(card1)
+    card2_token_gen = extract_token_creation(card2)
+
+    # Extract token payoff preferences for both cards
+    card1_payoff = extract_token_type_preferences(card1)
+    card2_payoff = extract_token_type_preferences(card2)
 
     # Exclude opponent token generation
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
     opponent_token_patterns = [
         r'opponent.*create.*token',
         r'defending player creates.*token',
@@ -611,44 +617,191 @@ def detect_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'controller creates.*treasure'
     ]
 
-    token_payoff = [r'whenever.*token', r'tokens you control', r'for each.*token you control']
+    card1_opponent_tokens = any(search_cached(kw, card1_text) for kw in opponent_token_patterns)
+    card2_opponent_tokens = any(search_cached(kw, card2_text) for kw in opponent_token_patterns)
 
-    card1_text = card1.get('oracle_text', '').lower()
-    card2_text = card2.get('oracle_text', '').lower()
+    # Helper function to get token types from a card's generation
+    def get_generated_token_types(token_gen_result):
+        """Extract list of token types generated"""
+        types = set()
+        for token_info in token_gen_result.get('token_types', []):
+            token_types_list = token_info.get('types', [])
+            for t in token_types_list:
+                types.add(t.lower())
+            # Check if it's a creature token (has power/toughness)
+            if token_info.get('power') is not None:
+                types.add('creature')
+        return types
 
-    card1_generates = any(search_cached(kw, card1_text) for kw in token_generation) and \
-                      not any(search_cached(kw, card1_text) for kw in opponent_token_patterns)
-    card2_payoff = any(search_cached(kw, card2_text) for kw in token_payoff)
+    # Helper function to check if token types match payoff preferences
+    def types_match(generated_types, payoff_prefs):
+        """Check if generated token types match what the payoff card cares about"""
+        if not payoff_prefs['cares_about_tokens']:
+            return False
 
-    if card1_generates and card2_payoff:
-        return {
-            'name': 'Token Synergy',
-            'description': f"{card1['name']} creates tokens that {card2['name']} benefits from",
-            'value': 2.5,
-            'category': 'role_interaction',
-            'subcategory': 'token_generation'
-        }
+        # If payoff cares about any tokens, it matches
+        if payoff_prefs['cares_about_any_tokens']:
+            return True
 
-    # Check reverse
-    card2_generates = any(search_cached(kw, card2_text) for kw in token_generation) and \
-                      not any(search_cached(kw, card2_text) for kw in opponent_token_patterns)
-    card1_payoff = any(search_cached(kw, card1_text) for kw in token_payoff)
+        # Check if specific types match
+        specific_types = set(payoff_prefs['specific_token_types'])
+        return bool(generated_types & specific_types)  # Any overlap is a match
 
-    if card2_generates and card1_payoff:
-        return {
-            'name': 'Token Synergy',
-            'description': f"{card2['name']} creates tokens that {card1['name']} benefits from",
-            'value': 2.5,
-            'category': 'role_interaction',
-            'subcategory': 'token_generation'
-        }
+    # Check card1 generates, card2 has payoff
+    if card1_token_gen['creates_tokens'] and not card1_opponent_tokens and card2_payoff['cares_about_tokens']:
+        generated_types = get_generated_token_types(card1_token_gen)
+
+        if types_match(generated_types, card2_payoff):
+            # Determine description based on specificity
+            if card2_payoff['cares_about_any_tokens']:
+                token_desc = "tokens"
+            else:
+                token_desc = f"{', '.join(card2_payoff['specific_token_types'])} tokens"
+
+            return {
+                'name': 'Token Synergy',
+                'description': f"{card1['name']} creates {token_desc} that {card2['name']} benefits from",
+                'value': 2.5,
+                'category': 'role_interaction',
+                'subcategory': 'token_generation'
+            }
+
+    # Check card2 generates, card1 has payoff
+    if card2_token_gen['creates_tokens'] and not card2_opponent_tokens and card1_payoff['cares_about_tokens']:
+        generated_types = get_generated_token_types(card2_token_gen)
+
+        if types_match(generated_types, card1_payoff):
+            # Determine description based on specificity
+            if card1_payoff['cares_about_any_tokens']:
+                token_desc = "tokens"
+            else:
+                token_desc = f"{', '.join(card1_payoff['specific_token_types'])} tokens"
+
+            return {
+                'name': 'Token Synergy',
+                'description': f"{card2['name']} creates {token_desc} that {card1['name']} benefits from",
+                'value': 2.5,
+                'category': 'role_interaction',
+                'subcategory': 'token_generation'
+            }
 
     return None
 
 
+def extract_graveyard_recursion_preferences(card: Dict) -> Dict:
+    """
+    Extract what specific card types a card recurrs from the graveyard.
+
+    This distinguishes between:
+    - Cards that return specific card types (instant/sorcery, creatures, artifacts, etc.)
+    - Cards that return any card type
+
+    Returns:
+        {
+            'has_recursion': bool,
+            'specific_card_types': List[str],  # ['instant', 'sorcery', 'creature', 'artifact', etc.]
+            'returns_any_card': bool,  # True if returns any card type
+            'examples': List[str]
+        }
+    """
+    text = card.get('oracle_text', '').lower()
+
+    result = {
+        'has_recursion': False,
+        'specific_card_types': [],
+        'returns_any_card': False,
+        'examples': []
+    }
+
+    if not text:
+        return result
+
+    # Specific card type recursion patterns
+    # Use word boundaries and "card" keyword to avoid false matches
+    specific_patterns = {
+        'instant': [
+            r'return.*instant.*card.*from.*graveyard',
+            r'instant.*card.*from.*graveyard.*to.*hand',
+        ],
+        'sorcery': [
+            r'return.*sorcery.*card.*from.*graveyard',
+            r'sorcery.*card.*from.*graveyard.*to.*hand',
+        ],
+        'creature': [
+            r'return.*creature\s+card.*from.*graveyard',
+            r'creature\s+card.*from.*graveyard.*to.*(?:hand|battlefield)',
+            r'return\s+target\s+creature\s+card\s+from.*graveyard',
+            r'reanimate',
+        ],
+        'artifact': [
+            r'return.*artifact.*card.*from.*graveyard',
+            r'artifact.*card.*from.*graveyard.*to.*(?:hand|battlefield)',
+            r'return target artifact.*from.*graveyard',
+        ],
+        'enchantment': [
+            r'return.*enchantment.*card.*from.*graveyard',
+            r'enchantment.*card.*from.*graveyard.*to.*(?:hand|battlefield)',
+            r'return target enchantment.*from.*graveyard',
+        ],
+        'planeswalker': [
+            r'return.*planeswalker.*card.*from.*graveyard',
+            r'planeswalker.*card.*from.*graveyard.*to.*(?:hand|battlefield)',
+            r'return target planeswalker.*from.*graveyard',
+        ],
+        'land': [
+            r'return.*land.*card.*from.*graveyard',
+            r'land.*card.*from.*graveyard.*to.*(?:hand|battlefield)',
+            r'return target land.*from.*graveyard',
+        ],
+    }
+
+    # Check for specific card types
+    for card_type, patterns in specific_patterns.items():
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                result['has_recursion'] = True
+                if card_type not in result['specific_card_types']:
+                    result['specific_card_types'].append(card_type)
+                if match.group(0) not in result['examples']:
+                    result['examples'].append(match.group(0))
+
+    # Check for "instant or sorcery" together
+    if re.search(r'instant.*(?:and|or).*sorcery.*from.*graveyard', text):
+        if 'instant' not in result['specific_card_types']:
+            result['specific_card_types'].append('instant')
+        if 'sorcery' not in result['specific_card_types']:
+            result['specific_card_types'].append('sorcery')
+        result['has_recursion'] = True
+
+    # Check for general recursion (returns any card, permanent, etc.)
+    general_patterns = [
+        r'return.*(?:target|a|up to).*card.*from.*graveyard',  # "return target card" (any card)
+        r'return.*permanent.*from.*graveyard',  # Permanents (broad)
+    ]
+
+    for pattern in general_patterns:
+        match = re.search(pattern, text)
+        if match:
+            match_text = match.group(0)
+            # Check if this mentions specific types - if so, it's NOT general
+            has_specific_type = any(
+                card_type in match_text
+                for card_type in ['instant', 'sorcery', 'creature', 'artifact', 'enchantment', 'planeswalker', 'land']
+            )
+
+            if not has_specific_type:
+                result['has_recursion'] = True
+                result['returns_any_card'] = True
+                if match.group(0) not in result['examples']:
+                    result['examples'].append(match.group(0))
+
+    return result
+
+
 def detect_graveyard_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     """
-    Detect graveyard and recursion synergies.
+    Detect graveyard and recursion synergies with specific card type matching.
 
     NOTE: Flashback, Jump-start, and Retrace are SELF-RECURSION mechanics.
     They don't benefit from OTHER cards filling the graveyard - only their own card.
@@ -659,13 +812,18 @@ def detect_graveyard_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     - Delve/Escape (exile OTHER cards from graveyard)
     - Threshold/Delirium (count cards in graveyard)
     - Recursion that targets (return target card from graveyard)
+
+    Now also checks if specific recursion matches card types being milled.
     """
+    # Extract recursion preferences for both cards
+    card1_recursion = extract_graveyard_recursion_preferences(card1)
+    card2_recursion = extract_graveyard_recursion_preferences(card2)
+
+    # Graveyard fill patterns
     graveyard_fill = ['mill', 'put.*into.*graveyard', 'discard']
 
-    # Real graveyard payoffs - cards that benefit from OTHER cards in graveyard
-    # EXCLUDE: flashback, jump-start, retrace (self-recursion only)
-    graveyard_payoff = [
-        r'return\s+(?:target|a|up to).*(?:card|creature|permanent).*from.*graveyard',  # Reanimation
+    # Non-recursion graveyard payoffs (delve, threshold, etc.)
+    non_recursion_payoff = [
         r'delve',  # Delve
         r'escape',  # Escape
         r'threshold',  # Threshold
@@ -678,28 +836,104 @@ def detect_graveyard_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
 
+    # Helper to get card types from type_line
+    def get_card_types(type_line):
+        """Extract card types from type_line"""
+        types = set()
+        if 'instant' in type_line:
+            types.add('instant')
+        if 'sorcery' in type_line:
+            types.add('sorcery')
+        if 'creature' in type_line:
+            types.add('creature')
+        if 'artifact' in type_line:
+            types.add('artifact')
+        if 'enchantment' in type_line:
+            types.add('enchantment')
+        if 'planeswalker' in type_line:
+            types.add('planeswalker')
+        if 'land' in type_line:
+            types.add('land')
+        return types
+
+    # Check card1 fills graveyard, card2 has recursion
     card1_fills = any(search_cached(kw, card1_text) for kw in graveyard_fill)
-    card2_payoff = any(search_cached(kw, card2_text) for kw in graveyard_payoff)
 
-    if card1_fills and card2_payoff:
+    if card1_fills and card2_recursion['has_recursion']:
+        # If card2 has specific recursion, check if card1's type matches
+        if card2_recursion['specific_card_types'] and not card2_recursion['returns_any_card']:
+            card1_types = get_card_types(card1_type)
+            specific_types = set(card2_recursion['specific_card_types'])
+
+            # Only synergize if the filler card matches the recursion type
+            # For example, instant/sorcery filler with instant/sorcery recursion
+            if card1_types & specific_types:
+                card_type_desc = ', '.join(card2_recursion['specific_card_types'])
+                return {
+                    'name': 'Graveyard Synergy',
+                    'description': f"{card1['name']} fills graveyard with {card_type_desc}s for {card2['name']}",
+                    'value': 2.0,  # Higher value for matched types
+                    'category': 'role_interaction',
+                    'subcategory': 'recursion'
+                }
+        # General recursion or matches
+        elif card2_recursion['returns_any_card']:
+            return {
+                'name': 'Graveyard Synergy',
+                'description': f"{card1['name']} fills graveyard for {card2['name']} to utilize",
+                'value': 1.5,
+                'category': 'role_interaction',
+                'subcategory': 'recursion'
+            }
+
+    # Check card1 fills, card2 has non-recursion payoff (delve, threshold, etc.)
+    card2_other_payoff = any(search_cached(kw, card2_text) for kw in non_recursion_payoff)
+    if card1_fills and card2_other_payoff:
         return {
             'name': 'Graveyard Synergy',
             'description': f"{card1['name']} fills graveyard for {card2['name']} to utilize",
-            'value': 1.5,  # Reduced from 2.5 - graveyard is common, not always strategic
+            'value': 1.5,
             'category': 'role_interaction',
             'subcategory': 'recursion'
         }
 
-    # Check reverse
+    # Check reverse: card2 fills, card1 has recursion
     card2_fills = any(search_cached(kw, card2_text) for kw in graveyard_fill)
-    card1_payoff = any(search_cached(kw, card1_text) for kw in graveyard_payoff)
 
-    if card2_fills and card1_payoff:
+    if card2_fills and card1_recursion['has_recursion']:
+        # If card1 has specific recursion, check if card2's type matches
+        if card1_recursion['specific_card_types'] and not card1_recursion['returns_any_card']:
+            card2_types = get_card_types(card2_type)
+            specific_types = set(card1_recursion['specific_card_types'])
+
+            if card2_types & specific_types:
+                card_type_desc = ', '.join(card1_recursion['specific_card_types'])
+                return {
+                    'name': 'Graveyard Synergy',
+                    'description': f"{card2['name']} fills graveyard with {card_type_desc}s for {card1['name']}",
+                    'value': 2.0,
+                    'category': 'role_interaction',
+                    'subcategory': 'recursion'
+                }
+        elif card1_recursion['returns_any_card']:
+            return {
+                'name': 'Graveyard Synergy',
+                'description': f"{card2['name']} fills graveyard for {card1['name']} to utilize",
+                'value': 1.5,
+                'category': 'role_interaction',
+                'subcategory': 'recursion'
+            }
+
+    # Check reverse: card2 fills, card1 has non-recursion payoff
+    card1_other_payoff = any(search_cached(kw, card1_text) for kw in non_recursion_payoff)
+    if card2_fills and card1_other_payoff:
         return {
             'name': 'Graveyard Synergy',
             'description': f"{card2['name']} fills graveyard for {card1['name']} to utilize",
-            'value': 1.5,  # Reduced from 2.5 - graveyard is common, not always strategic
+            'value': 1.5,
             'category': 'role_interaction',
             'subcategory': 'recursion'
         }
@@ -1797,13 +2031,9 @@ def detect_artifact_token_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
     Detect Artifact Token Triggers synergy (Rule 22)
     Treasure/Clue/Food generation + artifact ETB/death triggers
     """
-    # Artifact token generation patterns
-    artifact_token_patterns = [
-        r'create.*treasure',
-        r'create.*clue',
-        r'create.*food',
-        r'create.*artifact.*token'
-    ]
+    # Use the extraction function to get treasure/artifact token info
+    card1_treasure_tokens = extract_treasure_tokens(card1)
+    card2_treasure_tokens = extract_treasure_tokens(card2)
 
     # Artifact ETB triggers
     artifact_etb_patterns = [
@@ -1823,30 +2053,32 @@ def detect_artifact_token_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_text = card2.get('oracle_text', '').lower()
 
     # Check if card1 makes artifact tokens and card2 has triggers
-    card1_makes_artifacts = any(search_cached(pattern, card1_text) for pattern in artifact_token_patterns)
+    card1_makes_artifacts = card1_treasure_tokens['generates_tokens']
     card2_has_etb = any(search_cached(pattern, card2_text) for pattern in artifact_etb_patterns)
     card2_has_death = any(search_cached(pattern, card2_text) for pattern in artifact_death_patterns)
 
     if card1_makes_artifacts and (card2_has_etb or card2_has_death):
         trigger_type = "enters" if card2_has_etb else "dies"
+        token_types = ', '.join(card1_treasure_tokens['token_types']) if card1_treasure_tokens['token_types'] else 'artifact'
         return {
             'name': 'Artifact Token Engine',
-            'description': f"{card1['name']} creates artifact tokens, {card2['name']} triggers when they {trigger_type}",
+            'description': f"{card1['name']} creates {token_types} tokens, {card2['name']} triggers when they {trigger_type}",
             'value': 4.0,
             'category': 'type_synergy',
             'subcategory': 'artifact_matters'
         }
 
     # Check reverse
-    card2_makes_artifacts = any(search_cached(pattern, card2_text) for pattern in artifact_token_patterns)
+    card2_makes_artifacts = card2_treasure_tokens['generates_tokens']
     card1_has_etb = any(search_cached(pattern, card1_text) for pattern in artifact_etb_patterns)
     card1_has_death = any(search_cached(pattern, card1_text) for pattern in artifact_death_patterns)
 
     if card2_makes_artifacts and (card1_has_etb or card1_has_death):
         trigger_type = "enters" if card1_has_etb else "dies"
+        token_types = ', '.join(card2_treasure_tokens['token_types']) if card2_treasure_tokens['token_types'] else 'artifact'
         return {
             'name': 'Artifact Token Engine',
-            'description': f"{card2['name']} creates artifact tokens, {card1['name']} triggers when they {trigger_type}",
+            'description': f"{card2['name']} creates {token_types} tokens, {card1['name']} triggers when they {trigger_type}",
             'value': 4.0,
             'category': 'type_synergy',
             'subcategory': 'artifact_matters'
