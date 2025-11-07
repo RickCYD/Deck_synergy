@@ -348,15 +348,18 @@ def detect_card_draw_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_draws = any(search_cached(kw, card1_text) for kw in draw_keywords + wheel_keywords)
     card2_draws = any(search_cached(kw, card2_text) for kw in draw_keywords + wheel_keywords)
 
-    # Both cards draw - card advantage engine
-    if card1_draws and card2_draws:
-        return {
-            'name': 'Card Draw Engine',
-            'description': f"Both cards contribute to card advantage",
-            'value': 2.0,
-            'category': 'card_advantage',
-            'subcategory': 'draw_engine'
-        }
+    # DISABLED: Both cards draw - card advantage engine
+    # This creates false synergies between any two draw cards
+    # Cards that both draw don't synergize just because they share the same role
+    # Real synergies are when one card enables/enhances another, not when they do the same thing
+    # if card1_draws and card2_draws:
+    #     return {
+    #         'name': 'Card Draw Engine',
+    #         'description': f"Both cards contribute to card advantage",
+    #         'value': 2.0,
+    #         'category': 'card_advantage',
+    #         'subcategory': 'draw_engine'
+    #     }
 
     return None
 

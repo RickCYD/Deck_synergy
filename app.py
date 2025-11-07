@@ -538,8 +538,33 @@ app.layout = html.Div([
                             'display': 'none',
                             'zIndex': '1000'
                         }
+                    ),
+
+                    # Fullscreen Toggle Button (bottom-right corner)
+                    html.Button(
+                        '⛶',
+                        id='graph-fullscreen-button',
+                        n_clicks=0,
+                        title='Toggle fullscreen',
+                        style={
+                            'position': 'absolute',
+                            'bottom': '16px',
+                            'right': '16px',
+                            'padding': '10px 14px',
+                            'backgroundColor': 'rgba(52,73,94,0.9)',
+                            'backdropFilter': 'blur(10px)',
+                            'color': 'white',
+                            'border': 'none',
+                            'cursor': 'pointer',
+                            'fontSize': '18px',
+                            'fontWeight': 'bold',
+                            'borderRadius': '6px',
+                            'boxShadow': '0 4px 8px rgba(0,0,0,0.2)',
+                            'zIndex': '1000',
+                            'transition': 'all 0.3s ease'
+                        }
                     )
-                ], style={
+                ], id='graph-container', style={
                     'position': 'relative',  # Important for absolute positioning of overlays
                     'flex': '1 1 70%',
                     'backgroundColor': '#ffffff',
@@ -806,6 +831,7 @@ app.layout = html.Div([
     dcc.Store(id='card-images-store'),  # Store for card images (recommended cards, etc.)
     dcc.Store(id='card-list-store'),  # Store for card names in current deck
     dcc.Store(id='selected-card-highlight'),  # Store for selected card from search
+    dcc.Store(id='graph-fullscreen-state', data=False),  # Store for graph fullscreen state
     dcc.Interval(id='status-clear-interval', interval=3000, n_intervals=0, disabled=True),
 
     # Modal for displaying full card images
@@ -2119,7 +2145,27 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
                     html.Div([
                         html.Span(f"Average: {avg_score:.1f} per card ", style={'fontSize': '12px', 'color': '#7f8c8d'}),
                         html.Span(f"({card_count} cards scored)", style={'fontSize': '11px', 'color': '#95a5a6'})
-                    ])
+                    ], style={'marginBottom': '8px'}),
+                    html.Details([
+                        html.Summary("ℹ️ How is this calculated?", style={
+                            'fontSize': '11px',
+                            'color': '#3498db',
+                            'cursor': 'pointer',
+                            'userSelect': 'none'
+                        }),
+                        html.Div([
+                            html.P("The deck synergy score measures how well your cards work together:", style={'fontSize': '10px', 'marginTop': '6px', 'marginBottom': '4px'}),
+                            html.Ul([
+                                html.Li("Generic utility (ramp, draw): 0.1 pts per card", style={'fontSize': '10px'}),
+                                html.Li("Strategic synergies (sacrifice, tokens): 0.5 pts per card", style={'fontSize': '10px'}),
+                                html.Li("Complementary combos (ETB + flicker): +50 pts bonus", style={'fontSize': '10px'}),
+                                html.Li("Tribal themes (10+ creatures): +100 pts bonus", style={'fontSize': '10px'}),
+                                html.Li("Global scaling (artifacts, creatures): up to +20 pts", style={'fontSize': '10px'})
+                            ], style={'paddingLeft': '16px', 'margin': '0'}),
+                            html.P("Higher scores indicate more synergistic, focused decks. Lower scores suggest room for optimization.",
+                                   style={'fontSize': '10px', 'marginTop': '6px', 'fontStyle': 'italic', 'color': '#7f8c8d'})
+                        ], style={'marginTop': '6px', 'paddingLeft': '4px'})
+                    ], style={'marginTop': '6px'})
                 ], style={
                     'backgroundColor': '#e8f8f5',
                     'padding': '12px',
@@ -3537,6 +3583,71 @@ def filter_synergies_by_type(synergy_filter, current_deck_file):
     except Exception as e:
         print(f"[SYNERGY FILTER] Error: {e}")
         return dash.no_update
+
+
+# Callback to toggle fullscreen mode for the graph
+@app.callback(
+    [Output('graph-fullscreen-state', 'data'),
+     Output('graph-container', 'style'),
+     Output('info-panel', 'style'),
+     Output('graph-fullscreen-button', 'children')],
+    Input('graph-fullscreen-button', 'n_clicks'),
+    State('graph-fullscreen-state', 'data'),
+    prevent_initial_call=True
+)
+def toggle_graph_fullscreen(n_clicks, is_fullscreen):
+    """Toggle fullscreen mode for the graph"""
+    # Toggle state
+    new_fullscreen = not is_fullscreen
+
+    # Graph container styles
+    if new_fullscreen:
+        # Fullscreen mode
+        graph_style = {
+            'position': 'fixed',
+            'top': '0',
+            'left': '0',
+            'right': '0',
+            'bottom': '0',
+            'width': '100vw',
+            'height': '100vh',
+            'backgroundColor': '#ffffff',
+            'zIndex': '9999',
+            'padding': '20px',
+            'margin': '0'
+        }
+        info_panel_style = {'display': 'none'}  # Hide info panel in fullscreen
+        button_icon = '✕'  # Exit fullscreen icon
+    else:
+        # Normal mode
+        graph_style = {
+            'position': 'relative',
+            'flex': '1 1 70%',
+            'backgroundColor': '#ffffff',
+            'borderRadius': '6px',
+            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+            'padding': '20px',
+            'minWidth': '500px',
+            'order': 1
+        }
+        info_panel_style = {
+            'flex': '0 0 28%',
+            'maxWidth': '350px',
+            'minWidth': '280px',
+            'backgroundColor': '#f8f9fa',
+            'borderRadius': '6px',
+            'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+            'padding': '16px',
+            'height': '650px',
+            'maxHeight': '650px',
+            'overflowY': 'auto',
+            'overflowX': 'hidden',
+            'border': '1px solid #dee2e6',
+            'order': 2
+        }
+        button_icon = '⛶'  # Fullscreen icon
+
+    return new_fullscreen, graph_style, info_panel_style, button_icon
 
 
 if __name__ == '__main__':
