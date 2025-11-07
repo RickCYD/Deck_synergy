@@ -1915,19 +1915,24 @@ def handle_selection(node_data, edge_data, active_filter, rec_clicks, cut_clicks
 
     # Handle card selection from search
     if triggered_prop == 'selected-card-highlight.data' and selected_card:
+        print(f"[CARD SEARCH] Search triggered for card: {selected_card}")
         # Find the node data for this card
         card_node = None
         for element in elements:
             if 'source' not in element.get('data', {}):  # It's a node
                 if element['data'].get('id') == selected_card:
                     card_node = element['data']
+                    print(f"[CARD SEARCH] Found node for {selected_card}")
                     break
 
         if card_node:
             # Treat it like a tap on the node
             node_data = card_node
+            print(f"[CARD SEARCH] Setting node_data to highlight {selected_card}")
             # Continue to the node selection handling below
         else:
+            print(f"[CARD SEARCH] ERROR: Could not find node for {selected_card}")
+            print(f"[CARD SEARCH] Available nodes: {[el['data'].get('id') for el in elements if 'source' not in el.get('data', {})][:10]}")
             return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     # Handle recommendations button click
