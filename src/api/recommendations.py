@@ -967,6 +967,23 @@ class RecommendationEngine:
                 if debug:
                     score_breakdown.append(f"THREE-WAY: equipment enabler (equipment+creatures+synergy): +30.0")
 
+        # ============================================================================
+        # PENALTIES (reduce score for mismatched synergies)
+        # ============================================================================
+
+        # Penalty for equipment-only token generation in creature token decks
+        # Cards like "Firion, Wild Rose Warrior" generate equipment tokens, not creature tokens
+        # They shouldn't score highly in decks focused on creature token strategies
+        if 'token_gen_equipment' in card_tags and 'token_gen_creature' not in card_tags:
+            # This card ONLY generates equipment tokens
+            creature_token_count = deck_tags.get('token_gen_creature', 0)
+            if creature_token_count >= 5:  # Deck has significant creature token generation
+                # Apply penalty scaled to how creature-token-focused the deck is
+                penalty = min(creature_token_count * 3, 30)  # Cap at 30 point penalty
+                score -= penalty
+                if debug:
+                    score_breakdown.append(f"PENALTY: equipment-only tokens in creature token deck: -{penalty:.1f}")
+
         if debug:
             print(f"\n{card['name']} scoring breakdown:")
             print(f"  Card tags: {sorted(card_tags)}")

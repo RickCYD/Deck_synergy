@@ -25,6 +25,9 @@ def build_graph_elements(deck_data: Dict, max_edges: int = 2000) -> List[Dict]:
     cards = deck_data.get('cards', [])
     print(f"[GRAPH BUILDER] Creating nodes for {len(cards)} cards")
 
+    # Build a set of valid card names for validation
+    valid_card_names = set()
+
     for idx, card in enumerate(cards):
         try:
             if not card or not isinstance(card, dict):
@@ -42,6 +45,7 @@ def build_graph_elements(deck_data: Dict, max_edges: int = 2000) -> List[Dict]:
                 print(f"[GRAPH BUILDER] WARNING: Node for {card.get('name')} is invalid, skipping")
                 continue
 
+            valid_card_names.add(card.get('name'))
             elements.append(node)
         except Exception as e:
             print(f"[GRAPH BUILDER] ERROR: Failed to create node for card {card.get('name', 'Unknown')}: {e}")
@@ -72,9 +76,22 @@ def build_graph_elements(deck_data: Dict, max_edges: int = 2000) -> List[Dict]:
         print(f"[GRAPH BUILDER] Limiting to top {max_two_way_edges} two-way synergies by weight")
 
     edges_created = 0
+    skipped_edges = 0
     for synergy_key, synergy_data in sorted_synergies[:max_two_way_edges]:
         try:
             if not synergy_key or not isinstance(synergy_data, dict):
+                continue
+
+            # Validate that both cards exist in the graph
+            cards_in_synergy = synergy_key.split('||')
+            if len(cards_in_synergy) != 2:
+                continue
+
+            card1, card2 = cards_in_synergy
+            if card1 not in valid_card_names or card2 not in valid_card_names:
+                skipped_edges += 1
+                if skipped_edges <= 5:  # Only log first few to avoid spam
+                    print(f"[GRAPH BUILDER] WARNING: Skipping edge {synergy_key} - one or both cards not in deck")
                 continue
 
             edge = create_synergy_edge(synergy_key, synergy_data)
@@ -90,6 +107,8 @@ def build_graph_elements(deck_data: Dict, max_edges: int = 2000) -> List[Dict]:
             print(f"[GRAPH BUILDER] ERROR: Failed to create edge for {synergy_key}: {e}")
             continue
 
+    if skipped_edges > 0:
+        print(f"[GRAPH BUILDER] Skipped {skipped_edges} edges with missing cards")
     print(f"[GRAPH BUILDER] Created {edges_created} two-way edges")
 
     # Create edges for three-way synergies (triangular connections)
@@ -98,11 +117,25 @@ def build_graph_elements(deck_data: Dict, max_edges: int = 2000) -> List[Dict]:
         print(f"[GRAPH BUILDER] Creating hyperedges for {len(three_way_synergies)} three-way synergies")
 
         three_way_edges_created = 0
+        three_way_skipped = 0
         edge_ids_seen = set()  # Track edge IDs to prevent duplicates
 
         for synergy_key, synergy_data in three_way_synergies.items():
             try:
                 if not synergy_key or not isinstance(synergy_data, dict):
+                    continue
+
+                # Validate that all three cards exist in the graph
+                cards_in_synergy = synergy_key.split('||')
+                if len(cards_in_synergy) != 3:
+                    continue
+
+                card1, card2, card3 = cards_in_synergy
+                if card1 not in valid_card_names or card2 not in valid_card_names or card3 not in valid_card_names:
+                    three_way_skipped += 1
+                    if three_way_skipped <= 5:  # Only log first few to avoid spam
+                        missing_cards = [c for c in [card1, card2, card3] if c not in valid_card_names]
+                        print(f"[GRAPH BUILDER] WARNING: Skipping 3-way synergy {synergy_key} - missing cards: {missing_cards}")
                     continue
 
                 # Create triangular edges (3 edges forming a triangle)
@@ -127,6 +160,8 @@ def build_graph_elements(deck_data: Dict, max_edges: int = 2000) -> List[Dict]:
                 print(f"[GRAPH BUILDER] ERROR: Failed to create hyperedge for {synergy_key}: {e}")
                 continue
 
+        if three_way_skipped > 0:
+            print(f"[GRAPH BUILDER] Skipped {three_way_skipped} three-way synergies with missing cards")
         print(f"[GRAPH BUILDER] Created {three_way_edges_created} hyperedges")
 
     print(f"[GRAPH BUILDER] Total elements: {len(elements)}")

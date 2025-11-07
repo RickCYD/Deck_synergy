@@ -74,9 +74,16 @@ def extract_synergy_tags(card: Dict) -> List[str]:
     if has_death_trigger and not is_self_death:
         tags.append('death_trigger')
 
-    # Token generation
-    if re.search(r'create.*token|put.*token', text):
+    # Token generation - differentiate between creature tokens and other tokens
+    token_creation = re.search(r'create.*token|put.*token', text)
+    if token_creation:
         tags.append('token_gen')
+        # Check if it's specifically creature tokens
+        if re.search(r'create.*(creature|(\d+/\d+)).*token', text):
+            tags.append('token_gen_creature')
+        # Check if it's specifically equipment tokens
+        if re.search(r'create.*equipment.*token|token copy of.*equipment', text, re.IGNORECASE):
+            tags.append('token_gen_equipment')
 
     # Card draw
     if re.search(r'draw (?:a|one|\d+) card|whenever .* draw|you may draw', text):

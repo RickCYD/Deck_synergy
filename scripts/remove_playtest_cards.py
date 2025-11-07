@@ -48,6 +48,10 @@ ILLEGAL_CARDS = {
     "Baral and Kari Zev",  # These characters exist separately but never paired
     "Isamaru and Yoshimaru",  # The two good boys, but not officially one card
     "Rashmi and Ragavan",  # Never officially paired
+
+    # Playtest cards from unknown sets (not Commander-legal)
+    "Kylem All-Star",  # Playtest card, not legal in Commander
+    "Infantry Shield",  # Playtest card, not legal in Commander
 }
 
 # Known LEGAL cards that follow "X and Y" pattern (don't remove these)
