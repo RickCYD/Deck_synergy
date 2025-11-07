@@ -9,6 +9,8 @@ from typing import Dict, List, Optional, Set
 from functools import lru_cache
 from src.utils.damage_extractors import classify_damage_effect
 from src.synergy_engine.card_advantage_synergies import CARD_ADVANTAGE_SYNERGY_RULES
+from src.utils.token_extractors import extract_token_creation, extract_token_type_preferences
+from src.utils.recursion_extractors import extract_treasure_tokens
 
 # Cache for damage classifications to avoid recomputing for same cards
 _damage_classification_cache = {}
@@ -590,16 +592,20 @@ def detect_protection_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
 
 def detect_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
-    """Detect token generation and payoff synergies"""
-    # Token generation patterns (must be under YOUR control)
-    token_generation = [
-        r'you create.*token',
-        r'create.*token.*under your control',
-        r'put.*token.*onto the battlefield under your control',
-        r'create a .*token'  # Most token creation is for you unless specified
-    ]
+    """Detect token generation and payoff synergies with specific token type matching"""
+
+    # Extract token generation info for both cards
+    card1_token_gen = extract_token_creation(card1)
+    card2_token_gen = extract_token_creation(card2)
+
+    # Extract token payoff preferences for both cards
+    card1_payoff = extract_token_type_preferences(card1)
+    card2_payoff = extract_token_type_preferences(card2)
 
     # Exclude opponent token generation
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
     opponent_token_patterns = [
         r'opponent.*create.*token',
         r'defending player creates.*token',
@@ -611,37 +617,73 @@ def detect_token_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'controller creates.*treasure'
     ]
 
-    token_payoff = [r'whenever.*token', r'tokens you control', r'for each.*token you control']
+    card1_opponent_tokens = any(search_cached(kw, card1_text) for kw in opponent_token_patterns)
+    card2_opponent_tokens = any(search_cached(kw, card2_text) for kw in opponent_token_patterns)
 
-    card1_text = card1.get('oracle_text', '').lower()
-    card2_text = card2.get('oracle_text', '').lower()
+    # Helper function to get token types from a card's generation
+    def get_generated_token_types(token_gen_result):
+        """Extract list of token types generated"""
+        types = set()
+        for token_info in token_gen_result.get('token_types', []):
+            token_types_list = token_info.get('types', [])
+            for t in token_types_list:
+                types.add(t.lower())
+            # Check if it's a creature token (has power/toughness)
+            if token_info.get('power') is not None:
+                types.add('creature')
+        return types
 
-    card1_generates = any(search_cached(kw, card1_text) for kw in token_generation) and \
-                      not any(search_cached(kw, card1_text) for kw in opponent_token_patterns)
-    card2_payoff = any(search_cached(kw, card2_text) for kw in token_payoff)
+    # Helper function to check if token types match payoff preferences
+    def types_match(generated_types, payoff_prefs):
+        """Check if generated token types match what the payoff card cares about"""
+        if not payoff_prefs['cares_about_tokens']:
+            return False
 
-    if card1_generates and card2_payoff:
-        return {
-            'name': 'Token Synergy',
-            'description': f"{card1['name']} creates tokens that {card2['name']} benefits from",
-            'value': 2.5,
-            'category': 'role_interaction',
-            'subcategory': 'token_generation'
-        }
+        # If payoff cares about any tokens, it matches
+        if payoff_prefs['cares_about_any_tokens']:
+            return True
 
-    # Check reverse
-    card2_generates = any(search_cached(kw, card2_text) for kw in token_generation) and \
-                      not any(search_cached(kw, card2_text) for kw in opponent_token_patterns)
-    card1_payoff = any(search_cached(kw, card1_text) for kw in token_payoff)
+        # Check if specific types match
+        specific_types = set(payoff_prefs['specific_token_types'])
+        return bool(generated_types & specific_types)  # Any overlap is a match
 
-    if card2_generates and card1_payoff:
-        return {
-            'name': 'Token Synergy',
-            'description': f"{card2['name']} creates tokens that {card1['name']} benefits from",
-            'value': 2.5,
-            'category': 'role_interaction',
-            'subcategory': 'token_generation'
-        }
+    # Check card1 generates, card2 has payoff
+    if card1_token_gen['creates_tokens'] and not card1_opponent_tokens and card2_payoff['cares_about_tokens']:
+        generated_types = get_generated_token_types(card1_token_gen)
+
+        if types_match(generated_types, card2_payoff):
+            # Determine description based on specificity
+            if card2_payoff['cares_about_any_tokens']:
+                token_desc = "tokens"
+            else:
+                token_desc = f"{', '.join(card2_payoff['specific_token_types'])} tokens"
+
+            return {
+                'name': 'Token Synergy',
+                'description': f"{card1['name']} creates {token_desc} that {card2['name']} benefits from",
+                'value': 2.5,
+                'category': 'role_interaction',
+                'subcategory': 'token_generation'
+            }
+
+    # Check card2 generates, card1 has payoff
+    if card2_token_gen['creates_tokens'] and not card2_opponent_tokens and card1_payoff['cares_about_tokens']:
+        generated_types = get_generated_token_types(card2_token_gen)
+
+        if types_match(generated_types, card1_payoff):
+            # Determine description based on specificity
+            if card1_payoff['cares_about_any_tokens']:
+                token_desc = "tokens"
+            else:
+                token_desc = f"{', '.join(card1_payoff['specific_token_types'])} tokens"
+
+            return {
+                'name': 'Token Synergy',
+                'description': f"{card2['name']} creates {token_desc} that {card1['name']} benefits from",
+                'value': 2.5,
+                'category': 'role_interaction',
+                'subcategory': 'token_generation'
+            }
 
     return None
 
@@ -1797,13 +1839,9 @@ def detect_artifact_token_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
     Detect Artifact Token Triggers synergy (Rule 22)
     Treasure/Clue/Food generation + artifact ETB/death triggers
     """
-    # Artifact token generation patterns
-    artifact_token_patterns = [
-        r'create.*treasure',
-        r'create.*clue',
-        r'create.*food',
-        r'create.*artifact.*token'
-    ]
+    # Use the extraction function to get treasure/artifact token info
+    card1_treasure_tokens = extract_treasure_tokens(card1)
+    card2_treasure_tokens = extract_treasure_tokens(card2)
 
     # Artifact ETB triggers
     artifact_etb_patterns = [
@@ -1823,30 +1861,32 @@ def detect_artifact_token_triggers(card1: Dict, card2: Dict) -> Optional[Dict]:
     card2_text = card2.get('oracle_text', '').lower()
 
     # Check if card1 makes artifact tokens and card2 has triggers
-    card1_makes_artifacts = any(search_cached(pattern, card1_text) for pattern in artifact_token_patterns)
+    card1_makes_artifacts = card1_treasure_tokens['generates_tokens']
     card2_has_etb = any(search_cached(pattern, card2_text) for pattern in artifact_etb_patterns)
     card2_has_death = any(search_cached(pattern, card2_text) for pattern in artifact_death_patterns)
 
     if card1_makes_artifacts and (card2_has_etb or card2_has_death):
         trigger_type = "enters" if card2_has_etb else "dies"
+        token_types = ', '.join(card1_treasure_tokens['token_types']) if card1_treasure_tokens['token_types'] else 'artifact'
         return {
             'name': 'Artifact Token Engine',
-            'description': f"{card1['name']} creates artifact tokens, {card2['name']} triggers when they {trigger_type}",
+            'description': f"{card1['name']} creates {token_types} tokens, {card2['name']} triggers when they {trigger_type}",
             'value': 4.0,
             'category': 'type_synergy',
             'subcategory': 'artifact_matters'
         }
 
     # Check reverse
-    card2_makes_artifacts = any(search_cached(pattern, card2_text) for pattern in artifact_token_patterns)
+    card2_makes_artifacts = card2_treasure_tokens['generates_tokens']
     card1_has_etb = any(search_cached(pattern, card1_text) for pattern in artifact_etb_patterns)
     card1_has_death = any(search_cached(pattern, card1_text) for pattern in artifact_death_patterns)
 
     if card2_makes_artifacts and (card1_has_etb or card1_has_death):
         trigger_type = "enters" if card1_has_etb else "dies"
+        token_types = ', '.join(card2_treasure_tokens['token_types']) if card2_treasure_tokens['token_types'] else 'artifact'
         return {
             'name': 'Artifact Token Engine',
-            'description': f"{card2['name']} creates artifact tokens, {card1['name']} triggers when they {trigger_type}",
+            'description': f"{card2['name']} creates {token_types} tokens, {card1['name']} triggers when they {trigger_type}",
             'value': 4.0,
             'category': 'type_synergy',
             'subcategory': 'artifact_matters'
