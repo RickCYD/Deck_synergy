@@ -225,7 +225,7 @@ class RecommendationEngine:
                 scored_cards.append({
                     'name': card_name,
                     'synergy_score': score,
-                    'synergy_reasons': self._explain_synergy(preprocessed, deck_tags, deck_roles),
+                    'synergy_reasons': self._explain_synergy(preprocessed, deck_tags, deck_roles, deck_type_counts),
                     'type_line': card.get('type_line', '')
                 })
             else:
@@ -531,7 +531,7 @@ class RecommendationEngine:
             recommendations.append({
                 **card,
                 'recommendation_score': card_scores[idx],
-                'synergy_reasons': self._explain_synergy(card, deck_tags, deck_roles),
+                'synergy_reasons': self._explain_synergy(card, deck_tags, deck_roles, deck_type_counts),
                 'synergy_details': detailed_synergy  # NEW: Detailed info for tooltips
             })
 
@@ -1161,10 +1161,17 @@ class RecommendationEngine:
         self,
         card: Dict,
         deck_tags: Counter,
-        deck_roles: Counter
+        deck_roles: Counter,
+        deck_type_counts: Dict[str, int] = None
     ) -> List[str]:
         """
         Generate human-readable synergy explanations
+
+        Args:
+            card: Card to explain synergies for
+            deck_tags: Counter of synergy tags in deck
+            deck_roles: Counter of roles in deck
+            deck_type_counts: Dictionary of card type counts in deck (for global synergies)
 
         Returns:
             List of explanation strings
@@ -1172,6 +1179,78 @@ class RecommendationEngine:
         reasons = []
         card_tags = set(card.get('synergy_tags', []))
         card_roles = set(card.get('roles', []))
+
+        # Initialize deck_type_counts if not provided
+        if deck_type_counts is None:
+            deck_type_counts = {}
+
+        # ============================================================================
+        # GLOBAL SYNERGIES - Cards that scale with deck composition
+        # ============================================================================
+
+        # Scales with artifacts (Inspiring Statuary, Jhoira's Familiar, etc.)
+        if 'scales_with_artifacts' in card_tags:
+            artifact_count = deck_type_counts.get('artifacts', 0)
+            if artifact_count >= 10:
+                points = min(0.4 * artifact_count, 20.0)
+                quality = "excellent" if artifact_count >= 30 else "great" if artifact_count >= 20 else "good"
+                reasons.append(f"⚡ Scales with artifacts — {quality} with {artifact_count} artifacts in deck (+{points:.1f} pts)")
+            elif artifact_count > 0:
+                reasons.append(f"Scales with artifacts — needs 10+ for significant value (deck has {artifact_count})")
+
+        # Scales with equipment (Hammer of Nazahn, Heavenly Blademaster, etc.)
+        if 'scales_with_equipment' in card_tags:
+            equipment_count = deck_type_counts.get('equipment', 0)
+            if equipment_count >= 5:
+                points = min(0.5 * equipment_count, 20.0)
+                quality = "excellent" if equipment_count >= 25 else "great" if equipment_count >= 15 else "good"
+                reasons.append(f"⚡ Scales with equipment — {quality} with {equipment_count} equipment in deck (+{points:.1f} pts)")
+            elif equipment_count > 0:
+                reasons.append(f"Scales with equipment — needs 5+ for significant value (deck has {equipment_count})")
+
+        # Scales with spells (Sword of Once and Future, Aria of Flame, etc.)
+        if 'scales_with_spells' in card_tags:
+            spell_count = deck_type_counts.get('instants', 0) + deck_type_counts.get('sorceries', 0)
+            if spell_count >= 10:
+                points = min(0.3 * spell_count, 15.0)
+                quality = "excellent" if spell_count >= 30 else "great" if spell_count >= 20 else "good"
+                reasons.append(f"⚡ Scales with instants/sorceries — {quality} with {spell_count} spells in deck (+{points:.1f} pts)")
+            elif spell_count > 0:
+                reasons.append(f"Scales with spells — needs 10+ for significant value (deck has {spell_count})")
+
+        # Scales with permanents (Deadly Brew, Ulvenwald Mysteries, etc.)
+        if 'scales_with_permanents' in card_tags:
+            permanent_count = deck_type_counts.get('permanents', 0)
+            if permanent_count >= 20:
+                points = min(0.2 * permanent_count, 15.0)
+                quality = "excellent" if permanent_count >= 50 else "great" if permanent_count >= 35 else "good"
+                reasons.append(f"⚡ Scales with permanents — {quality} with {permanent_count} permanents in deck (+{points:.1f} pts)")
+            elif permanent_count > 0:
+                reasons.append(f"Scales with permanents — needs 20+ for significant value (deck has {permanent_count})")
+
+        # Scales with creatures (Coat of Arms, etc.)
+        if 'scales_with_creatures' in card_tags:
+            creature_count = deck_type_counts.get('creatures', 0)
+            if creature_count >= 15:
+                points = min(0.3 * creature_count, 15.0)
+                quality = "excellent" if creature_count >= 35 else "great" if creature_count >= 25 else "good"
+                reasons.append(f"⚡ Scales with creatures — {quality} with {creature_count} creatures in deck (+{points:.1f} pts)")
+            elif creature_count > 0:
+                reasons.append(f"Scales with creatures — needs 15+ for significant value (deck has {creature_count})")
+
+        # Scales with lands (Conduit of Worlds, etc.)
+        if 'scales_with_lands' in card_tags:
+            land_count = deck_type_counts.get('lands', 0)
+            if land_count >= 20:
+                points = min(0.2 * land_count, 10.0)
+                quality = "excellent" if land_count >= 40 else "great" if land_count >= 30 else "good"
+                reasons.append(f"⚡ Scales with lands — {quality} with {land_count} lands in deck (+{points:.1f} pts)")
+            elif land_count > 0:
+                reasons.append(f"Scales with lands — needs 20+ for significant value (deck has {land_count})")
+
+        # ============================================================================
+        # PAIRWISE/TAG-BASED SYNERGIES
+        # ============================================================================
 
         # Tag explanations
         tag_explanations = {
