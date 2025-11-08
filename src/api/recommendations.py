@@ -186,6 +186,11 @@ class RecommendationEngine:
 
         scored_cards = []
 
+        # Analyze full deck context ONCE (for contextual necessity scoring)
+        deck_tags_full = self._extract_deck_tags(deck_cards)
+        deck_roles_full = self._extract_deck_roles(deck_cards)
+        deck_context = self._analyze_deck_context(deck_cards, deck_tags_full, deck_roles_full)
+
         for i, card in enumerate(deck_cards):
             # Skip sideboard/maybeboard cards
             if exclude_sideboard:
@@ -219,13 +224,14 @@ class RecommendationEngine:
                     deck_tags,
                     deck_roles,
                     deck_type_counts,
+                    deck_context=deck_context,
                     debug=False
                 )
 
                 scored_cards.append({
                     'name': card_name,
                     'synergy_score': score,
-                    'synergy_reasons': self._explain_synergy(preprocessed, deck_tags, deck_roles, deck_type_counts),
+                    'synergy_reasons': self._explain_synergy(preprocessed, deck_tags, deck_roles, deck_type_counts, deck_context),
                     'type_line': card.get('type_line', '')
                 })
             else:
@@ -427,7 +433,7 @@ class RecommendationEngine:
         self,
         deck_cards: List[Dict],
         color_identity: Optional[List[str]] = None,
-        limit: int = 10,
+        limit: int = 20,
         debug: bool = False,
         include_deck_scores: bool = False
     ) -> Dict:
@@ -457,6 +463,7 @@ class RecommendationEngine:
         deck_tags = self._extract_deck_tags(deck_cards)
         deck_roles = self._extract_deck_roles(deck_cards)
         deck_type_counts = self._count_card_types(deck_cards)
+        deck_context = self._analyze_deck_context(deck_cards, deck_tags, deck_roles)
         deck_card_names = {card['name'] for card in deck_cards}
         perf_timings['deck_profile'] = time.time() - profile_start
 
@@ -500,6 +507,7 @@ class RecommendationEngine:
                 deck_tags,
                 deck_roles,
                 deck_type_counts,
+                deck_context=deck_context,
                 debug=False  # Don't debug all cards, only top ones
             )
 
@@ -512,11 +520,17 @@ class RecommendationEngine:
         top_indices = sorted(card_scores.keys(), key=lambda i: card_scores[i], reverse=True)[:limit]
 
         if debug:
+            print("\n=== DECK CONTEXT ===")
+            print(f"  Strategy: {deck_context['strategy']}")
+            print(f"  Curve: {deck_context['curve_profile']} (avg CMC: {deck_context['avg_cmc']})")
+            print(f"  Ramp: {deck_context['ramp_count']}/{deck_context['optimal_ramp']} ({deck_context['ramp_need']})")
+            print(f"  Removal: {deck_context['removal_count']}/{deck_context['optimal_removal']} ({deck_context['removal_need']})")
+            print(f"  Card Draw: {deck_context['card_draw_count']} sources")
             print("\n=== TOP RECOMMENDATIONS DEBUG ===")
             for idx in top_indices:
                 card = self.cards[idx]
                 # Re-calculate with debug enabled to show breakdown
-                self._calculate_synergy_score(card, deck_tags, deck_roles, deck_type_counts, debug=True)
+                self._calculate_synergy_score(card, deck_tags, deck_roles, deck_type_counts, deck_context=deck_context, debug=True)
 
         recommendations = []
         for idx in top_indices:
@@ -531,7 +545,7 @@ class RecommendationEngine:
             recommendations.append({
                 **card,
                 'recommendation_score': card_scores[idx],
-                'synergy_reasons': self._explain_synergy(card, deck_tags, deck_roles, deck_type_counts),
+                'synergy_reasons': self._explain_synergy(card, deck_tags, deck_roles, deck_type_counts, deck_context),
                 'synergy_details': detailed_synergy  # NEW: Detailed info for tooltips
             })
 
@@ -725,12 +739,201 @@ class RecommendationEngine:
 
         return counts
 
+    def _analyze_deck_context(self, deck_cards: List[Dict], deck_tags: Counter, deck_roles: Counter) -> Dict:
+        """
+        Analyze deck context to understand its needs for ramp, removal, etc.
+
+        Returns:
+            Dictionary with deck context analysis including:
+            - avg_cmc: Average converted mana cost (excluding lands)
+            - curve_profile: 'low' (<3), 'medium' (3-4), 'high' (>4)
+            - strategy: 'aggro', 'midrange', 'control', 'combo'
+            - ramp_count: Number of ramp cards
+            - removal_count: Number of removal cards
+            - card_draw_count: Number of card draw cards
+            - ramp_need: 'deficit', 'optimal', 'excess'
+            - removal_need: 'deficit', 'optimal', 'excess'
+        """
+        # Calculate mana curve (excluding lands)
+        cmcs = []
+        for card in deck_cards:
+            board = card.get('board', 'mainboard')
+            if board in ['sideboard', 'maybeboard']:
+                continue
+
+            type_line = card.get('type_line', '').lower()
+            if 'land' not in type_line or '//' in type_line:  # Include MDFCs
+                cmc = card.get('cmc', 0)
+                if cmc is not None:
+                    cmcs.append(cmc)
+
+        avg_cmc = sum(cmcs) / len(cmcs) if cmcs else 3.0
+
+        # Determine curve profile
+        if avg_cmc < 2.5:
+            curve_profile = 'low'
+        elif avg_cmc < 3.5:
+            curve_profile = 'medium'
+        else:
+            curve_profile = 'high'
+
+        # Analyze strategy based on deck composition
+        creature_count = sum(1 for card in deck_cards if 'creature' in card.get('type_line', '').lower())
+        total_cards = len([c for c in deck_cards if c.get('board', 'mainboard') == 'mainboard'])
+
+        aggressive_tags = deck_tags.get('haste', 0) + deck_tags.get('double_strike', 0)
+        control_tags = deck_tags.get('removal', 0) + deck_tags.get('board_wipe', 0)
+        combo_tags = deck_tags.get('tutor', 0) + deck_tags.get('combo_piece', 0)
+
+        # Determine primary strategy
+        if aggressive_tags > 5 and creature_count / total_cards > 0.35:
+            strategy = 'aggro'
+        elif control_tags > 10 or deck_roles.get('removal', 0) > 12:
+            strategy = 'control'
+        elif combo_tags > 5:
+            strategy = 'combo'
+        else:
+            strategy = 'midrange'
+
+        # Count utility cards
+        ramp_count = deck_roles.get('ramp', 0) + deck_roles.get('color_correction', 0)
+        removal_count = deck_roles.get('removal', 0)
+        card_draw_count = deck_tags.get('card_draw', 0)
+
+        # Calculate optimal counts based on curve and strategy
+        # Ramp needs scale with curve
+        if curve_profile == 'low':
+            optimal_ramp = 6  # Low curve needs less ramp
+        elif curve_profile == 'medium':
+            optimal_ramp = 10  # Standard EDH ramp count
+        else:
+            optimal_ramp = 14  # High curve needs more ramp
+
+        # Removal needs scale with strategy
+        strategy_removal_needs = {
+            'aggro': 5,      # Aggro needs minimal removal
+            'midrange': 8,   # Midrange needs moderate removal
+            'control': 12,   # Control needs lots of removal
+            'combo': 6       # Combo needs just enough to protect
+        }
+        optimal_removal = strategy_removal_needs[strategy]
+
+        # Determine if we have deficit, optimal, or excess
+        def evaluate_need(current, optimal, tolerance=2):
+            if current < optimal - tolerance:
+                return 'deficit'
+            elif current > optimal + tolerance:
+                return 'excess'
+            else:
+                return 'optimal'
+
+        ramp_need = evaluate_need(ramp_count, optimal_ramp)
+        removal_need = evaluate_need(removal_count, optimal_removal)
+
+        return {
+            'avg_cmc': round(avg_cmc, 2),
+            'curve_profile': curve_profile,
+            'strategy': strategy,
+            'ramp_count': ramp_count,
+            'removal_count': removal_count,
+            'card_draw_count': card_draw_count,
+            'optimal_ramp': optimal_ramp,
+            'optimal_removal': optimal_removal,
+            'ramp_need': ramp_need,
+            'removal_need': removal_need,
+            'total_nonland_cards': total_cards - deck_roles.get('lands', 0)
+        }
+
+    def _calculate_contextual_necessity(
+        self,
+        card: Dict,
+        deck_context: Dict,
+        card_tags: set,
+        card_roles: set
+    ) -> tuple[float, List[str]]:
+        """
+        Calculate contextual necessity bonus/penalty for utility cards.
+
+        Returns:
+            Tuple of (bonus_points, explanation_reasons)
+        """
+        bonus = 0.0
+        reasons = []
+
+        # Check if card is ramp
+        if 'ramp' in card_roles or 'ramp' in card_tags:
+            if deck_context['ramp_need'] == 'deficit':
+                # Deck needs more ramp
+                deficit = deck_context['optimal_ramp'] - deck_context['ramp_count']
+                bonus += 15.0  # Strong bonus for needed ramp
+                reasons.append(
+                    f"🎯 NEEDED: Deck has only {deck_context['ramp_count']} ramp sources "
+                    f"(needs {deck_context['optimal_ramp']} for {deck_context['curve_profile']} curve, avg CMC {deck_context['avg_cmc']})"
+                )
+            elif deck_context['ramp_need'] == 'optimal':
+                # At optimal count - card is valuable but not critical
+                bonus += 5.0
+                reasons.append(
+                    f"✓ Deck has adequate ramp ({deck_context['ramp_count']}/{deck_context['optimal_ramp']} "
+                    f"for {deck_context['curve_profile']} curve)"
+                )
+            else:  # excess
+                # Too much ramp - can cut
+                excess = deck_context['ramp_count'] - deck_context['optimal_ramp']
+                bonus -= 10.0  # Penalty for excess ramp
+                reasons.append(
+                    f"⚠️ CUTTABLE: Deck has too much ramp ({deck_context['ramp_count']}/{deck_context['optimal_ramp']}) "
+                    f"for {deck_context['curve_profile']} curve (avg CMC {deck_context['avg_cmc']})"
+                )
+
+        # Check if card is removal
+        if 'removal' in card_roles or 'removal' in card_tags:
+            if deck_context['removal_need'] == 'deficit':
+                # Deck needs more removal
+                deficit = deck_context['optimal_removal'] - deck_context['removal_count']
+                bonus += 15.0  # Strong bonus for needed removal
+                reasons.append(
+                    f"🎯 NEEDED: Deck has only {deck_context['removal_count']} removal sources "
+                    f"(needs {deck_context['optimal_removal']} for {deck_context['strategy']} strategy)"
+                )
+            elif deck_context['removal_need'] == 'optimal':
+                # At optimal count
+                bonus += 5.0
+                reasons.append(
+                    f"✓ Deck has adequate removal ({deck_context['removal_count']}/{deck_context['optimal_removal']} "
+                    f"for {deck_context['strategy']} strategy)"
+                )
+            else:  # excess
+                # Too much removal - might be cuttable
+                bonus -= 10.0
+                reasons.append(
+                    f"⚠️ CUTTABLE: Deck has high removal density ({deck_context['removal_count']}/{deck_context['optimal_removal']}) "
+                    f"for {deck_context['strategy']} strategy"
+                )
+
+        # Check if card is card draw
+        if 'card_draw' in card_tags:
+            # Card draw is almost always good, but give bonus if low
+            if deck_context['card_draw_count'] < 8:
+                bonus += 10.0
+                reasons.append(
+                    f"🎯 NEEDED: Deck has limited card draw ({deck_context['card_draw_count']} sources)"
+                )
+            elif deck_context['card_draw_count'] < 12:
+                bonus += 5.0
+                reasons.append(
+                    f"✓ Deck has adequate card draw ({deck_context['card_draw_count']} sources)"
+                )
+
+        return bonus, reasons
+
     def _calculate_synergy_score(
         self,
         card: Dict,
         deck_tags: Counter,
         deck_roles: Counter,
         deck_type_counts: Dict[str, int],
+        deck_context: Dict = None,
         debug: bool = False
     ) -> float:
         """
@@ -740,6 +943,7 @@ class RecommendationEngine:
         1. LOCAL (pairwise): Tag overlap (e.g., equipment + equipment_matters)
         2. THREE-WAY: Requires 3 components (e.g., artifact recursion needs artifacts + graveyard + recursion)
         3. GLOBAL (scaling): Scales with deck composition (e.g., Inspiring Statuary scales with artifact count)
+        4. CONTEXTUAL: Necessity for utility cards (ramp, removal, draw) based on deck needs
 
         Scoring weights:
         - Generic utility tags: 0.1 per card
@@ -748,6 +952,7 @@ class RecommendationEngine:
         - Three-way synergies: +30 points
         - Global scaling: 0.3-0.5 per relevant card (capped)
         - Tribal: +100 for 10+ (real tribal), +5 per card otherwise
+        - Contextual necessity: +15 (needed), +5 (optimal), -10 (excess)
         """
         score = 0.0
         score_breakdown = []
@@ -1008,6 +1213,19 @@ class RecommendationEngine:
                 if debug:
                     score_breakdown.append(f"PENALTY: creature recursion in low-creature deck ({creature_count} creatures): -{penalty:.1f}")
 
+        # ============================================================================
+        # CONTEXTUAL NECESSITY (utility card needs based on deck context)
+        # ============================================================================
+
+        if deck_context:
+            contextual_bonus, contextual_reasons = self._calculate_contextual_necessity(
+                card, deck_context, card_tags, card_roles
+            )
+            if contextual_bonus != 0:
+                score += contextual_bonus
+                if debug:
+                    score_breakdown.append(f"CONTEXTUAL: necessity adjustment: {contextual_bonus:+.1f}")
+
         if debug:
             print(f"\n{card['name']} scoring breakdown:")
             print(f"  Card tags: {sorted(card_tags)}")
@@ -1162,7 +1380,8 @@ class RecommendationEngine:
         card: Dict,
         deck_tags: Counter,
         deck_roles: Counter,
-        deck_type_counts: Dict[str, int] = None
+        deck_type_counts: Dict[str, int] = None,
+        deck_context: Dict = None
     ) -> List[str]:
         """
         Generate human-readable synergy explanations
@@ -1172,6 +1391,7 @@ class RecommendationEngine:
             deck_tags: Counter of synergy tags in deck
             deck_roles: Counter of roles in deck
             deck_type_counts: Dictionary of card type counts in deck (for global synergies)
+            deck_context: Deck context analysis (for contextual necessity explanations)
 
         Returns:
             List of explanation strings
@@ -1183,6 +1403,16 @@ class RecommendationEngine:
         # Initialize deck_type_counts if not provided
         if deck_type_counts is None:
             deck_type_counts = {}
+
+        # ============================================================================
+        # CONTEXTUAL NECESSITY - Add explanations for utility card needs FIRST
+        # ============================================================================
+
+        if deck_context:
+            _, contextual_reasons = self._calculate_contextual_necessity(
+                card, deck_context, card_tags, card_roles
+            )
+            reasons.extend(contextual_reasons)
 
         # ============================================================================
         # GLOBAL SYNERGIES - Cards that scale with deck composition
@@ -1390,7 +1620,7 @@ def load_recommendation_engine() -> bool:
 def get_recommendations(
     deck_cards: List[Dict],
     color_identity: Optional[List[str]] = None,
-    limit: int = 10,
+    limit: int = 20,
     debug: bool = False,
     include_deck_scores: bool = False
 ) -> Dict:
