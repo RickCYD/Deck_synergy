@@ -402,6 +402,118 @@ def extract_token_synergies(card: Dict) -> Dict:
     return result
 
 
+def extract_token_type_preferences(card: Dict) -> Dict:
+    """
+    Extract what specific token types a card cares about (for payoff cards).
+
+    This distinguishes between:
+    - Cards that care about specific token types (e.g., "whenever you create a Food token")
+    - Cards that care about any tokens (e.g., "whenever you create a token")
+    - Cards that care about creature tokens specifically
+
+    Returns:
+        {
+            'cares_about_tokens': bool,
+            'specific_token_types': List[str],  # ['food', 'treasure', 'clue', 'creature', etc.]
+            'cares_about_any_tokens': bool,  # True if cares about tokens in general
+            'examples': List[str]
+        }
+    """
+    text = card.get('oracle_text', '').lower()
+
+    result = {
+        'cares_about_tokens': False,
+        'specific_token_types': [],
+        'cares_about_any_tokens': False,
+        'examples': []
+    }
+
+    if not text:
+        return result
+
+    # Specific token type patterns
+    specific_patterns = {
+        'treasure': [
+            r'whenever.*treasure.*token',
+            r'treasure.*tokens?.*you\s+control',
+            r'sacrifice.*treasure',
+            r'for\s+each.*treasure'
+        ],
+        'food': [
+            r'whenever.*food.*token',
+            r'food.*tokens?.*you\s+control',
+            r'sacrifice.*food',
+            r'for\s+each.*food'
+        ],
+        'clue': [
+            r'whenever.*clue.*token',
+            r'clue.*tokens?.*you\s+control',
+            r'sacrifice.*clue',
+            r'for\s+each.*clue'
+        ],
+        'blood': [
+            r'whenever.*blood.*token',
+            r'blood.*tokens?.*you\s+control',
+            r'sacrifice.*blood',
+            r'for\s+each.*blood'
+        ],
+        'creature': [
+            r'whenever.*creature.*token.*(?:enters|created)',
+            r'creature.*tokens?.*you\s+control',
+            r'for\s+each.*creature.*token'
+        ]
+    }
+
+    # Check for specific token types
+    for token_type, patterns in specific_patterns.items():
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                result['cares_about_tokens'] = True
+                if token_type not in result['specific_token_types']:
+                    result['specific_token_types'].append(token_type)
+                if match.group(0) not in result['examples']:
+                    result['examples'].append(match.group(0))
+
+    # Check for general token patterns
+    general_patterns = [
+        r'if.*would create.*tokens?.*creates twice that many',  # Token doublers
+        r'whenever.*(?:you\s+)?create.*\b(?:a\s+|an\s+)?token\b(?!\s+named)',  # "create a token" but not "create a token named"
+        r'tokens?.*you\s+control\s+(?:get|have)',
+        r'for\s+each.*token.*you\s+control'
+    ]
+
+    for pattern in general_patterns:
+        match = re.search(pattern, text)
+        if match:
+            # Check if this is really a general pattern (no specific type in context)
+            match_text = match.group(0)
+            has_specific_type = any(
+                token_type in match_text
+                for token_type in ['treasure', 'food', 'clue', 'blood', 'creature']
+            )
+
+            if not has_specific_type:
+                result['cares_about_tokens'] = True
+                result['cares_about_any_tokens'] = True
+                if match.group(0) not in result['examples']:
+                    result['examples'].append(match.group(0))
+
+    # Also check for death triggers that care about creatures (which includes creature tokens)
+    if not result['specific_token_types'] or 'creature' not in result['specific_token_types']:
+        creature_death_patterns = [
+            r'whenever.*creature.*dies',
+            r'whenever.*creature.*put into.*graveyard'
+        ]
+        for pattern in creature_death_patterns:
+            if re.search(pattern, text):
+                result['cares_about_tokens'] = True
+                if 'creature' not in result['specific_token_types']:
+                    result['specific_token_types'].append('creature')
+
+    return result
+
+
 def classify_token_mechanics(card: Dict) -> Dict:
     """
     Main classification function that extracts all token mechanics.
@@ -412,5 +524,6 @@ def classify_token_mechanics(card: Dict) -> Dict:
         'token_creation': extract_token_creation(card),
         'token_doublers': extract_token_doublers(card),
         'anthems': extract_anthems(card),
-        'token_synergies': extract_token_synergies(card)
+        'token_synergies': extract_token_synergies(card),
+        'token_type_preferences': extract_token_type_preferences(card)
     }

@@ -984,6 +984,30 @@ class RecommendationEngine:
                 if debug:
                     score_breakdown.append(f"PENALTY: equipment-only tokens in creature token deck: -{penalty:.1f}")
 
+        # Penalty for spell recursion in non-spell decks
+        # Cards like "Repository Skaab" return instant/sorcery from graveyard
+        # They shouldn't score highly if the deck has few instants/sorceries
+        if 'recursion_spell' in card_tags:
+            spell_count = deck_type_counts.get('instants', 0) + deck_type_counts.get('sorceries', 0)
+            if spell_count < 10:  # Deck has few spells
+                # Apply penalty scaled to how few spells the deck has
+                # Maximum penalty at 0 spells, decreases as spell count approaches 10
+                penalty = (10 - spell_count) * 4  # Up to 40 point penalty for 0 spells
+                score -= penalty
+                if debug:
+                    score_breakdown.append(f"PENALTY: spell recursion in low-spell deck ({spell_count} spells): -{penalty:.1f}")
+
+        # Penalty for creature recursion in non-creature decks
+        # Cards that only reanimate creatures shouldn't score highly in spell-heavy decks
+        if 'recursion_creature' in card_tags:
+            creature_count = deck_type_counts.get('creatures', 0)
+            if creature_count < 15:  # Deck has few creatures
+                # Apply penalty for decks with very few creatures
+                penalty = (15 - creature_count) * 2  # Up to 30 point penalty
+                score -= penalty
+                if debug:
+                    score_breakdown.append(f"PENALTY: creature recursion in low-creature deck ({creature_count} creatures): -{penalty:.1f}")
+
         if debug:
             print(f"\n{card['name']} scoring breakdown:")
             print(f"  Card tags: {sorted(card_tags)}")
