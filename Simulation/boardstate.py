@@ -72,9 +72,19 @@ class BoardState:
                 'threat_level': 0.0,  # 0-1 scale
             })
 
-        # Interaction tracking
-        self.removal_probability = 0.15  # 15% chance per turn a creature gets removed
-        self.board_wipe_probability = 0.08  # 8% chance per turn of board wipe
+        # Interaction tracking - Base rates (Option A: Reduced for more realistic gameplay)
+        self.base_removal_probability = 0.05  # 5% chance per turn (down from 15%)
+        self.base_board_wipe_probability = 0.03  # 3% chance per turn (down from 8%)
+
+        # Option B & C: Strategy-aware adjustment
+        deck_analysis = self._analyze_deck_strategy(deck)
+        self.deck_archetype = deck_analysis['archetype']
+        self.protection_count = deck_analysis['protection_count']
+
+        # Apply archetype-based modifiers
+        self.removal_probability = self.base_removal_probability * deck_analysis['removal_modifier']
+        self.board_wipe_probability = self.base_board_wipe_probability * deck_analysis['wipe_modifier']
+
         self.wipes_survived = 0
         self.creatures_removed = 0
         self.reanimation_targets = []  # Creatures that died and could be reanimated
@@ -106,6 +116,117 @@ class BoardState:
         for kw in getattr(creature, "keywords_when_equipped", []):
             if kw.lower() == "first strike":
                 creature.has_first_strike = bool(equipped)
+
+    def _analyze_deck_strategy(self, deck):
+        """
+        Analyze deck composition to detect archetype and adjust interaction rates.
+
+        Options B & C: Strategy-aware simulation with archetype detection.
+
+        Returns dict with:
+            - archetype: Detected deck strategy
+            - removal_modifier: Multiplier for removal probability (lower = fewer removals)
+            - wipe_modifier: Multiplier for board wipe probability
+            - protection_count: Number of protection spells detected
+        """
+        equipment_count = 0
+        creature_count = 0
+        protection_count = 0
+        token_generators = 0
+        go_wide_count = 0
+
+        # Protection spell keywords to detect
+        protection_keywords = [
+            'hexproof', 'indestructible', 'protection from',
+            'heroic intervention', 'clever concealment', 'teferi\'s protection',
+            'boros charm', 'flawless maneuver', 'unbreakable formation',
+            'mithril coat', 'lightning greaves', 'swiftfoot boots'
+        ]
+
+        for card in deck:
+            card_type = getattr(card, 'type', '').lower()
+            oracle_text = getattr(card, 'oracle_text', '').lower()
+            name = getattr(card, 'name', '').lower()
+
+            # Count equipment
+            if 'equipment' in card_type:
+                equipment_count += 1
+
+            # Count creatures
+            if 'creature' in card_type:
+                creature_count += 1
+
+            # Detect protection spells
+            for keyword in protection_keywords:
+                if keyword in oracle_text or keyword in name:
+                    protection_count += 1
+                    break
+
+            # Detect token generators (go-wide strategy)
+            if 'create' in oracle_text and 'token' in oracle_text:
+                token_generators += 1
+
+            # Detect anthems and +1/+1 effects (go-wide)
+            if ('get +' in oracle_text or 'gets +' in oracle_text) and 'creatures you control' in oracle_text:
+                go_wide_count += 1
+
+        total_cards = len(deck)
+        equipment_ratio = equipment_count / total_cards if total_cards > 0 else 0
+        creature_ratio = creature_count / total_cards if total_cards > 0 else 0
+
+        # Determine archetype
+        archetype = 'unknown'
+        removal_modifier = 1.0  # Default: use base rates
+        wipe_modifier = 1.0
+
+        # Voltron/Equipment deck (lots of equipment, few creatures)
+        if equipment_ratio > 0.12 and creature_ratio < 0.25:
+            archetype = 'voltron'
+            # Voltron decks have fewer creatures, so removals hurt more
+            # But they often run protection, so reduce removal significantly
+            removal_modifier = 0.4  # 60% reduction (5% -> 2%)
+            wipe_modifier = 0.5  # 50% reduction (3% -> 1.5%)
+
+        # Go-wide/Token deck (many token generators)
+        elif token_generators >= 5 or go_wide_count >= 3:
+            archetype = 'go_wide'
+            # Go-wide cares less about single removals, more about wipes
+            removal_modifier = 1.2  # Slightly more removals
+            wipe_modifier = 0.8  # But fewer wipes (they have board presence)
+
+        # Creature-heavy aggro (lots of creatures, few equipment)
+        elif creature_ratio > 0.30 and equipment_ratio < 0.08:
+            archetype = 'aggro'
+            removal_modifier = 1.0  # Standard rates
+            wipe_modifier = 0.9
+
+        # Midrange (balanced)
+        elif creature_ratio > 0.20 and creature_ratio < 0.35:
+            archetype = 'midrange'
+            removal_modifier = 0.9
+            wipe_modifier = 0.9
+
+        # Combo/Control (few creatures)
+        elif creature_ratio < 0.15:
+            archetype = 'combo_control'
+            # Combo decks don't care much about creature removal
+            removal_modifier = 0.5
+            wipe_modifier = 0.6
+
+        # Apply protection spell bonus (each protection spell reduces removal)
+        if protection_count > 0:
+            protection_bonus = 0.9 ** protection_count  # Each spell reduces by 10%
+            removal_modifier *= protection_bonus
+            wipe_modifier *= protection_bonus
+
+        return {
+            'archetype': archetype,
+            'removal_modifier': removal_modifier,
+            'wipe_modifier': wipe_modifier,
+            'protection_count': protection_count,
+            'equipment_count': equipment_count,
+            'creature_count': creature_count
+        }
 
     def _mana_pool_str(self) -> str:
         """Return a readable representation of the current mana pool."""
