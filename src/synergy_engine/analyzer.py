@@ -251,36 +251,71 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
     # Run game simulation if requested
     simulation_results = None
     if run_simulation:
+        sim_start = time.time()
         try:
-            print("\nRunning game simulation...")
-            from ..simulation.deck_simulator import simulate_deck_effectiveness
+            print("\n" + "="*60)
+            print("RUNNING DECK SIMULATION")
+            print("="*60)
 
-            # Find commander
-            commander = next((c for c in cards if c.get('is_commander')), None)
-
-            sim_start = time.time()
-            simulation_results = simulate_deck_effectiveness(
-                cards=[c for c in cards if not c.get('is_commander')],
-                commander=commander,
-                num_games=num_simulation_games,
-                max_turns=10,
-                verbose=False
-            )
-            sim_elapsed = time.time() - sim_start
-
-            if 'error' not in simulation_results.get('summary', {}):
-                total_dmg = simulation_results['summary']['total_damage_10_turns']
-                print(f"  Completed in {sim_elapsed:.1f}s")
-                print(f"  Total damage over 10 turns: {total_dmg}")
-                print(f"  Average damage per turn: {simulation_results['summary']['avg_damage_per_turn']}")
-                print(f"  Peak board power: {simulation_results['summary']['peak_power']}")
+            # Import simulation module
+            try:
+                from ..simulation.deck_simulator import simulate_deck_effectiveness
+                print("✓ Simulation module imported successfully")
+            except ImportError as import_err:
+                print(f"✗ Cannot import simulation module: {import_err}")
+                print("  Simulation will be skipped. Install missing dependencies if needed.")
+                simulation_results = None
             else:
-                print(f"  Warning: Simulation failed: {simulation_results['summary'].get('error')}")
+                # Find commander
+                commander = next((c for c in cards if c.get('is_commander')), None)
+                non_commander_cards = [c for c in cards if not c.get('is_commander')]
+
+                print(f"  Deck has {len(non_commander_cards)} cards (excluding commander)")
+                if commander:
+                    print(f"  Commander: {commander.get('name')}")
+                else:
+                    print("  WARNING: No commander found - using dummy commander")
+
+                print(f"  Running {num_simulation_games} games, {10} turns each...")
+
+                # Run simulation
+                simulation_results = simulate_deck_effectiveness(
+                    cards=non_commander_cards,
+                    commander=commander,
+                    num_games=num_simulation_games,
+                    max_turns=10,
+                    verbose=False
+                )
+
+                sim_elapsed = time.time() - sim_start
+
+                # Check results
+                if simulation_results and 'summary' in simulation_results:
+                    summary = simulation_results['summary']
+                    if 'error' in summary:
+                        print(f"  ✗ Simulation failed: {summary['error']}")
+                        simulation_results = None
+                    else:
+                        print(f"  ✓ Simulation completed in {sim_elapsed:.1f}s")
+                        print(f"  Results:")
+                        print(f"    • Total damage (10 turns): {summary.get('total_damage_10_turns', 0):.1f}")
+                        print(f"    • Average damage/turn: {summary.get('avg_damage_per_turn', 0):.1f}")
+                        print(f"    • Peak board power: {summary.get('peak_power', 0):.1f}")
+                        if summary.get('commander_avg_cast_turn'):
+                            print(f"    • Commander avg cast turn: {summary.get('commander_avg_cast_turn'):.1f}")
+                else:
+                    print("  ✗ Simulation returned no results")
+                    simulation_results = None
+
         except Exception as e:
-            print(f"  Warning: Simulation failed: {e}")
+            sim_elapsed = time.time() - sim_start
+            print(f"  ✗ Simulation failed after {sim_elapsed:.1f}s: {e}")
             import traceback
+            print("  Full traceback:")
             traceback.print_exc()
             simulation_results = None
+        finally:
+            print("="*60)
 
     # Return results
     if include_three_way:
