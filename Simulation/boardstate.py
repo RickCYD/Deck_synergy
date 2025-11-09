@@ -1094,10 +1094,15 @@ class BoardState:
         target_opp['life_total'] -= unblocked_damage
 
         # Track commander damage if commander dealt damage
-        if self.commander in self.creatures:
-            commander_damage = self.commander.power or 0
-            if random.random() >= base_block_prob:  # If not blocked
-                target_opp['commander_damage'] += commander_damage
+        # Note: Commander damage should be tracked during the combat loop above
+        # This is a simplified approach - assuming commander damage is proportional to unblocked damage
+        if self.commander in self.creatures and unblocked_damage > 0:
+            commander_power = self.commander.power or 0
+            # Estimate commander contributed to damage based on its power vs total power
+            total_power = sum(c.power or 0 for c in self.creatures)
+            if total_power > 0:
+                commander_contribution = int(unblocked_damage * commander_power / total_power)
+                target_opp['commander_damage'] += commander_contribution
 
         total_damage_dealt = unblocked_damage
 
