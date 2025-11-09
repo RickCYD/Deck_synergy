@@ -49,6 +49,24 @@ class Card:
         fetch_basic=False,
         fetch_land_types=None,
         fetch_land_tapped=False,
+        # New keywords
+        has_lifelink=False,
+        has_deathtouch=False,
+        has_vigilance=False,
+        has_flying=False,
+        has_menace=False,
+        is_unblockable=False,
+        # Token types
+        token_type=None,  # 'Treasure', 'Food', 'Clue', etc.
+        # Saga
+        is_saga=False,
+        saga_chapters=None,
+        # Cost reduction
+        has_affinity=False,
+        cost_reduction=0,
+        # Sacrifice
+        sacrifice_outlet=False,
+        death_trigger_value=0,
     ):
         self.name = name
         self.type = type
@@ -82,6 +100,30 @@ class Card:
         self.fetch_basic = bool(fetch_basic)
         self.fetch_land_types = fetch_land_types or []
         self.fetch_land_tapped = bool(fetch_land_tapped)
+
+        # New keywords
+        self.has_lifelink = has_lifelink
+        self.has_deathtouch = has_deathtouch
+        self.has_vigilance = has_vigilance
+        self.has_flying = has_flying
+        self.has_menace = has_menace
+        self.is_unblockable = is_unblockable
+
+        # Token types
+        self.token_type = token_type
+
+        # Saga
+        self.is_saga = is_saga
+        self.saga_chapters = saga_chapters or []
+        self.saga_current_chapter = 0
+
+        # Cost reduction
+        self.has_affinity = has_affinity
+        self.cost_reduction = cost_reduction
+
+        # Sacrifice
+        self.sacrifice_outlet = sacrifice_outlet
+        self.death_trigger_value = death_trigger_value
 
     def add_counter(self, counter_type: str, amount: int = 1) -> None:
         """Add *amount* of *counter_type* counters to the card.
@@ -257,6 +299,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
         # At the start of each turn, move last turn's tapped lands to untapped
         untap_phase(board, verbose=verbose)
+
+        # ---- upkeep phase: advance sagas ----
+        board.advance_sagas(verbose=verbose)
 
         # ---- draw phase: draw a card ----
         drawn = draw_phase(board, verbose=verbose)

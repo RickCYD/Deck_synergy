@@ -85,6 +85,22 @@ class BoardState:
         self.removal_spells = []  # Track removal spells in hand
         self.instant_spells = []  # Track instant-speed spells for reactive play
 
+        # Command Tax tracking
+        self.commander_cast_count = 0  # Times commander has been cast
+        self.command_tax = 0  # Additional mana cost ({2} per previous cast)
+
+        # Combat keywords and modifiers
+        self.damage_multiplier = 1.0  # For damage doublers like Fiery Emancipation
+        self.token_multiplier = 1  # For token doublers like Doubling Season
+
+        # Cost reduction
+        self.cost_reduction = 0  # Generic cost reduction
+        self.affinity_count = 0  # Artifacts for affinity
+
+        # Sacrifice tracking
+        self.creatures_sacrificed = 0
+        self.sacrifice_value = 0  # Total power sacrificed
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
         for kw in getattr(creature, "keywords_when_equipped", []):
@@ -786,12 +802,30 @@ class BoardState:
         return True
 
     def play_commander(self, card, verbose=False):
-        """Cast your commander from the command zone or hand."""
-        if not Mana_utils.can_pay(card.mana_cost, self.mana_pool):
+        """Cast your commander from the command zone or hand with command tax."""
+        # Calculate total cost including command tax
+        base_cost = card.mana_cost
+
+        # Apply command tax ({2} per previous cast)
+        tax_amount = self.commander_cast_count * 2
+
+        # Check if we can pay base cost + tax
+        if not Mana_utils.can_pay(base_cost, self.mana_pool):
             if verbose:
                 print(f"Not enough mana to play {card.name}")
             return False
-        Mana_utils.pay(card.mana_cost, self.mana_pool)
+
+        # Pay base cost
+        Mana_utils.pay(base_cost, self.mana_pool)
+
+        # Pay command tax
+        for _ in range(tax_amount):
+            if not self.mana_pool:
+                if verbose:
+                    print(f"Not enough mana to pay command tax of {tax_amount}")
+                return False
+            self.mana_pool.pop(0)
+
         if card in self.command_zone:
             self.command_zone.remove(card)
         elif card in self.hand:
@@ -800,10 +834,14 @@ class BoardState:
             if verbose:
                 print(f"{card.name} is not available to be played")
             return False
+
         self.creatures.append(card)
         card.tapped = False
+        self.commander_cast_count += 1
+
         if verbose:
-            print(f"Played commander: {card.name}")
+            tax_msg = f" (+ {tax_amount} tax)" if tax_amount > 0 else ""
+            print(f"Played commander: {card.name}{tax_msg}")
             print(f"Mana pool now: {self._mana_pool_str()}")
         return True
 
@@ -961,6 +999,7 @@ class BoardState:
             return 0
 
         total_damage_dealt = 0
+        life_gained = 0
 
         # Choose a random alive opponent to attack
         alive_opponents = [opp for opp in self.opponents if opp['is_alive']]
@@ -977,29 +1016,45 @@ class BoardState:
 
         for attacker in self.creatures[:]:
             attack_power = attacker.power or 0
+            attacker_toughness = attacker.toughness or 0
 
-            if not target_opp['creatures']:
-                # No blockers, damage goes through
-                unblocked_damage += attack_power
+            # Check for evasion/unblockable
+            is_unblockable = getattr(attacker, 'is_unblockable', False)
+            has_flying = getattr(attacker, 'has_flying', False)
+            has_menace = getattr(attacker, 'has_menace', False)
+            has_lifelink = getattr(attacker, 'has_lifelink', False)
+            has_deathtouch = getattr(attacker, 'has_deathtouch', False)
+
+            if not target_opp['creatures'] or is_unblockable:
+                # No blockers or unblockable, damage goes through
+                damage = int(attack_power * self.damage_multiplier)
+                unblocked_damage += damage
+                if has_lifelink:
+                    life_gained += damage
                 continue
 
-            # Opponent blocks with a probability based on their creature count
-            # More creatures = more likely to block
-            block_prob = min(0.7, 0.3 + len(target_opp['creatures']) * 0.1)
+            # Calculate block probability based on evasion
+            base_block_prob = min(0.7, 0.3 + len(target_opp['creatures']) * 0.1)
 
-            if random.random() < block_prob:
+            # Evasion reduces block chance
+            if has_flying:
+                base_block_prob *= 0.5  # Flying is hard to block
+            if has_menace:
+                base_block_prob *= 0.7  # Menace requires 2 blockers
+
+            if random.random() < base_block_prob:
                 # Choose a random blocker
                 blocker = random.choice(target_opp['creatures'])
                 blocker_power = blocker.power or 0
                 blocker_toughness = blocker.toughness or 0
-                attacker_toughness = attacker.toughness or 0
 
-                # Combat damage
-                if attack_power >= blocker_toughness:
+                # Combat damage with deathtouch
+                if has_deathtouch or attack_power >= blocker_toughness:
                     # Blocker dies
                     target_opp['creatures'].remove(blocker)
                     if verbose:
-                        print(f"{attacker.name} destroyed {blocker.name}")
+                        death_reason = "deathtouch" if has_deathtouch else "damage"
+                        print(f"{attacker.name} destroyed {blocker.name} ({death_reason})")
 
                 if blocker_power >= attacker_toughness:
                     # Attacker dies
@@ -1010,14 +1065,30 @@ class BoardState:
                 blocked_damage += attack_power
             else:
                 # Unblocked
-                unblocked_damage += attack_power
+                damage = int(attack_power * self.damage_multiplier)
+                unblocked_damage += damage
+                if has_lifelink:
+                    life_gained += damage
 
-        # Remove dead creatures
+        # Remove dead creatures (handle commander separately)
         for creature in creatures_died:
             if creature in self.creatures:
                 self.creatures.remove(creature)
-                self.graveyard.append(creature)
-                self.reanimation_targets.append(creature)
+                if getattr(creature, 'is_commander', False):
+                    self.command_zone.append(creature)
+                else:
+                    self.graveyard.append(creature)
+                    self.reanimation_targets.append(creature)
+
+                    # Trigger death effects (aristocrats)
+                    if getattr(creature, 'death_trigger_value', 0) > 0:
+                        self.sacrifice_value += creature.death_trigger_value
+
+        # Apply life gain from lifelink
+        if life_gained > 0:
+            self.life_total += life_gained
+            if verbose:
+                print(f"Gained {life_gained} life from lifelink")
 
         # Apply damage to opponent
         target_opp['life_total'] -= unblocked_damage
@@ -1025,7 +1096,7 @@ class BoardState:
         # Track commander damage if commander dealt damage
         if self.commander in self.creatures:
             commander_damage = self.commander.power or 0
-            if random.random() >= block_prob:  # If not blocked
+            if random.random() >= base_block_prob:  # If not blocked
                 target_opp['commander_damage'] += commander_damage
 
         total_damage_dealt = unblocked_damage
@@ -1054,12 +1125,19 @@ class BoardState:
             # Target the biggest threat (highest power)
             target = max(self.creatures, key=lambda c: c.power or 0)
             self.creatures.remove(target)
-            self.graveyard.append(target)
-            self.reanimation_targets.append(target)
-            self.creatures_removed += 1
 
-            if verbose:
-                print(f"Opponent removed {target.name} from the battlefield!")
+            # Commanders go back to command zone instead of graveyard
+            if getattr(target, 'is_commander', False):
+                self.command_zone.append(target)
+                if verbose:
+                    print(f"Opponent removed {target.name}! Returned to command zone.")
+            else:
+                self.graveyard.append(target)
+                self.reanimation_targets.append(target)
+                if verbose:
+                    print(f"Opponent removed {target.name} from the battlefield!")
+
+            self.creatures_removed += 1
 
     def simulate_board_wipe(self, verbose: bool = False):
         """Simulate a board wipe that destroys all creatures."""
@@ -1070,10 +1148,13 @@ class BoardState:
             num_creatures = len(self.creatures)
 
             if num_creatures > 0:
-                # Move all creatures to graveyard
+                # Move all creatures to graveyard (except commander)
                 for creature in self.creatures[:]:
-                    self.graveyard.append(creature)
-                    self.reanimation_targets.append(creature)
+                    if getattr(creature, 'is_commander', False):
+                        self.command_zone.append(creature)
+                    else:
+                        self.graveyard.append(creature)
+                        self.reanimation_targets.append(creature)
 
                 self.creatures.clear()
                 self.wipes_survived += 1
@@ -1171,6 +1252,128 @@ class BoardState:
                     print(f"{planeswalker.name} -2: Created a 2/2 token")
 
         return True
+
+    # ─────────────────────── Token Mechanics ──────────────────────────
+    def use_treasure_tokens(self, num_tokens: int, verbose: bool = False):
+        """Sacrifice treasure tokens to add mana."""
+        treasures = [c for c in self.artifacts if getattr(c, 'token_type', None) == 'Treasure']
+        used = 0
+
+        for treasure in treasures[:num_tokens]:
+            self.artifacts.remove(treasure)
+            self.mana_pool.append(('Any',))
+            used += 1
+            if verbose:
+                print(f"Sacrificed Treasure token for mana")
+
+        return used
+
+    def use_food_token(self, verbose: bool = False):
+        """Sacrifice food token to gain life."""
+        foods = [c for c in self.artifacts if getattr(c, 'token_type', None) == 'Food']
+        if foods:
+            food = foods[0]
+            self.artifacts.remove(food)
+            self.life_total += 3
+            if verbose:
+                print(f"Sacrificed Food token, gained 3 life")
+            return True
+        return False
+
+    def use_clue_token(self, verbose: bool = False):
+        """Sacrifice clue token to draw a card."""
+        clues = [c for c in self.artifacts if getattr(c, 'token_type', None) == 'Clue']
+        if clues and len(self.mana_pool) >= 2:
+            clue = clues[0]
+            self.artifacts.remove(clue)
+            # Pay 2 mana
+            self.mana_pool.pop(0)
+            self.mana_pool.pop(0)
+            self.draw_card(1, verbose=verbose)
+            if verbose:
+                print(f"Sacrificed Clue token, drew a card")
+            return True
+        return False
+
+    # ─────────────────────── Sacrifice Mechanics ──────────────────────────
+    def sacrifice_creature(self, creature, verbose: bool = False):
+        """Sacrifice a creature for value."""
+        if creature not in self.creatures:
+            return False
+
+        self.creatures.remove(creature)
+        self.creatures_sacrificed += 1
+        self.sacrifice_value += creature.power or 0
+
+        # Commander goes to command zone
+        if getattr(creature, 'is_commander', False):
+            self.command_zone.append(creature)
+        else:
+            self.graveyard.append(creature)
+            self.reanimation_targets.append(creature)
+
+        # Trigger death effects
+        death_value = getattr(creature, 'death_trigger_value', 0)
+        if death_value > 0:
+            # Could be damage, card draw, etc - simplified as generic value
+            if verbose:
+                print(f"Death trigger from {creature.name}: {death_value} value")
+
+        if verbose:
+            print(f"Sacrificed {creature.name}")
+
+        return True
+
+    def find_sacrifice_outlet(self):
+        """Find if there's a sacrifice outlet on board."""
+        for permanent in self.creatures + self.artifacts + self.enchantments:
+            if getattr(permanent, 'sacrifice_outlet', False):
+                return permanent
+        return None
+
+    # ─────────────────────── Saga Mechanics ──────────────────────────
+    def advance_sagas(self, verbose: bool = False):
+        """Advance all sagas and trigger chapter abilities."""
+        for saga in self.enchantments[:]:
+            if not getattr(saga, 'is_saga', False):
+                continue
+
+            saga.saga_current_chapter += 1
+            chapter = saga.saga_current_chapter
+
+            if verbose:
+                print(f"{saga.name} advanced to chapter {chapter}")
+
+            # Trigger chapter ability
+            chapters = getattr(saga, 'saga_chapters', [])
+            if chapter <= len(chapters):
+                effect = chapters[chapter - 1]
+                # Execute chapter effect (simplified)
+                if 'draw' in effect.lower():
+                    self.draw_card(1, verbose=verbose)
+                elif 'token' in effect.lower():
+                    # Create a token
+                    from simulate_game import Card
+                    token = Card(
+                        name="Saga Token",
+                        type="Creature",
+                        mana_cost="",
+                        power=2,
+                        toughness=2,
+                        produces_colors=[],
+                        mana_production=0,
+                        etb_tapped=False,
+                        etb_tapped_conditions={},
+                        has_haste=False,
+                    )
+                    self.creatures.append(token)
+
+            # Saga sacrifices itself after final chapter
+            if chapter >= len(chapters):
+                self.enchantments.remove(saga)
+                self.graveyard.append(saga)
+                if verbose:
+                    print(f"{saga.name} completed and sacrificed")
 
     # ─────────────────────── AI Decision Making ──────────────────────────
     def should_hold_back_creature(self, creature, verbose: bool = False):
