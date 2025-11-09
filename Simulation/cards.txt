@@ -1,0 +1,115 @@
+# Commander
+1 Sonic the Hedgehog
+
+# Artifact
+1 Nettlecyst
+1 The Fire Crystal
+
+# Bounce
+1 Jeskai Barricade
+
+# Counters
+1 Abzan Battle Priest
+1 Cathars' Crusade
+1 Mikaeus, the Lunarch
+1 Optimus Prime, Hero // Optimus Prime, Autobot Leader
+1 Thundering Raiju
+
+# Creature
+1 Kilo, Apogee Mind
+1 Knuckles the Echidna
+1 Sephiroth, Fallen Hero
+
+# Draw
+1 Arthur, Marigold Knight
+1 Benthic Biomancer
+1 Brainstorm
+1 Combat Research
+1 Dusk Legion Duelist
+1 Enduring Curiosity
+1 Errant and Giada
+1 Frostcliff Siege
+1 Idol of Oblivion
+1 Merry, Esquire of Rohan
+1 Reconnaissance Mission
+1 Rediscover the Way
+1 Unexpected Windfall
+
+# Enchantment
+1 Super State
+
+# Evasion
+1 Mantis Rider
+
+# Finisher
+1 Part the Waterveil
+
+# Instant
+1 Fire Magic
+
+# Land
+1 Adarkar Wastes
+1 Battlefield Forge
+1 Clifftop Retreat
+1 Command Tower
+1 Deserted Beach
+1 Exotic Orchard
+1 Furycalm Snarl
+1 Glacial Fortress
+7 Island
+8 Mountain
+1 Mystic Gate
+1 Mystic Monastery
+1 Path of Ancestry
+7 Plains
+1 Port Town
+1 Prairie Stream
+1 Shivan Reef
+1 Temple of Enlightenment
+
+# Protection
+1 Boros Charm
+1 Lightning Greaves
+1 Plumecreed Escort
+1 Selfless Squire
+1 Spectral Adversary
+1 Swiftfoot Boots
+
+# Ramp
+1 Arcane Signet
+1 Axgard Artisan
+1 Boros Signet
+1 Captain Lannery Storm
+1 Izzet Signet
+1 Sol Ring
+1 Talisman of Conviction
+1 Talisman of Creativity
+1 Talisman of Progress
+1 The Reaver Cleaver
+
+# Removal
+1 An Offer You Can't Refuse
+1 Blasphemous Act
+1 Cathar Commando
+1 Cinderclasm
+1 Counterspell
+1 Farewell
+1 Hullbreaker Horror
+1 Immard, the Stormcleaver
+1 Jeskai Charm
+1 Negate
+1 Path to Exile
+1 Dovin's Veto
+1 Swords to Plowshares
+
+# Stax
+1 Urabrask the Hidden
+
+# Tokens
+1 Academy Manufactor
+1 Forth Eorlingas!
+1 Oath of Eorl
+1 Riders of Rohan
+
+# Tutor
+1 Open the Armory

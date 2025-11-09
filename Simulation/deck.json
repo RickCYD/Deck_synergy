@@ -1,0 +1,38 @@
+{"control": ["Plains", "Forest"]}            // Monumental Henge
+{"always tapped": []}                        // Path of Ancestry
+{"control": ["Mountain", "Plains"]}          // Sunscorched Divide
+{"always untapped": []}                      // Mossfire Valley
+{"always untapped": []}                      // Plains
+{"always untapped": []}                      // Plains
+{"always untapped": []}                      // Forest
+{"always untapped": []}                      // Forest
+{"always untapped": []}                      // Forest
+{"always untapped": []}                      // Mountain
+{"always untapped": []}                      // Mountain
+{"always untapped": []}                      // Mountain
+{"always tapped": []}                        // Radiant Grove
+{"control": ["Mountain", "Forest"]}          // Rootbound Crag
+{"control": ["Mountain", "Plains"]}          // Rugged Prairie
+{"control": ["Plains", "Mountain"]}          // Sacred Peaks
+{"always untapped": []}                      // Scavenger Grounds
+{"always untapped": []}                      // Slayers' Stronghold
+{"control": ["Plains", "Forest"]}            // Sungrass Prairie
+{"control": ["Forest", "Plains"]}            // Sunpetal Grove
+{"control": ["Artifact"]}                    // Spire of Industry
+{"always tapped": []}                        // Wooded Ridgeline
+{"always untapped": []}                      // Ash Barrens
+{"always untapped": []}                      // Command Tower
+{"control": ["Any land your opponent controls"]} // Exotic Orchard
+{"always tapped": []}                        // Evolving Wilds
+{"control": ["Forest", "Plains"]}            // Canopy Vista (if you control two or more basics)
+{"control": ["Mountain", "Forest"]}          // Cinder Glade (if you control two or more basics)
+{"always untapped": []}                      // Battlefield Forge
+{"always untapped": []}                      // Brushland
+{"control": ["Mountain", "Plains"]}          // Clifftop Retreat
+{"control": ["Mountain", "Forest"]}          // Fire-Lit Thicket
+{"reveal": ["Forest", "Plains"]}             // Fortified Village
+{"reveal": ["Mountain", "Plains"]}           // Furycalm Snarl
+{"reveal": ["Mountain", "Forest"]}           // Game Trail
+{"always tapped": []}                        // Jungle Shrine
+{"always untapped": []}                      // Kessig Wolf Run
+{"control": ["Creature with power 4 or greater"]} // Bonders' Enclave

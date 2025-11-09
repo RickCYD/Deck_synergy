@@ -1,0 +1,190 @@
+from __future__ import annotations
+
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+import contextlib
+import random
+from typing import Iterable, List, Tuple
+
+import pandas as pd
+
+from simulate_game import Card, simulate_game
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+def _simulate_single_game(args: Tuple[List[Card], Card, int, bool, Path | None, int]):
+    """Wrapper around :func:`simulate_game` to support multiprocessing."""
+    cards, commander_card, max_turns, verbose, log_dir, game_index = args
+    random.seed(game_index)
+    if log_dir is not None and verbose:
+        log_path = log_dir / f"game_{game_index + 1}.log"
+        with open(log_path, "w") as fh, contextlib.redirect_stdout(fh):
+            return simulate_game(cards, commander_card, max_turns, verbose=True)
+    return simulate_game(cards, commander_card, max_turns, verbose=verbose)
+
+
+def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
+    """Aggregate per game metrics into summary statistics."""
+    total_cards_played = [0] * (max_turns + 1)
+    total_lands_played = [0] * (max_turns + 1)
+    total_mana = [0] * (max_turns + 1)
+    total_castable = [0] * (max_turns + 1)
+    total_damage = [0] * (max_turns + 1)
+    total_unspent = [0] * (max_turns + 1)
+    ramp_cards_played = [0] * (max_turns + 1)
+    total_hand_size = [0] * (max_turns + 1)
+    total_non_land = [0] * (max_turns + 1)
+    total_castable_non_land = [0] * (max_turns + 1)
+    total_uncastable_non_land = [0] * (max_turns + 1)
+    total_power = [0] * (max_turns + 1)
+    total_toughness = [0] * (max_turns + 1)
+    total_counter_power = [0] * (max_turns + 1)
+    total_lands_etb_tapped = [0] * (max_turns + 1)
+
+    COLOURS = ["W", "U", "B", "R", "G", "C", "Any"]
+    total_board_mana = {c: [0] * (max_turns + 1) for c in COLOURS}
+    total_hand_mana = {c: [0] * (max_turns + 1) for c in COLOURS}
+
+    commander_cast_turns: List[int | None] = []
+    total_creature_power: dict[str, float] = {}
+
+    for metrics in results:
+        for turn in range(1, max_turns + 1):
+            total_lands_played[turn] += metrics["lands_played"][turn]
+            total_mana[turn] += metrics["total_mana"][turn]
+            total_castable[turn] += metrics["castable_spells"][turn]
+            total_damage[turn] += metrics["combat_damage"][turn]
+            total_unspent[turn] += metrics["unspent_mana"][turn]
+            ramp_cards_played[turn] += metrics["ramp_cards_played"][turn]
+            total_cards_played[turn] += metrics["cards_played"][turn]
+            total_hand_size[turn] += metrics["hand_size"][turn]
+            total_non_land[turn] += metrics["non_land_cards"][turn]
+            total_castable_non_land[turn] += metrics["castable_non_lands"][turn]
+            total_uncastable_non_land[turn] += metrics["uncastable_non_lands"][turn]
+            total_power[turn] += metrics.get("total_power", [0])[turn]
+            total_toughness[turn] += metrics.get("total_toughness", [0])[turn]
+            total_counter_power[turn] += metrics.get("power_from_counters", [0])[turn]
+            total_lands_etb_tapped[turn] += metrics.get("lands_etb_tapped", [0])[turn]
+            for col in COLOURS:
+                total_board_mana[col][turn] += metrics.get(f"board_mana_{col}", [0])[turn]
+                total_hand_mana[col][turn] += metrics.get(f"hand_mana_{col}", [0])[turn]
+
+        for name, p in metrics.get("creature_power", {}).items():
+            total_creature_power[name] = total_creature_power.get(name, 0) + p
+        commander_cast_turns.append(metrics.get("commander_cast_turn"))
+
+    avg_lands = [round(total_lands_played[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_mana = [round(total_mana[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_castable = [round(total_castable[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_damage = [round(total_damage[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_unspent = [round(total_unspent[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_ramp_card = [round(ramp_cards_played[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_cards_played = [round(total_cards_played[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_hand_size = [round(total_hand_size[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_non_land = [round(total_non_land[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_castable_non_land = [round(total_castable_non_land[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_uncastable_non_land = [round(total_uncastable_non_land[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_power = [round(total_power[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_counter_power = [round(total_counter_power[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_toughness = [round(total_toughness[t] / num_games, 2) for t in range(max_turns + 1)]
+    pct_castable = [
+        round((avg_castable_non_land[t] / avg_non_land[t]) * 100, 2) if avg_non_land[t] > 0 else 0
+        for t in range(max_turns + 1)
+    ]
+    avg_lands_etb_tapped = [round(total_lands_etb_tapped[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_board_mana = {
+        c: [round(total_board_mana[c][t] / num_games, 2) for t in range(max_turns + 1)]
+        for c in COLOURS
+    }
+    avg_hand_mana = {
+        c: [round(total_hand_mana[c][t] / num_games, 2) for t in range(max_turns + 1)]
+        for c in COLOURS
+    }
+    avg_creature_power = {
+        name: round(total_creature_power[name] / num_games, 2) for name in total_creature_power
+    }
+
+    data = {
+        "Turn": list(range(1, max_turns + 1)),
+        "Avg Lands in Play": avg_lands[1:],
+        "Avg Total Mana": avg_mana[1:],
+        "Avg Castable Spells": avg_castable[1:],
+        "Avg Combat Damage": avg_damage[1:],
+        "Avg Unspent Mana": avg_unspent[1:],
+        "Avg Ramp Cards Played": avg_ramp_card[1:],
+        "Avg Cards Played": avg_cards_played[1:],
+        "Avg Hand Size": avg_hand_size[1:],
+        "Avg Non-Lands": avg_non_land[1:],
+        "Avg Castable Non-Lands": avg_castable_non_land[1:],
+        "Avg Uncastable Non-Lands": avg_uncastable_non_land[1:],
+        "Avg Total Power": avg_power[1:],
+        "Avg Power from Counters": avg_counter_power[1:],
+        "Avg Total Toughness": avg_toughness[1:],
+        "Castable %": pct_castable[1:],
+        "Avg Lands ETB Tapped": avg_lands_etb_tapped[1:],
+    }
+    for c in COLOURS:
+        data[f"Board Mana {c}"] = avg_board_mana[c][1:]
+        data[f"Hand Mana {c}"] = avg_hand_mana[c][1:]
+
+    summary_df = pd.DataFrame(data)
+
+    commander_cast_turns_clean = [t if t is not None else (max_turns + 1) for t in commander_cast_turns]
+    commander_cast_series = pd.Series(commander_cast_turns_clean)
+    turns = range(1, max_turns + 2)
+    distribution = commander_cast_series.value_counts().reindex(turns, fill_value=0).sort_index()
+
+    return summary_df, distribution, avg_creature_power
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def run_simulations(
+    cards: List[Card],
+    commander_card: Card,
+    num_games: int,
+    max_turns: int = 10,
+    verbose: bool = True,
+    log_dir: str | Path | None = "logs",
+    num_workers: int = 1,
+):
+    """Run multiple game simulations and aggregate the results.
+
+    Parameters
+    ----------
+    cards
+        The deck to simulate.
+    commander_card
+        The commander for the deck.
+    num_games
+        Number of games to simulate.
+    max_turns
+        How many turns to simulate in each game.
+    verbose
+        If ``True`` prints a detailed log for each game.
+    log_dir
+        Directory where per-game logs are written. When provided, a file
+        ``game_<n>.log`` will capture the output of the ``verbose`` logs for
+        game ``n`` (1-indexed).
+    num_workers
+        When greater than ``1`` the simulations are executed in parallel using
+        a :class:`~concurrent.futures.ProcessPoolExecutor`.
+    """
+    if log_dir is not None:
+        log_dir = Path(log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+    args = [(cards, commander_card, max_turns, verbose, log_dir, i) for i in range(num_games)]
+
+    if num_workers and num_workers > 1:
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            results = list(executor.map(_simulate_single_game, args))
+    else:
+        results = [_simulate_single_game(a) for a in args]
+
+    return _aggregate_results(results, num_games, max_turns)
