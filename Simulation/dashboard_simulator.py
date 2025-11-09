@@ -39,7 +39,7 @@ def create_dashboard_app(archidekt_id: int | None = None) -> dash.Dash:
             "Sonic the Hedgehog",
         )
 
-    summary, commander_turn_dist, creature_power_avg = run_simulations(
+    summary, commander_turn_dist, creature_power_avg, interaction_summary = run_simulations(
         cards, commander, num_games=1000, max_turns=10, log_dir="logs", verbose=True
     )
 

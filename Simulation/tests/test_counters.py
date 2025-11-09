@@ -59,7 +59,7 @@ def test_power_summary_includes_counter_column():
         has_haste=False,
         is_commander=True,
     )
-    summary, _, _ = run_simulations(cards, commander, num_games=1, max_turns=1, verbose=False)
+    summary, _, _, _ = run_simulations(cards, commander, num_games=1, max_turns=1, verbose=False)
     assert "Avg Power from Counters" in summary.columns
     assert summary["Avg Power from Counters"].iloc[0] == 0
 

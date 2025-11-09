@@ -14,12 +14,13 @@ def _build_simple_deck():
 
 def test_parallel_simulation_consistency():
     cards, commander = _build_simple_deck()
-    summary1, dist1, power1 = run_simulations(
+    summary1, dist1, power1, interaction1 = run_simulations(
         cards, commander, num_games=2, max_turns=1, verbose=False, num_workers=1
     )
-    summary2, dist2, power2 = run_simulations(
+    summary2, dist2, power2, interaction2 = run_simulations(
         cards, commander, num_games=2, max_turns=1, verbose=False, num_workers=2
     )
     assert summary1.equals(summary2)
     assert dist1.equals(dist2)
     assert power1 == power2
+    assert interaction1 == interaction2
