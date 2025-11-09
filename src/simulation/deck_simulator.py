@@ -9,14 +9,43 @@ from typing import Dict, List, Optional
 
 # Add Simulation directory to path
 simulation_path = Path(__file__).parent.parent.parent / "Simulation"
-sys.path.insert(0, str(simulation_path))
+if str(simulation_path) not in sys.path:
+    sys.path.insert(0, str(simulation_path))
 
-from simulate_game import Card, simulate_game
-from run_simulation import run_simulations
-from convert_dataframe_deck import parse_mana_cost
+# Lazy imports - only import when functions are called
+# This prevents import errors from breaking the entire module
+_simulation_imports_loaded = False
+_import_error = None
+
+def _ensure_simulation_imports():
+    """Ensure simulation modules are imported"""
+    global _simulation_imports_loaded, _import_error, Card, simulate_game, run_simulations, parse_mana_cost
+
+    if _simulation_imports_loaded:
+        return True
+
+    if _import_error is not None:
+        raise _import_error
+
+    try:
+        from simulate_game import Card as _Card, simulate_game as _simulate_game
+        from run_simulation import run_simulations as _run_simulations
+        from convert_dataframe_deck import parse_mana_cost as _parse_mana_cost
+
+        # Store in module namespace
+        globals()['Card'] = _Card
+        globals()['simulate_game'] = _simulate_game
+        globals()['run_simulations'] = _run_simulations
+        globals()['parse_mana_cost'] = _parse_mana_cost
+
+        _simulation_imports_loaded = True
+        return True
+    except Exception as e:
+        _import_error = e
+        raise ImportError(f"Failed to import simulation modules: {e}") from e
 
 
-def convert_card_to_simulation_format(card_data: Dict) -> Card:
+def convert_card_to_simulation_format(card_data: Dict):
     """
     Convert a card from the main app format to simulation Card format
 
@@ -26,6 +55,9 @@ def convert_card_to_simulation_format(card_data: Dict) -> Card:
     Returns:
         Card object for simulation
     """
+    # Ensure imports are loaded
+    _ensure_simulation_imports()
+
     # Extract basic info
     name = card_data.get('name', '')
     type_line = card_data.get('type_line', '')
@@ -177,6 +209,23 @@ def simulate_deck_effectiveness(
         - total_power: List of average power on board per turn
         - summary: Summary statistics
     """
+    # Ensure simulation imports are loaded
+    try:
+        _ensure_simulation_imports()
+    except ImportError as e:
+        print(f"ERROR: Cannot run simulation - missing dependencies: {e}")
+        return {
+            'total_damage': [0] * (max_turns + 1),
+            'total_power': [0] * (max_turns + 1),
+            'summary': {
+                'error': f'Simulation unavailable: {str(e)}',
+                'total_damage_10_turns': 0,
+                'avg_damage_per_turn': 0,
+                'peak_power': 0,
+                'commander_avg_cast_turn': None
+            }
+        }
+
     # Convert cards to simulation format
     sim_cards = []
     sim_commander = None
