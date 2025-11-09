@@ -1,0 +1,285 @@
+"""
+Deck Simulator Integration
+Integrates the Simulation engine with the deck synergy analyzer
+"""
+
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
+
+# Add Simulation directory to path
+simulation_path = Path(__file__).parent.parent.parent / "Simulation"
+sys.path.insert(0, str(simulation_path))
+
+from simulate_game import Card, simulate_game
+from run_simulation import run_simulations
+from convert_dataframe_deck import parse_mana_cost
+
+
+def convert_card_to_simulation_format(card_data: Dict) -> Card:
+    """
+    Convert a card from the main app format to simulation Card format
+
+    Args:
+        card_data: Card dictionary from Scryfall/main app
+
+    Returns:
+        Card object for simulation
+    """
+    # Extract basic info
+    name = card_data.get('name', '')
+    type_line = card_data.get('type_line', '')
+    mana_cost = card_data.get('mana_cost', '')
+    oracle_text = card_data.get('oracle_text', '')
+
+    # Determine card type
+    card_type = 'Unknown'
+    if 'Land' in type_line and ' — ' not in type_line:
+        card_type = 'Basic Land' if 'Basic' in type_line else 'Land'
+    elif 'Creature' in type_line:
+        card_type = 'Creature'
+    elif 'Artifact' in type_line:
+        if 'Equipment' in type_line:
+            card_type = 'Equipment'
+        else:
+            card_type = 'Artifact'
+    elif 'Enchantment' in type_line:
+        card_type = 'Enchantment'
+    elif 'Instant' in type_line:
+        card_type = 'Instant'
+    elif 'Sorcery' in type_line:
+        card_type = 'Sorcery'
+    elif 'Planeswalker' in type_line:
+        card_type = 'Planeswalker'
+
+    # Extract power/toughness
+    power = None
+    toughness = None
+    if 'power' in card_data and card_data['power'] not in [None, '', '*']:
+        try:
+            power = int(card_data['power'])
+        except (ValueError, TypeError):
+            power = 0
+    if 'toughness' in card_data and card_data['toughness'] not in [None, '', '*']:
+        try:
+            toughness = int(card_data['toughness'])
+        except (ValueError, TypeError):
+            toughness = 0
+
+    # Determine mana production
+    mana_production = 0
+    produces_colors = []
+
+    if card_type in ('Land', 'Basic Land'):
+        mana_production = 1
+        # Try to get produced mana from card data
+        if 'produced_mana' in card_data:
+            produces_colors = card_data['produced_mana']
+        else:
+            # Parse from oracle text or name for basic lands
+            if 'Plains' in name:
+                produces_colors = ['W']
+            elif 'Island' in name:
+                produces_colors = ['U']
+            elif 'Swamp' in name:
+                produces_colors = ['B']
+            elif 'Mountain' in name:
+                produces_colors = ['R']
+            elif 'Forest' in name:
+                produces_colors = ['G']
+            elif 'add' in oracle_text.lower():
+                # Try to extract from oracle text
+                produces_colors = ['Any']  # Default for now
+    elif 'Artifact' in type_line:
+        # Check if it's a mana rock
+        if 'add' in oracle_text.lower() and any(x in oracle_text.lower() for x in ['{t}', 'tap']):
+            # Count how many mana it produces
+            if 'Sol Ring' in name:
+                mana_production = 2
+                produces_colors = ['C']
+            elif any(x in oracle_text for x in ['{T}: Add', 'Tap: Add']):
+                mana_production = 1
+                produces_colors = ['Any']
+    elif 'Creature' in type_line:
+        # Check for mana dorks
+        if 'add' in oracle_text.lower() and any(x in oracle_text.lower() for x in ['{t}', 'tap']):
+            mana_production = 1
+            produces_colors = ['Any']
+
+    # Check for keywords
+    has_haste = 'haste' in oracle_text.lower() or 'haste' in type_line.lower()
+    has_flash = 'flash' in oracle_text.lower()
+    has_trample = 'trample' in oracle_text.lower()
+    has_first_strike = 'first strike' in oracle_text.lower()
+
+    # Check for ETB tapped
+    etb_tapped = 'enters the battlefield tapped' in oracle_text.lower()
+
+    # Check for ramp effects
+    puts_land = 'search your library' in oracle_text.lower() and 'land' in oracle_text.lower()
+
+    # Check for draw effects
+    draw_cards = 0
+    if 'draw' in oracle_text.lower():
+        # Try to extract number
+        import re
+        match = re.search(r'draw (\d+)', oracle_text.lower())
+        if match:
+            draw_cards = int(match.group(1))
+        elif 'draw a card' in oracle_text.lower():
+            draw_cards = 1
+
+    # Check for legendary
+    is_legendary = 'legendary' in type_line.lower()
+
+    # Create Card object
+    return Card(
+        name=name,
+        type=card_type,
+        mana_cost=mana_cost,
+        power=power,
+        toughness=toughness,
+        produces_colors=produces_colors,
+        mana_production=mana_production,
+        etb_tapped=etb_tapped,
+        etb_tapped_conditions={},
+        has_haste=has_haste,
+        has_flash=has_flash,
+        has_trample=has_trample,
+        has_first_strike=has_first_strike,
+        is_legendary=is_legendary,
+        puts_land=puts_land,
+        draw_cards=draw_cards,
+        oracle_text=oracle_text
+    )
+
+
+def simulate_deck_effectiveness(
+    cards: List[Dict],
+    commander: Optional[Dict] = None,
+    num_games: int = 100,
+    max_turns: int = 10,
+    verbose: bool = False
+) -> Dict:
+    """
+    Simulate a deck and return effectiveness metrics
+
+    Args:
+        cards: List of card dictionaries (Scryfall format)
+        commander: Commander card dictionary (optional)
+        num_games: Number of games to simulate
+        max_turns: Maximum turns per game
+        verbose: Print detailed logs
+
+    Returns:
+        Dictionary with simulation results including:
+        - total_damage: List of average damage per turn
+        - total_power: List of average power on board per turn
+        - summary: Summary statistics
+    """
+    # Convert cards to simulation format
+    sim_cards = []
+    sim_commander = None
+
+    for card in cards:
+        try:
+            sim_card = convert_card_to_simulation_format(card)
+            if card.get('is_commander') or (commander and card.get('name') == commander.get('name')):
+                sim_commander = sim_card
+                sim_commander.is_commander = True
+            else:
+                sim_cards.append(sim_card)
+        except Exception as e:
+            print(f"Warning: Could not convert card {card.get('name', 'Unknown')}: {e}")
+            continue
+
+    # If no commander specified, try to find one
+    if sim_commander is None and commander:
+        sim_commander = convert_card_to_simulation_format(commander)
+        sim_commander.is_commander = True
+
+    # If still no commander, create a dummy one
+    if sim_commander is None:
+        print("Warning: No commander found, creating dummy commander")
+        sim_commander = Card(
+            name="Dummy Commander",
+            type="Creature",
+            mana_cost="{2}{G}",
+            power=2,
+            toughness=2,
+            produces_colors=[],
+            mana_production=0,
+            etb_tapped=False,
+            etb_tapped_conditions={},
+            has_haste=False,
+            is_commander=True,
+            is_legendary=True
+        )
+
+    if not sim_cards:
+        print("Error: No cards to simulate")
+        return {
+            'total_damage': [0] * (max_turns + 1),
+            'total_power': [0] * (max_turns + 1),
+            'summary': {
+                'error': 'No cards to simulate'
+            }
+        }
+
+    print(f"Running {num_games} simulations with {len(sim_cards)} cards...")
+
+    # Run simulations
+    try:
+        summary_df, commander_cast_dist, avg_creature_power = run_simulations(
+            cards=sim_cards,
+            commander_card=sim_commander,
+            num_games=num_games,
+            max_turns=max_turns,
+            verbose=verbose,
+            log_dir=None,  # Don't save logs
+            num_workers=1  # Single worker for compatibility
+        )
+
+        # Extract key metrics
+        total_damage = [0] + summary_df['Avg Combat Damage'].tolist()
+        total_power = [0] + summary_df['Avg Total Power'].tolist()
+        avg_mana = [0] + summary_df['Avg Total Mana'].tolist()
+
+        # Calculate total damage over first 10 turns
+        total_damage_10_turns = sum(total_damage[:min(11, len(total_damage))])
+
+        # Get commander cast turn stats
+        commander_avg_turn = None
+        if not commander_cast_dist.empty:
+            weighted_sum = sum(turn * count for turn, count in commander_cast_dist.items())
+            total_count = commander_cast_dist.sum()
+            if total_count > 0:
+                commander_avg_turn = weighted_sum / total_count
+
+        return {
+            'total_damage': total_damage,
+            'total_power': total_power,
+            'avg_mana': avg_mana,
+            'summary': {
+                'total_damage_10_turns': round(total_damage_10_turns, 2),
+                'avg_damage_per_turn': round(total_damage_10_turns / max_turns, 2),
+                'peak_power': round(max(total_power), 2) if total_power else 0,
+                'commander_avg_cast_turn': round(commander_avg_turn, 2) if commander_avg_turn else None,
+                'num_games_simulated': num_games
+            },
+            'summary_df': summary_df,
+            'commander_cast_distribution': commander_cast_dist,
+            'creature_power': avg_creature_power
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Error running simulation: {e}")
+        return {
+            'total_damage': [0] * (max_turns + 1),
+            'total_power': [0] * (max_turns + 1),
+            'summary': {
+                'error': str(e)
+            }
+        }

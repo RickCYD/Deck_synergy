@@ -23,12 +23,14 @@ class Deck:
 
     def __init__(self, deck_id: str, name: str, cards: List[Dict],
                  synergies: Optional[Dict] = None, three_way_synergies: Optional[Dict] = None,
+                 simulation_results: Optional[Dict] = None,
                  metadata: Optional[Dict] = None):
         self.deck_id = deck_id
         self.name = name
         self.cards = cards
         self.synergies = synergies or {}
         self.three_way_synergies = three_way_synergies or {}
+        self.simulation_results = simulation_results or {}
         self.metadata = metadata or {}
 
         # Add creation timestamp if not present
@@ -39,12 +41,21 @@ class Deck:
 
     def to_dict(self) -> Dict:
         """Convert deck to dictionary format"""
+        # Convert pandas DataFrame if present in simulation_results
+        sim_results = self.simulation_results.copy() if self.simulation_results else {}
+        if 'summary_df' in sim_results and hasattr(sim_results['summary_df'], 'to_dict'):
+            # Convert DataFrame to dict for JSON serialization
+            sim_results['summary_df'] = sim_results['summary_df'].to_dict('list')
+        if 'commander_cast_distribution' in sim_results and hasattr(sim_results['commander_cast_distribution'], 'to_dict'):
+            sim_results['commander_cast_distribution'] = sim_results['commander_cast_distribution'].to_dict()
+
         return {
             'deck_id': self.deck_id,
             'name': self.name,
             'cards': self.cards,
             'synergies': self.synergies,
             'three_way_synergies': self.three_way_synergies,
+            'simulation_results': sim_results,
             'metadata': self.metadata
         }
 
@@ -92,6 +103,7 @@ class Deck:
             cards=data.get('cards', []),
             synergies=data.get('synergies', {}),
             three_way_synergies=data.get('three_way_synergies', {}),
+            simulation_results=data.get('simulation_results', {}),
             metadata=data.get('metadata', {})
         )
 
