@@ -3297,7 +3297,9 @@ def filter_synergies_by_type(synergy_filter, current_deck_file):
     [Output('graph-fullscreen-state', 'data'),
      Output('graph-container', 'style'),
      Output('info-panel', 'style'),
-     Output('graph-fullscreen-button', 'children')],
+     Output('graph-fullscreen-button', 'children'),
+     Output('card-graph', 'style'),
+     Output('graph-fullscreen-button', 'style')],
     Input('graph-fullscreen-button', 'n_clicks'),
     State('graph-fullscreen-state', 'data'),
     prevent_initial_call=True
@@ -3306,6 +3308,24 @@ def toggle_graph_fullscreen(n_clicks, is_fullscreen):
     """Toggle fullscreen mode for the graph"""
     # Toggle state
     new_fullscreen = not is_fullscreen
+
+    # Base button style
+    button_base_style = {
+        'position': 'absolute',
+        'bottom': '16px',
+        'right': '16px',
+        'padding': '10px 14px',
+        'backgroundColor': 'rgba(52,73,94,0.9)',
+        'backdropFilter': 'blur(10px)',
+        'color': 'white',
+        'border': 'none',
+        'cursor': 'pointer',
+        'fontSize': '18px',
+        'fontWeight': 'bold',
+        'borderRadius': '6px',
+        'boxShadow': '0 4px 8px rgba(0,0,0,0.2)',
+        'transition': 'all 0.3s ease'
+    }
 
     # Graph container styles
     if new_fullscreen:
@@ -3321,10 +3341,15 @@ def toggle_graph_fullscreen(n_clicks, is_fullscreen):
             'backgroundColor': '#ffffff',
             'zIndex': '9999',
             'padding': '20px',
-            'margin': '0'
+            'margin': '0',
+            'overflow': 'hidden'
         }
         info_panel_style = {'display': 'none'}  # Hide info panel in fullscreen
         button_icon = '✕'  # Exit fullscreen icon
+        # Cytoscape graph should fill the fullscreen container minus padding
+        cyto_style = {'width': '100%', 'height': 'calc(100vh - 40px)'}
+        # Button with higher z-index in fullscreen
+        button_style = {**button_base_style, 'zIndex': '10000'}
     else:
         # Normal mode
         graph_style = {
@@ -3353,8 +3378,12 @@ def toggle_graph_fullscreen(n_clicks, is_fullscreen):
             'order': 2
         }
         button_icon = '⛶'  # Fullscreen icon
+        # Normal cytoscape size
+        cyto_style = {'width': '100%', 'height': '620px'}
+        # Button with normal z-index
+        button_style = {**button_base_style, 'zIndex': '1000'}
 
-    return new_fullscreen, graph_style, info_panel_style, button_icon
+    return new_fullscreen, graph_style, info_panel_style, button_icon, cyto_style, button_style
 
 
 if __name__ == '__main__':
