@@ -114,6 +114,7 @@ class BoardState:
         # Aristocrats mechanics tracking
         self.drain_damage_this_turn = 0  # Track drain separate from combat
         self.tokens_created_this_turn = 0  # Track token generation
+        self.creatures_died_this_turn = 0  # PRIORITY 2: For Mahadi treasure generation
 
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
@@ -711,6 +712,9 @@ class BoardState:
         self.creatures.append(card)
         card.tapped = False
 
+        # PRIORITY 2: Apply +1/+1 counter effects (Cathars' Crusade)
+        self.apply_etb_counter_effects(card, verbose=verbose)
+
         if verbose:
             print(f"Played creature: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -1217,6 +1221,20 @@ class BoardState:
         # Apply damage to opponent
         target_opp['life_total'] -= unblocked_damage
 
+        # PRIORITY 2: Grim Hireling - create treasures when creatures deal combat damage
+        if unblocked_damage > 0:
+            for permanent in self.creatures + self.artifacts + self.enchantments:
+                oracle = getattr(permanent, 'oracle_text', '').lower()
+                name = getattr(permanent, 'name', '').lower()
+
+                # Grim Hireling: "Whenever one or more creatures you control deal combat damage, create treasure"
+                if 'grim hireling' in name or ('combat damage' in oracle and 'treasure' in oracle):
+                    # Create treasures based on number of attacking creatures that dealt damage
+                    num_attackers = len(self.creatures)
+                    treasures_to_make = min(num_attackers, 3)  # Cap at 3 for balance
+                    for _ in range(treasures_to_make):
+                        self.create_treasure(verbose=verbose)
+
         # Track commander damage if commander dealt damage
         # Note: Commander damage should be tracked during the combat loop above
         # This is a simplified approach - assuming commander damage is proportional to unblocked damage
@@ -1617,59 +1635,112 @@ class BoardState:
     # ═══════════════════════════════════════════════════════════════════════
 
     def create_token(self, token_name: str, power: int, toughness: int, has_haste: bool = False,
-                     token_type: str = None, keywords: list = None, verbose: bool = False):
+                     token_type: str = None, keywords: list = None, verbose: bool = False,
+                     apply_counters: bool = True):
         """
         Create a creature token and add it to the battlefield.
 
-        Returns the created token Card object.
+        PRIORITY 2: Now supports token doublers (Mondrak, Doubling Season, etc.)
+
+        Returns the created token Card object(s) - may be a list if doubled!
         """
         from simulate_game import Card
 
-        # Create token as a creature
-        token = Card(
-            name=token_name,
-            type="Creature — Token",
-            mana_cost="",
-            power=power,
-            toughness=toughness,
-            produces_colors=[],
-            mana_production=0,
-            etb_tapped=False,
-            etb_tapped_conditions={},
-            has_haste=has_haste,
-            token_type=token_type
-        )
+        # PRIORITY 2: Check for token doublers!
+        num_to_create = 1
+        token_doubler_names = []
 
-        # Apply keywords
-        if keywords:
-            for kw in keywords:
-                kw_lower = kw.lower()
-                if 'haste' in kw_lower:
-                    token.has_haste = True
-                elif 'trample' in kw_lower:
-                    token.has_trample = True
-                elif 'flying' in kw_lower:
-                    token.has_flying = True
-                elif 'lifelink' in kw_lower:
-                    token.has_lifelink = True
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            perm_name = getattr(permanent, 'name', '')
 
-        # Add to battlefield
-        self.creatures.append(token)
+            # Mondrak, Glory Dominus / Doubling Season / Parallel Lives / Anointed Procession
+            if 'if you would create' in oracle and 'token' in oracle:
+                if 'twice that many' in oracle or 'double' in oracle:
+                    num_to_create *= 2
+                    token_doubler_names.append(perm_name)
+                    if verbose:
+                        print(f"  → {perm_name} doubles tokens!")
 
-        # Trigger ETB effects
-        self._execute_triggers("etb", token, verbose=verbose)
+        created_tokens = []
 
-        # Apply drain from ETB triggers (Impact Tremors, Warleader's Call)
-        drain_on_etb = self.calculate_etb_drain()
-        if drain_on_etb > 0:
-            self.drain_damage_this_turn += drain_on_etb
-            if verbose:
-                print(f"  → Token ETB triggers drain {drain_on_etb} total life")
+        for i in range(num_to_create):
+            # Create token as a creature
+            token = Card(
+                name=token_name,
+                type="Creature — Token",
+                mana_cost="",
+                power=power,
+                toughness=toughness,
+                produces_colors=[],
+                mana_production=0,
+                etb_tapped=False,
+                etb_tapped_conditions={},
+                has_haste=has_haste,
+                token_type=token_type
+            )
+
+            # Apply keywords
+            if keywords:
+                for kw in keywords:
+                    kw_lower = kw.lower()
+                    if 'haste' in kw_lower:
+                        token.has_haste = True
+                    elif 'trample' in kw_lower:
+                        token.has_trample = True
+                    elif 'flying' in kw_lower:
+                        token.has_flying = True
+                    elif 'lifelink' in kw_lower:
+                        token.has_lifelink = True
+
+            # Add to battlefield
+            self.creatures.append(token)
+            created_tokens.append(token)
+
+            # Trigger ETB effects
+            self._execute_triggers("etb", token, verbose=verbose)
+
+            # PRIORITY 2: Apply +1/+1 counters from Cathars' Crusade!
+            if apply_counters:
+                self.apply_etb_counter_effects(token, verbose=verbose)
+
+            # Apply drain from ETB triggers (Impact Tremors, Warleader's Call)
+            drain_on_etb = self.calculate_etb_drain()
+            if drain_on_etb > 0:
+                self.drain_damage_this_turn += drain_on_etb
 
         if verbose:
-            print(f"Created {token_name} token ({power}/{toughness})")
+            if num_to_create > 1:
+                print(f"Created {num_to_create}x {token_name} tokens ({power}/{toughness}) [DOUBLED!]")
+            else:
+                print(f"Created {token_name} token ({power}/{toughness})")
 
-        return token
+        return created_tokens if len(created_tokens) > 1 else created_tokens[0]
+
+    def apply_etb_counter_effects(self, entering_creature, verbose: bool = False):
+        """
+        PRIORITY 2: Apply +1/+1 counters from ETB triggers like Cathars' Crusade.
+
+        When a creature enters, check for effects that put counters on creatures.
+        """
+        counters_applied = False
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            perm_name = getattr(permanent, 'name', '')
+
+            # Cathars' Crusade: "Whenever a creature enters, put a +1/+1 counter on each creature you control"
+            if 'whenever a creature enters' in oracle or 'whenever a creature you control enters' in oracle:
+                if '+1/+1 counter' in oracle:
+                    # Put a counter on each creature
+                    for creature in self.creatures:
+                        creature.add_counter("+1/+1", 1)
+                        counters_applied = True
+
+                    if verbose:
+                        print(f"  → {perm_name} added +1/+1 counters to {len(self.creatures)} creatures!")
+
+        return counters_applied
 
     def trigger_death_effects(self, creature, verbose: bool = False):
         """
@@ -1682,6 +1753,9 @@ class BoardState:
         - Mirkwood Bats
         """
         drain_total = 0
+
+        # PRIORITY 2: Track creature deaths for Mahadi
+        self.creatures_died_this_turn += 1
 
         # Count all permanents with death triggers
         for permanent in self.creatures + self.enchantments + self.artifacts:
@@ -1802,11 +1876,14 @@ class BoardState:
 
     def simulate_attack_triggers(self, verbose: bool = False):
         """
-        Simulate "whenever you attack" triggers for token generation.
+        PRIORITY 2: Simulate "whenever you attack" triggers for token generation.
 
         Handles cards like:
         - Adeline, Resplendent Cathar (create tokens = # of opponents)
         - Anim Pakal, Thousandth Moon (create X gnome tokens)
+        - Brimaz, King of Oreskos (create 1/1 cat)
+        - Hero of Bladehold (create 2 soldiers)
+        - Generic attack triggers
         """
         tokens_created = 0
 
@@ -1814,31 +1891,84 @@ class BoardState:
             return 0
 
         num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+        num_attacking = len(self.creatures)
 
         for creature in self.creatures[:]:  # Copy to avoid modification during iteration
             oracle = getattr(creature, 'oracle_text', '').lower()
             name = getattr(creature, 'name', '').lower()
 
-            # Adeline, Resplendent Cathar
-            if 'adeline' in name and 'whenever you attack' in oracle:
-                # Create tokens equal to number of opponents
+            # Skip if no attack trigger
+            if 'whenever you attack' not in oracle and 'whenever ~ attacks' not in oracle:
+                continue
+
+            # === Specific Named Cards ===
+
+            # Adeline, Resplendent Cathar - Create tokens = # of opponents
+            if 'adeline' in name:
                 for _ in range(num_alive_opps):
                     self.create_token("Human Soldier", 1, 1, has_haste=True, verbose=verbose)
                     tokens_created += 1
-
                 if verbose and num_alive_opps > 0:
                     print(f"  → Adeline created {num_alive_opps} Human tokens")
 
-            # Anim Pakal, Thousandth Moon (simplified: create 1 gnome per attack)
-            elif 'anim pakal' in name and 'whenever you attack' in oracle:
-                num_attacking = len(self.creatures)
-                num_gnomes = min(num_attacking, 5)  # Cap at 5 for balance
+            # Anim Pakal, Thousandth Moon - Create X gnomes
+            elif 'anim pakal' in name:
+                num_gnomes = min(num_attacking, 5)  # Cap at 5
                 for _ in range(num_gnomes):
                     self.create_token("Gnome Soldier", 1, 1, has_haste=True, verbose=verbose)
                     tokens_created += 1
-
                 if verbose and num_gnomes > 0:
                     print(f"  → Anim Pakal created {num_gnomes} Gnome tokens")
+
+            # Brimaz, King of Oreskos - Create 1/1 Cat token
+            elif 'brimaz' in name:
+                self.create_token("Cat Soldier", 1, 1, has_haste=False, verbose=verbose)
+                tokens_created += 1
+                if verbose:
+                    print(f"  → Brimaz created 1 Cat token")
+
+            # Hero of Bladehold - Create 2 Soldier tokens
+            elif 'hero of bladehold' in name:
+                for _ in range(2):
+                    self.create_token("Soldier", 1, 1, has_haste=False, keywords=['Battle cry'], verbose=verbose)
+                    tokens_created += 1
+                if verbose:
+                    print(f"  → Hero of Bladehold created 2 Soldier tokens")
+
+            # === Generic Token Creation ===
+            # Parse oracle text for generic "create X token" triggers
+            elif 'create' in oracle and 'token' in oracle:
+                # Try to parse how many tokens
+                num_tokens = 1  # Default
+
+                # Look for patterns like "create a", "create one", "create two", etc.
+                if 'create a ' in oracle or 'create one ' in oracle:
+                    num_tokens = 1
+                elif 'create two ' in oracle:
+                    num_tokens = 2
+                elif 'create three ' in oracle:
+                    num_tokens = 3
+
+                # Try to determine token type (generic)
+                token_name = "Creature Token"
+                token_power = 1
+                token_toughness = 1
+
+                # Common patterns: "1/1 white Soldier", "2/2 red Dragon", etc.
+                if '1/1' in oracle:
+                    token_power, token_toughness = 1, 1
+                elif '2/2' in oracle:
+                    token_power, token_toughness = 2, 2
+                elif '3/3' in oracle:
+                    token_power, token_toughness = 3, 3
+
+                # Create the tokens
+                for _ in range(num_tokens):
+                    self.create_token(token_name, token_power, token_toughness, has_haste=False, verbose=verbose)
+                    tokens_created += 1
+
+                if verbose and num_tokens > 0:
+                    print(f"  → {creature.name} created {num_tokens} {token_power}/{token_toughness} token(s)")
 
         return tokens_created
 
@@ -1885,6 +2015,34 @@ class BoardState:
                 sac_count += 1
 
         return sac_count
+
+    def check_end_of_turn_treasures(self, creatures_died_this_turn: int, verbose: bool = False):
+        """
+        PRIORITY 2: Check for end-of-turn treasure generation (Mahadi, Smothering Tithe, etc.)
+
+        Returns number of treasures created.
+        """
+        treasures_created = 0
+
+        if creatures_died_this_turn == 0:
+            return 0
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Mahadi, Emporium Master: "At beginning of end step, if creature died this turn, create treasures"
+            if 'mahadi' in name or ('end' in oracle and 'creature died' in oracle and 'treasure' in oracle):
+                # Create treasures equal to number of creatures that died (capped)
+                num_treasures = min(creatures_died_this_turn, 5)  # Cap at 5
+                for _ in range(num_treasures):
+                    self.create_treasure(verbose=verbose)
+                    treasures_created += 1
+
+                if verbose and num_treasures > 0:
+                    print(f"  → {permanent.name} created {num_treasures} Treasures (end of turn)")
+
+        return treasures_created
 
 
 class Mana_utils:

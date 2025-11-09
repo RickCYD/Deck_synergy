@@ -611,6 +611,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # Reset per-turn aristocrats tracking
         board.drain_damage_this_turn = 0
         board.tokens_created_this_turn = 0
+        board.creatures_died_this_turn = 0  # PRIORITY 2: For Mahadi
 
         # Simulate opponent removal (before combat)
         board.simulate_removal(verbose=verbose)
@@ -649,6 +650,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # ─────────────────── NEW: Board Wipe Check ───────────────────
         # Check for board wipes at end of turn
         board.simulate_board_wipe(verbose=verbose)
+
+        # PRIORITY 2: End-of-turn treasure generation (Mahadi, etc.)
+        board.check_end_of_turn_treasures(board.creatures_died_this_turn, verbose=verbose)
 
         # ─────────────────── NEW: Track Interaction Metrics ───────────────────
         metrics["opponents_alive"][turn] = sum(1 for opp in board.opponents if opp['is_alive'])
