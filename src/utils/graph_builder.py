@@ -101,6 +101,16 @@ def build_graph_elements(deck_data: Dict, max_edges: int = 2000) -> List[Dict]:
                 print(f"[GRAPH BUILDER] WARNING: Edge for {synergy_key} is invalid, skipping")
                 continue
 
+            # Additional validation: ensure source and target nodes exist
+            edge_source = edge['data'].get('source')
+            edge_target = edge['data'].get('target')
+
+            if edge_source not in valid_card_names or edge_target not in valid_card_names:
+                skipped_edges += 1
+                if skipped_edges <= 5:
+                    print(f"[GRAPH BUILDER] WARNING: Skipping edge with invalid nodes - source: {edge_source}, target: {edge_target}")
+                continue
+
             elements.append(edge)
             edges_created += 1
         except Exception as e:
@@ -144,6 +154,14 @@ def build_graph_elements(deck_data: Dict, max_edges: int = 2000) -> List[Dict]:
                 for edge in hyperedges:
                     # Validate edge
                     if not edge.get('data') or not edge['data'].get('source') or not edge['data'].get('target'):
+                        continue
+
+                    # Additional validation: ensure source and target nodes exist
+                    edge_source = edge['data'].get('source')
+                    edge_target = edge['data'].get('target')
+
+                    if edge_source not in valid_card_names or edge_target not in valid_card_names:
+                        print(f"[GRAPH BUILDER] WARNING: Skipping edge with invalid nodes - source: {edge_source}, target: {edge_target}")
                         continue
 
                     # Check for duplicate edge IDs
