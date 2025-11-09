@@ -111,6 +111,10 @@ class BoardState:
         self.creatures_sacrificed = 0
         self.sacrifice_value = 0  # Total power sacrificed
 
+        # Aristocrats mechanics tracking
+        self.drain_damage_this_turn = 0  # Track drain separate from combat
+        self.tokens_created_this_turn = 0  # Track token generation
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
         for kw in getattr(creature, "keywords_when_equipped", []):
@@ -1201,9 +1205,8 @@ class BoardState:
                     self.graveyard.append(creature)
                     self.reanimation_targets.append(creature)
 
-                    # Trigger death effects (aristocrats)
-                    if getattr(creature, 'death_trigger_value', 0) > 0:
-                        self.sacrifice_value += creature.death_trigger_value
+                # ARISTOCRATS: Trigger full death effects!
+                self.trigger_death_effects(creature, verbose=verbose)
 
         # Apply life gain from lifelink
         if life_gained > 0:
@@ -1265,6 +1268,9 @@ class BoardState:
 
             self.creatures_removed += 1
 
+            # ARISTOCRATS: Trigger death effects!
+            self.trigger_death_effects(target, verbose=verbose)
+
     def simulate_board_wipe(self, verbose: bool = False):
         """Simulate a board wipe that destroys all creatures."""
         import random
@@ -1274,13 +1280,19 @@ class BoardState:
             num_creatures = len(self.creatures)
 
             if num_creatures > 0:
+                # ARISTOCRATS: Board wipes trigger death effects for EACH creature!
+                creatures_to_wipe = self.creatures[:]
+
                 # Move all creatures to graveyard (except commander)
-                for creature in self.creatures[:]:
+                for creature in creatures_to_wipe:
                     if getattr(creature, 'is_commander', False):
                         self.command_zone.append(creature)
                     else:
                         self.graveyard.append(creature)
                         self.reanimation_targets.append(creature)
+
+                    # Trigger death effects for this creature
+                    self.trigger_death_effects(creature, verbose=verbose)
 
                 self.creatures.clear()
                 self.wipes_survived += 1
@@ -1599,6 +1611,280 @@ class BoardState:
                     return True
 
         return False
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # ARISTOCRATS MECHANICS (Priority 1 Implementation)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def create_token(self, token_name: str, power: int, toughness: int, has_haste: bool = False,
+                     token_type: str = None, keywords: list = None, verbose: bool = False):
+        """
+        Create a creature token and add it to the battlefield.
+
+        Returns the created token Card object.
+        """
+        from simulate_game import Card
+
+        # Create token as a creature
+        token = Card(
+            name=token_name,
+            type="Creature — Token",
+            mana_cost="",
+            power=power,
+            toughness=toughness,
+            produces_colors=[],
+            mana_production=0,
+            etb_tapped=False,
+            etb_tapped_conditions={},
+            has_haste=has_haste,
+            token_type=token_type
+        )
+
+        # Apply keywords
+        if keywords:
+            for kw in keywords:
+                kw_lower = kw.lower()
+                if 'haste' in kw_lower:
+                    token.has_haste = True
+                elif 'trample' in kw_lower:
+                    token.has_trample = True
+                elif 'flying' in kw_lower:
+                    token.has_flying = True
+                elif 'lifelink' in kw_lower:
+                    token.has_lifelink = True
+
+        # Add to battlefield
+        self.creatures.append(token)
+
+        # Trigger ETB effects
+        self._execute_triggers("etb", token, verbose=verbose)
+
+        # Apply drain from ETB triggers (Impact Tremors, Warleader's Call)
+        drain_on_etb = self.calculate_etb_drain()
+        if drain_on_etb > 0:
+            self.drain_damage_this_turn += drain_on_etb
+            if verbose:
+                print(f"  → Token ETB triggers drain {drain_on_etb} total life")
+
+        if verbose:
+            print(f"Created {token_name} token ({power}/{toughness})")
+
+        return token
+
+    def trigger_death_effects(self, creature, verbose: bool = False):
+        """
+        Trigger all death-based effects when a creature dies.
+
+        This handles aristocrats payoffs like:
+        - Zulaport Cutthroat
+        - Cruel Celebrant
+        - Bastion of Remembrance
+        - Mirkwood Bats
+        """
+        drain_total = 0
+
+        # Count all permanents with death triggers
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            death_value = getattr(permanent, 'death_trigger_value', 0)
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+
+            # Zulaport Cutthroat / Cruel Celebrant type effects
+            if death_value > 0 and 'opponent' in oracle and 'loses' in oracle:
+                # Each opponent loses X life
+                drain_per_opp = death_value
+                num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+                drain_total += drain_per_opp * num_alive_opps
+
+                if verbose:
+                    print(f"  → {permanent.name} drains {drain_per_opp} × {num_alive_opps} opponents = {drain_per_opp * num_alive_opps}")
+
+            # Pitiless Plunderer - create treasure
+            if 'treasure' in oracle and 'dies' in oracle:
+                self.create_treasure(verbose=verbose)
+
+        # Track total drain damage
+        if drain_total > 0:
+            self.drain_damage_this_turn += drain_total
+
+            # Apply drain to opponents
+            alive_opps = [o for o in self.opponents if o['is_alive']]
+            if alive_opps:
+                drain_per_opp = drain_total // len(alive_opps)
+                for opp in alive_opps:
+                    opp['life_total'] -= drain_per_opp
+
+                    # Check if they died
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                        if verbose:
+                            print(f"  → {opp['name']} eliminated by drain damage!")
+
+        return drain_total
+
+    def calculate_etb_drain(self) -> int:
+        """
+        Calculate drain damage from ETB triggers like Impact Tremors, Warleader's Call.
+
+        Returns total drain damage per ETB.
+        """
+        drain = 0
+        num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+
+        for permanent in self.enchantments + self.artifacts + self.creatures:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+
+            # Impact Tremors / Warleader's Call
+            if 'creature enters' in oracle or 'creature you control enters' in oracle:
+                if 'deals 1 damage' in oracle or 'deal 1 damage' in oracle:
+                    if 'each opponent' in oracle:
+                        drain += 1 * num_alive_opps
+
+        return drain
+
+    def sacrifice_creature(self, creature, source_name: str = "sacrifice outlet", verbose: bool = False):
+        """
+        Sacrifice a creature and trigger death effects.
+
+        Used for sacrifice outlets like:
+        - Goblin Bombardment
+        - Viscera Seer
+        - Priest of Forgotten Gods
+        """
+        if creature not in self.creatures:
+            return False
+
+        # Remove from battlefield
+        self.creatures.remove(creature)
+
+        # Add to graveyard
+        if getattr(creature, 'is_commander', False):
+            self.command_zone.append(creature)
+            if verbose:
+                print(f"Sacrificed {creature.name} to {source_name} → command zone")
+        else:
+            self.graveyard.append(creature)
+            self.reanimation_targets.append(creature)
+            if verbose:
+                print(f"Sacrificed {creature.name} to {source_name}")
+
+        # Track sacrifice count
+        self.creatures_sacrificed += 1
+
+        # Trigger death effects (aristocrats payoffs!)
+        drain = self.trigger_death_effects(creature, verbose=verbose)
+
+        return True
+
+    def create_treasure(self, verbose: bool = False):
+        """Create a treasure token (artifact that taps for any color)."""
+        from simulate_game import Card
+
+        treasure = Card(
+            name="Treasure Token",
+            type="Artifact",
+            mana_cost="",
+            power=None,
+            toughness=None,
+            produces_colors=["Any"],
+            mana_production=1,
+            etb_tapped=False,
+            etb_tapped_conditions={},
+            has_haste=False,
+            token_type="Treasure"
+        )
+
+        self.artifacts.append(treasure)
+
+        if verbose:
+            print(f"  → Created Treasure token")
+
+        return treasure
+
+    def simulate_attack_triggers(self, verbose: bool = False):
+        """
+        Simulate "whenever you attack" triggers for token generation.
+
+        Handles cards like:
+        - Adeline, Resplendent Cathar (create tokens = # of opponents)
+        - Anim Pakal, Thousandth Moon (create X gnome tokens)
+        """
+        tokens_created = 0
+
+        if not self.creatures:
+            return 0
+
+        num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+
+        for creature in self.creatures[:]:  # Copy to avoid modification during iteration
+            oracle = getattr(creature, 'oracle_text', '').lower()
+            name = getattr(creature, 'name', '').lower()
+
+            # Adeline, Resplendent Cathar
+            if 'adeline' in name and 'whenever you attack' in oracle:
+                # Create tokens equal to number of opponents
+                for _ in range(num_alive_opps):
+                    self.create_token("Human Soldier", 1, 1, has_haste=True, verbose=verbose)
+                    tokens_created += 1
+
+                if verbose and num_alive_opps > 0:
+                    print(f"  → Adeline created {num_alive_opps} Human tokens")
+
+            # Anim Pakal, Thousandth Moon (simplified: create 1 gnome per attack)
+            elif 'anim pakal' in name and 'whenever you attack' in oracle:
+                num_attacking = len(self.creatures)
+                num_gnomes = min(num_attacking, 5)  # Cap at 5 for balance
+                for _ in range(num_gnomes):
+                    self.create_token("Gnome Soldier", 1, 1, has_haste=True, verbose=verbose)
+                    tokens_created += 1
+
+                if verbose and num_gnomes > 0:
+                    print(f"  → Anim Pakal created {num_gnomes} Gnome tokens")
+
+        return tokens_created
+
+    def check_for_sacrifice_opportunities(self, verbose: bool = False):
+        """
+        Check if we should sacrifice creatures for value.
+
+        Looks for sacrifice outlets and weak creatures to sac.
+        """
+        # Only sacrifice if we have:
+        # 1. A sacrifice outlet
+        # 2. Weak creatures (tokens, 1/1s)
+        # 3. Death payoffs active
+
+        has_sac_outlet = any(getattr(c, 'sacrifice_outlet', False)
+                            for c in self.creatures + self.artifacts + self.enchantments)
+
+        if not has_sac_outlet:
+            return 0
+
+        # Check for death payoffs
+        death_payoffs = sum(1 for c in self.creatures + self.enchantments + self.artifacts
+                          if getattr(c, 'death_trigger_value', 0) > 0)
+
+        if death_payoffs == 0:
+            return 0
+
+        # Find weak creatures to sacrifice (tokens, low power)
+        sacrificeable = [c for c in self.creatures
+                        if (getattr(c, 'token_type', None) is not None or
+                            (c.power or 0) <= 1)]
+
+        if not sacrificeable:
+            return 0
+
+        # Sacrifice up to 2 weak creatures for value
+        num_to_sac = min(2, len(sacrificeable))
+        sac_count = 0
+
+        for _ in range(num_to_sac):
+            if sacrificeable:
+                victim = sacrificeable.pop(0)
+                self.sacrifice_creature(victim, "strategic sacrifice", verbose=verbose)
+                sac_count += 1
+
+        return sac_count
 
 
 class Mana_utils:

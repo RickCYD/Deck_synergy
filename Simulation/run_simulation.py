@@ -33,6 +33,9 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
     total_mana = [0] * (max_turns + 1)
     total_castable = [0] * (max_turns + 1)
     total_damage = [0] * (max_turns + 1)
+    total_drain_damage = [0] * (max_turns + 1)  # NEW: Aristocrats drain
+    total_tokens_created = [0] * (max_turns + 1)  # NEW: Token generation
+    total_creatures_sacrificed = [0] * (max_turns + 1)  # NEW: Sacrifice outlets
     total_unspent = [0] * (max_turns + 1)
     ramp_cards_played = [0] * (max_turns + 1)
     total_hand_size = [0] * (max_turns + 1)
@@ -65,6 +68,9 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
             total_mana[turn] += metrics["total_mana"][turn]
             total_castable[turn] += metrics["castable_spells"][turn]
             total_damage[turn] += metrics["combat_damage"][turn]
+            total_drain_damage[turn] += metrics.get("drain_damage", [0] * (max_turns + 1))[turn]  # ARISTOCRATS
+            total_tokens_created[turn] += metrics.get("tokens_created", [0] * (max_turns + 1))[turn]  # ARISTOCRATS
+            total_creatures_sacrificed[turn] += metrics.get("creatures_sacrificed", [0] * (max_turns + 1))[turn]  # ARISTOCRATS
             total_unspent[turn] += metrics["unspent_mana"][turn]
             ramp_cards_played[turn] += metrics["ramp_cards_played"][turn]
             total_cards_played[turn] += metrics["cards_played"][turn]
@@ -132,12 +138,24 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
     avg_opponent_power = [round(total_opponent_power[t] / num_games, 2) for t in range(max_turns + 1)]
     avg_graveyard_size = [round(total_graveyard_size[t] / num_games, 2) for t in range(max_turns + 1)]
 
+    # ARISTOCRATS: Average new metrics
+    avg_drain_damage = [round(total_drain_damage[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_tokens_created = [round(total_tokens_created[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_creatures_sacrificed = [round(total_creatures_sacrificed[t] / num_games, 2) for t in range(max_turns + 1)]
+
+    # ARISTOCRATS: Combine combat + drain for total damage
+    avg_total_damage = [round(avg_damage[t] + avg_drain_damage[t], 2) for t in range(max_turns + 1)]
+
     data = {
         "Turn": list(range(1, max_turns + 1)),
         "Avg Lands in Play": avg_lands[1:],
         "Avg Total Mana": avg_mana[1:],
         "Avg Castable Spells": avg_castable[1:],
         "Avg Combat Damage": avg_damage[1:],
+        "Avg Drain Damage": avg_drain_damage[1:],  # NEW
+        "Avg Total Damage": avg_total_damage[1:],  # NEW: Combat + Drain
+        "Avg Tokens Created": avg_tokens_created[1:],  # NEW
+        "Avg Creatures Sacrificed": avg_creatures_sacrificed[1:],  # NEW
         "Avg Unspent Mana": avg_unspent[1:],
         "Avg Ramp Cards Played": avg_ramp_card[1:],
         "Avg Cards Played": avg_cards_played[1:],

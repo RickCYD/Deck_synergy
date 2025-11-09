@@ -227,6 +227,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             "total_mana",
             "castable_spells",
             "combat_damage",
+            "drain_damage",  # NEW: Track aristocrats drain damage separately
             "unspent_mana",
             "commander_cast_turn",
             "mana_spent",
@@ -246,6 +247,8 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             "opponents_alive",
             "opponent_total_power",
             "creatures_in_graveyard",
+            "tokens_created",  # NEW: Track token generation
+            "creatures_sacrificed",  # NEW: Track sacrifice outlets
         )
     }
 
@@ -605,8 +608,21 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         for pw in board.planeswalkers:
             board.activate_planeswalker(pw, verbose=verbose)
 
+        # Reset per-turn aristocrats tracking
+        board.drain_damage_this_turn = 0
+        board.tokens_created_this_turn = 0
+
         # Simulate opponent removal (before combat)
         board.simulate_removal(verbose=verbose)
+
+        # ARISTOCRATS: Check for sacrifice opportunities before combat
+        sacs = board.check_for_sacrifice_opportunities(verbose=verbose)
+        metrics["creatures_sacrificed"][turn] += sacs
+
+        # ARISTOCRATS: Trigger attack-based token generation (Adeline, Anim Pakal)
+        if board.creatures:
+            tokens = board.simulate_attack_triggers(verbose=verbose)
+            metrics["tokens_created"][turn] += tokens
 
         # trigger attack abilities for all creatures (assuming they attack)
         for creature in board.creatures:
@@ -616,6 +632,11 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # Use new combat resolution with blockers
         actual_damage = board.resolve_combat_with_blockers(verbose=verbose)
         metrics["combat_damage"][turn] = actual_damage
+
+        # ARISTOCRATS: Track drain damage separately!
+        metrics["drain_damage"][turn] = board.drain_damage_this_turn
+        if verbose and board.drain_damage_this_turn > 0:
+            print(f"💀 Drain damage this turn: {board.drain_damage_this_turn}")
 
         # Check if we won by eliminating all opponents
         alive_opponents = [opp for opp in board.opponents if opp['is_alive']]
