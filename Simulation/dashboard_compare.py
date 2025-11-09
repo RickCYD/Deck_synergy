@@ -19,7 +19,7 @@ DECK2 = "deck2.csv"
 
 def prepare_deck_results(deck_path):
     cards, commander, names = load_deck(deck_path)
-    summary, dist, _ = run_simulations(cards, commander, num_games=500, max_turns=10)
+    summary, dist, _, _ = run_simulations(cards, commander, num_games=500, max_turns=10)
     return summary, dist, names
 
 

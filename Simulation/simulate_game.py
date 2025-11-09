@@ -49,6 +49,24 @@ class Card:
         fetch_basic=False,
         fetch_land_types=None,
         fetch_land_tapped=False,
+        # New keywords
+        has_lifelink=False,
+        has_deathtouch=False,
+        has_vigilance=False,
+        has_flying=False,
+        has_menace=False,
+        is_unblockable=False,
+        # Token types
+        token_type=None,  # 'Treasure', 'Food', 'Clue', etc.
+        # Saga
+        is_saga=False,
+        saga_chapters=None,
+        # Cost reduction
+        has_affinity=False,
+        cost_reduction=0,
+        # Sacrifice
+        sacrifice_outlet=False,
+        death_trigger_value=0,
     ):
         self.name = name
         self.type = type
@@ -82,6 +100,30 @@ class Card:
         self.fetch_basic = bool(fetch_basic)
         self.fetch_land_types = fetch_land_types or []
         self.fetch_land_tapped = bool(fetch_land_tapped)
+
+        # New keywords
+        self.has_lifelink = has_lifelink
+        self.has_deathtouch = has_deathtouch
+        self.has_vigilance = has_vigilance
+        self.has_flying = has_flying
+        self.has_menace = has_menace
+        self.is_unblockable = is_unblockable
+
+        # Token types
+        self.token_type = token_type
+
+        # Saga
+        self.is_saga = is_saga
+        self.saga_chapters = saga_chapters or []
+        self.saga_current_chapter = 0
+
+        # Cost reduction
+        self.has_affinity = has_affinity
+        self.cost_reduction = cost_reduction
+
+        # Sacrifice
+        self.sacrifice_outlet = sacrifice_outlet
+        self.death_trigger_value = death_trigger_value
 
     def add_counter(self, counter_type: str, amount: int = 1) -> None:
         """Add *amount* of *counter_type* counters to the card.
@@ -201,8 +243,17 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             "total_toughness",
             "power_from_counters",
             "lands_etb_tapped",
+            "opponents_alive",
+            "opponent_total_power",
+            "creatures_in_graveyard",
         )
     }
+
+    # Track new interaction metrics
+    metrics["creatures_removed_by_opponents"] = 0  # type: ignore
+    metrics["board_wipes_survived"] = 0  # type: ignore
+    metrics["creatures_reanimated"] = 0  # type: ignore
+    metrics["game_won"] = None  # type: ignore
 
     # Track colour-specific mana availability
     COLOURS = ["W", "U", "B", "R", "G", "C", "Any"]
@@ -248,6 +299,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
         # At the start of each turn, move last turn's tapped lands to untapped
         untap_phase(board, verbose=verbose)
+
+        # ---- upkeep phase: advance sagas ----
+        board.advance_sagas(verbose=verbose)
 
         # ---- draw phase: draw a card ----
         drawn = draw_phase(board, verbose=verbose)
@@ -439,7 +493,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                     did_action = True
                     continue
 
-            # 4) play first castable creature (optional)
+            # 4) play first castable creature (with AI decision-making)
             creature = next(
                 (
                     c
@@ -450,6 +504,11 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                 None,
             )
             if creature:
+                # AI: Check if we should hold back this creature
+                if board.should_hold_back_creature(creature, verbose=verbose):
+                    did_action = False
+                    break  # Don't play this creature, move to next phase
+
                 if board.play_card(creature, verbose=verbose):
                     if creature.mana_production and int(creature.mana_production) > 0:
                         ramp_this_turn += 1
@@ -519,6 +578,10 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                         board.creatures[0].power or 0
                     )
 
+        # ----- AI: Optimize leftover mana usage -----
+        # Try to use any floating mana before end of turn
+        board.optimize_mana_usage(verbose=verbose)
+
         # ----- after casting, record unspent mana and spells cast -----
         metrics["unspent_mana"][turn] = len(pool)
         metrics["cards_played"][turn] = board.turn_play_count
@@ -529,12 +592,53 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         )
         metrics["unspent_mana"][turn] = len(board.mana_pool)
 
+        # ─────────────────── NEW: Opponent Interaction Phase ───────────────────
+        # Generate opponent creatures each turn
+        board.generate_opponent_creatures(turn, verbose=verbose)
+        board.calculate_threat_levels()
+
+        # Attempt reanimation if there are targets
+        if board.reanimation_targets:
+            board.attempt_reanimation(verbose=verbose)
+
+        # Activate planeswalkers
+        for pw in board.planeswalkers:
+            board.activate_planeswalker(pw, verbose=verbose)
+
+        # Simulate opponent removal (before combat)
+        board.simulate_removal(verbose=verbose)
+
         # trigger attack abilities for all creatures (assuming they attack)
         for creature in board.creatures:
             board._execute_triggers("attack", creature, verbose)
 
-        # combat dmg (sum of all power of creatures in play)
-        metrics["combat_damage"][turn] = sum(int(c.power or 0) for c in crits)
+        # ─────────────────── NEW: Combat with Blockers ───────────────────
+        # Use new combat resolution with blockers
+        actual_damage = board.resolve_combat_with_blockers(verbose=verbose)
+        metrics["combat_damage"][turn] = actual_damage
+
+        # Check if we won by eliminating all opponents
+        alive_opponents = [opp for opp in board.opponents if opp['is_alive']]
+        if not alive_opponents:
+            if verbose:
+                print(f"🎉 Victory! All opponents eliminated on turn {turn}!")
+            metrics["game_won"] = turn  # type: ignore
+            break
+
+        # ─────────────────── NEW: Board Wipe Check ───────────────────
+        # Check for board wipes at end of turn
+        board.simulate_board_wipe(verbose=verbose)
+
+        # ─────────────────── NEW: Track Interaction Metrics ───────────────────
+        metrics["opponents_alive"][turn] = sum(1 for opp in board.opponents if opp['is_alive'])
+        metrics["opponent_total_power"][turn] = sum(
+            sum(c.power or 0 for c in opp['creatures'])
+            for opp in board.opponents if opp['is_alive']
+        )
+        metrics["creatures_in_graveyard"][turn] = len(board.graveyard)
+        metrics["creatures_removed_by_opponents"] = board.creatures_removed
+        metrics["board_wipes_survived"] = board.wipes_survived
+
         # total creature power/toughness currently on board
         metrics["total_power"][turn] = sum(
             int(getattr(c, "power", 0) or 0) for c in board.creatures

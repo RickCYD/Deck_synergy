@@ -44,6 +44,14 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
     total_counter_power = [0] * (max_turns + 1)
     total_lands_etb_tapped = [0] * (max_turns + 1)
 
+    # New interaction metrics
+    total_opponents_alive = [0] * (max_turns + 1)
+    total_opponent_power = [0] * (max_turns + 1)
+    total_graveyard_size = [0] * (max_turns + 1)
+    total_creatures_removed = 0
+    total_wipes_survived = 0
+    games_won = 0
+
     COLOURS = ["W", "U", "B", "R", "G", "C", "Any"]
     total_board_mana = {c: [0] * (max_turns + 1) for c in COLOURS}
     total_hand_mana = {c: [0] * (max_turns + 1) for c in COLOURS}
@@ -68,9 +76,21 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
             total_toughness[turn] += metrics.get("total_toughness", [0])[turn]
             total_counter_power[turn] += metrics.get("power_from_counters", [0])[turn]
             total_lands_etb_tapped[turn] += metrics.get("lands_etb_tapped", [0])[turn]
+
+            # New interaction metrics
+            total_opponents_alive[turn] += metrics.get("opponents_alive", [0])[turn]
+            total_opponent_power[turn] += metrics.get("opponent_total_power", [0])[turn]
+            total_graveyard_size[turn] += metrics.get("creatures_in_graveyard", [0])[turn]
+
             for col in COLOURS:
                 total_board_mana[col][turn] += metrics.get(f"board_mana_{col}", [0])[turn]
                 total_hand_mana[col][turn] += metrics.get(f"hand_mana_{col}", [0])[turn]
+
+        # Aggregate interaction metrics
+        total_creatures_removed += metrics.get("creatures_removed_by_opponents", 0)
+        total_wipes_survived += metrics.get("board_wipes_survived", 0)
+        if metrics.get("game_won") is not None:
+            games_won += 1
 
         for name, p in metrics.get("creature_power", {}).items():
             total_creature_power[name] = total_creature_power.get(name, 0) + p
@@ -107,6 +127,11 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
         name: round(total_creature_power[name] / num_games, 2) for name in total_creature_power
     }
 
+    # New averaged metrics
+    avg_opponents_alive = [round(total_opponents_alive[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_opponent_power = [round(total_opponent_power[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_graveyard_size = [round(total_graveyard_size[t] / num_games, 2) for t in range(max_turns + 1)]
+
     data = {
         "Turn": list(range(1, max_turns + 1)),
         "Avg Lands in Play": avg_lands[1:],
@@ -125,6 +150,17 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
         "Avg Total Toughness": avg_toughness[1:],
         "Castable %": pct_castable[1:],
         "Avg Lands ETB Tapped": avg_lands_etb_tapped[1:],
+        "Avg Opponents Alive": avg_opponents_alive[1:],
+        "Avg Opponent Power": avg_opponent_power[1:],
+        "Avg Graveyard Size": avg_graveyard_size[1:],
+    }
+
+    # Add interaction summary
+    interaction_summary = {
+        "Games Won": games_won,
+        "Win Rate %": round((games_won / num_games) * 100, 2),
+        "Avg Creatures Removed": round(total_creatures_removed / num_games, 2),
+        "Avg Board Wipes Survived": round(total_wipes_survived / num_games, 2),
     }
     for c in COLOURS:
         data[f"Board Mana {c}"] = avg_board_mana[c][1:]
@@ -137,7 +173,7 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
     turns = range(1, max_turns + 2)
     distribution = commander_cast_series.value_counts().reindex(turns, fill_value=0).sort_index()
 
-    return summary_df, distribution, avg_creature_power
+    return summary_df, distribution, avg_creature_power, interaction_summary
 
 
 # ---------------------------------------------------------------------------

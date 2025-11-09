@@ -279,7 +279,7 @@ def simulate_deck_effectiveness(
 
     # Run simulations
     try:
-        summary_df, commander_cast_dist, avg_creature_power = run_simulations(
+        summary_df, commander_cast_dist, avg_creature_power, interaction_summary = run_simulations(
             cards=sim_cards,
             commander_card=sim_commander,
             num_games=num_games,
@@ -293,6 +293,8 @@ def simulate_deck_effectiveness(
         total_damage = [0] + summary_df['Avg Combat Damage'].tolist()
         total_power = [0] + summary_df['Avg Total Power'].tolist()
         avg_mana = [0] + summary_df['Avg Total Mana'].tolist()
+        avg_opponents_alive = [0] + summary_df['Avg Opponents Alive'].tolist()
+        avg_opponent_power = [0] + summary_df['Avg Opponent Power'].tolist()
 
         # Calculate total damage over first 10 turns
         total_damage_10_turns = sum(total_damage[:min(11, len(total_damage))])
@@ -309,16 +311,20 @@ def simulate_deck_effectiveness(
             'total_damage': total_damage,
             'total_power': total_power,
             'avg_mana': avg_mana,
+            'avg_opponents_alive': avg_opponents_alive,
+            'avg_opponent_power': avg_opponent_power,
             'summary': {
                 'total_damage_10_turns': round(total_damage_10_turns, 2),
                 'avg_damage_per_turn': round(total_damage_10_turns / max_turns, 2),
                 'peak_power': round(max(total_power), 2) if total_power else 0,
                 'commander_avg_cast_turn': round(commander_avg_turn, 2) if commander_avg_turn else None,
-                'num_games_simulated': num_games
+                'num_games_simulated': num_games,
+                **interaction_summary  # Include new interaction metrics
             },
             'summary_df': summary_df,
             'commander_cast_distribution': commander_cast_dist,
-            'creature_power': avg_creature_power
+            'creature_power': avg_creature_power,
+            'interaction_summary': interaction_summary
         }
 
     except Exception as e:
