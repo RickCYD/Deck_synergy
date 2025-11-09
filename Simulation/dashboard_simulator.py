@@ -1,4 +1,6 @@
 # Assuming we have summary and commander_turn_dist from the run_simulations function for a chosen deck
+from __future__ import annotations
+
 import argparse
 import os
 
