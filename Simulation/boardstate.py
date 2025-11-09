@@ -1144,8 +1144,9 @@ class BoardState:
         creatures_died = []
 
         for attacker in self.creatures[:]:
-            attack_power = attacker.power or 0
-            attacker_toughness = attacker.toughness or 0
+            # PRIORITY 3: Use effective power/toughness including anthem bonuses
+            attack_power = self.get_effective_power(attacker)
+            attacker_toughness = self.get_effective_toughness(attacker)
 
             # Check for evasion/unblockable
             is_unblockable = getattr(attacker, 'is_unblockable', False)
@@ -1174,6 +1175,7 @@ class BoardState:
             if random.random() < base_block_prob:
                 # Choose a random blocker
                 blocker = random.choice(target_opp['creatures'])
+                # Simplified: opponents don't get anthem bonuses (would need separate BoardState)
                 blocker_power = blocker.power or 0
                 blocker_toughness = blocker.toughness or 0
 
@@ -1239,9 +1241,10 @@ class BoardState:
         # Note: Commander damage should be tracked during the combat loop above
         # This is a simplified approach - assuming commander damage is proportional to unblocked damage
         if self.commander in self.creatures and unblocked_damage > 0:
-            commander_power = self.commander.power or 0
+            # PRIORITY 3: Use effective power including anthems
+            commander_power = self.get_effective_power(self.commander)
             # Estimate commander contributed to damage based on its power vs total power
-            total_power = sum(c.power or 0 for c in self.creatures)
+            total_power = sum(self.get_effective_power(c) for c in self.creatures)
             if total_power > 0:
                 commander_contribution = int(unblocked_damage * commander_power / total_power)
                 target_opp['commander_damage'] += commander_contribution
@@ -1269,8 +1272,8 @@ class BoardState:
 
         # Each turn there's a chance one of your creatures gets removed
         if random.random() < self.removal_probability:
-            # Target the biggest threat (highest power)
-            target = max(self.creatures, key=lambda c: c.power or 0)
+            # PRIORITY 3: Target the biggest threat (highest effective power including anthems)
+            target = max(self.creatures, key=lambda c: self.get_effective_power(c))
             self.creatures.remove(target)
 
             # Commanders go back to command zone instead of graveyard
@@ -1457,9 +1460,12 @@ class BoardState:
         if creature not in self.creatures:
             return False
 
+        # PRIORITY 3: Track effective power (including anthems) for sacrifice value
+        sacrifice_power = self.get_effective_power(creature)
+
         self.creatures.remove(creature)
         self.creatures_sacrificed += 1
-        self.sacrifice_value += creature.power or 0
+        self.sacrifice_value += sacrifice_power
 
         # Commander goes to command zone
         if getattr(creature, 'is_commander', False):
@@ -1545,8 +1551,9 @@ class BoardState:
         # If opponents have a lot of power, we might be facing a board wipe soon
         # Hold back our best creatures
         if total_opp_power > self.threat_threshold:
-            creature_power = creature.power or 0
-            our_power = sum(c.power or 0 for c in self.creatures)
+            # PRIORITY 3: Use effective power including anthems
+            creature_power = self.get_effective_power(creature)
+            our_power = sum(self.get_effective_power(c) for c in self.creatures)
 
             # Hold back if this is one of our best creatures and we already have board presence
             if creature_power >= 4 and our_power >= 8:
@@ -1814,6 +1821,93 @@ class BoardState:
                         drain += 1 * num_alive_opps
 
         return drain
+
+    def calculate_anthem_bonus(self, creature) -> tuple[int, int]:
+        """
+        Calculate the total power/toughness bonus from anthem effects.
+
+        Returns (power_bonus, toughness_bonus).
+
+        Handles anthem effects like:
+        - Glorious Anthem: Creatures you control get +1/+1
+        - Intangible Virtue: Tokens you control get +1/+1
+        - Honor of the Pure: White creatures you control get +1/+1
+        - Spear of Heliod: Creatures you control get +1/+1
+        - Benalish Marshal: Creatures you control get +1/+1
+        """
+        power_bonus = 0
+        toughness_bonus = 0
+
+        creature_is_token = getattr(creature, 'token_type', None) is not None
+        creature_name = getattr(creature, 'name', '').lower()
+
+        # Check all permanents for anthem effects
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            perm_name = getattr(permanent, 'name', '').lower()
+
+            # Skip self (creature doesn't buff itself)
+            if permanent is creature:
+                continue
+
+            # Pattern 1: "Creatures you control get +X/+X"
+            if 'creatures you control get +' in oracle or 'creature you control gets +' in oracle:
+                # Parse the bonus (e.g., "+1/+1", "+2/+2")
+                if '+1/+1' in oracle:
+                    power_bonus += 1
+                    toughness_bonus += 1
+                elif '+2/+2' in oracle:
+                    power_bonus += 2
+                    toughness_bonus += 2
+                elif '+3/+3' in oracle:
+                    power_bonus += 3
+                    toughness_bonus += 3
+
+            # Pattern 2: "Tokens you control get +X/+X" (conditional on being a token)
+            elif creature_is_token and ('tokens you control get +' in oracle or 'token creatures you control get +' in oracle):
+                if '+1/+1' in oracle:
+                    power_bonus += 1
+                    toughness_bonus += 1
+                elif '+2/+2' in oracle:
+                    power_bonus += 2
+                    toughness_bonus += 2
+
+            # Pattern 3: "White creatures you control get +1/+1" (color-specific)
+            elif 'white creatures you control get +' in oracle:
+                # Simplified: assume most creatures benefit (proper implementation would check colors)
+                if '+1/+1' in oracle:
+                    power_bonus += 1
+                    toughness_bonus += 1
+
+        return (power_bonus, toughness_bonus)
+
+    def get_effective_power(self, creature) -> int:
+        """
+        Get the effective power of a creature including anthem bonuses.
+
+        This includes:
+        - Base power
+        - Equipment buffs (already applied to creature.power)
+        - +1/+1 counters (already applied to creature.power)
+        - Anthem effects (calculated dynamically)
+        """
+        base_power = creature.power or 0
+        power_bonus, _ = self.calculate_anthem_bonus(creature)
+        return base_power + power_bonus
+
+    def get_effective_toughness(self, creature) -> int:
+        """
+        Get the effective toughness of a creature including anthem bonuses.
+
+        This includes:
+        - Base toughness
+        - Equipment buffs (already applied to creature.toughness)
+        - +1/+1 counters (already applied to creature.toughness)
+        - Anthem effects (calculated dynamically)
+        """
+        base_toughness = creature.toughness or 0
+        _, toughness_bonus = self.calculate_anthem_bonus(creature)
+        return base_toughness + toughness_bonus
 
     def sacrifice_creature(self, creature, source_name: str = "sacrifice outlet", verbose: bool = False):
         """

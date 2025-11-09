@@ -664,12 +664,12 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         metrics["creatures_removed_by_opponents"] = board.creatures_removed
         metrics["board_wipes_survived"] = board.wipes_survived
 
-        # total creature power/toughness currently on board
+        # PRIORITY 3: total creature power/toughness including anthem bonuses
         metrics["total_power"][turn] = sum(
-            int(getattr(c, "power", 0) or 0) for c in board.creatures
+            board.get_effective_power(c) for c in board.creatures
         )
         metrics["total_toughness"][turn] = sum(
-            int(getattr(c, "toughness", 0) or 0) for c in board.creatures
+            board.get_effective_toughness(c) for c in board.creatures
         )
         metrics["power_from_counters"][turn] = sum(
             int(getattr(c, "counters", {}).get("+1/+1", 0)) for c in board.creatures
