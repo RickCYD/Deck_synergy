@@ -130,7 +130,7 @@ def organize_synergies_by_category(synergies: List[Dict]) -> Dict[str, List[Dict
     return organized
 
 
-def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5, include_three_way: bool = True) -> Dict:
+def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5, include_three_way: bool = True, run_simulation: bool = True, num_simulation_games: int = 100) -> Dict:
     """
     Analyze all synergies in a deck
 
@@ -138,6 +138,8 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
         cards: List of card dictionaries
         min_synergy_threshold: Minimum synergy weight to include in results
         include_three_way: If True, also detect three-way synergies (slower)
+        run_simulation: If True, run game simulation to calculate deck effectiveness
+        num_simulation_games: Number of games to simulate
 
     Returns:
         If include_three_way is True, returns:
@@ -147,6 +149,10 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
             },
             'three_way': {
                 'CardA||CardB||CardC': {...}
+            },
+            'simulation': {
+                'total_damage': [...],
+                'summary': {...}
             }
         }
 
@@ -242,11 +248,49 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
         print(f"  Completed in {three_way_elapsed:.1f}s")
         print(f"  Found {len(three_way_dict)} three-way synergies")
 
-        # Return both two-way and three-way
-        return {
+    # Run game simulation if requested
+    simulation_results = None
+    if run_simulation:
+        try:
+            print("\nRunning game simulation...")
+            from ..simulation.deck_simulator import simulate_deck_effectiveness
+
+            # Find commander
+            commander = next((c for c in cards if c.get('is_commander')), None)
+
+            sim_start = time.time()
+            simulation_results = simulate_deck_effectiveness(
+                cards=[c for c in cards if not c.get('is_commander')],
+                commander=commander,
+                num_games=num_simulation_games,
+                max_turns=10,
+                verbose=False
+            )
+            sim_elapsed = time.time() - sim_start
+
+            if 'error' not in simulation_results.get('summary', {}):
+                total_dmg = simulation_results['summary']['total_damage_10_turns']
+                print(f"  Completed in {sim_elapsed:.1f}s")
+                print(f"  Total damage over 10 turns: {total_dmg}")
+                print(f"  Average damage per turn: {simulation_results['summary']['avg_damage_per_turn']}")
+                print(f"  Peak board power: {simulation_results['summary']['peak_power']}")
+            else:
+                print(f"  Warning: Simulation failed: {simulation_results['summary'].get('error')}")
+        except Exception as e:
+            print(f"  Warning: Simulation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            simulation_results = None
+
+    # Return results
+    if include_three_way:
+        result = {
             'two_way': synergy_dict,
             'three_way': three_way_dict
         }
+        if simulation_results:
+            result['simulation'] = simulation_results
+        return result
     else:
         # Backward compatibility: return just the two-way synergies
         return synergy_dict
