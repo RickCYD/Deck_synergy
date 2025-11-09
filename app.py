@@ -423,21 +423,6 @@ app.layout = html.Div([
     dcc.Tabs(id='main-tabs', value='synergy', children=[
         dcc.Tab(label='Synergy Graph', value='synergy', children=[
             html.Div([
-                # Simulation Results Banner (Full Width)
-                html.Div(
-                    id='simulation-results-banner',
-                    children=[],
-                    style={
-                        'backgroundColor': '#e8f5e9',
-                        'border': '2px solid #4caf50',
-                        'borderRadius': '8px',
-                        'padding': '16px',
-                        'marginBottom': '20px',
-                        'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-                        'display': 'none'  # Hidden by default
-                    }
-                ),
-
                 # Graph Section - Left (3/4 of screen)
                 html.Div([
                     # Card Search - Inside graph section
@@ -593,13 +578,20 @@ app.layout = html.Div([
                 html.Div(
                     id='info-panel',
                     children=[
+                        # Simulation Results Section (at top)
+                        html.Div(
+                            id='simulation-results-section',
+                            children=[],
+                            style={'marginBottom': '16px'}
+                        ),
+                        # Card Details Section
                         html.Div([
                             html.H3("Card Details", style={'color': '#2c3e50', 'marginBottom': '12px', 'fontSize': '16px', 'fontWeight': 'bold'}),
                             html.P(
                                 "Click on a card in the graph to view its details and synergies here.",
                                 style={'color': '#7f8c8d', 'fontSize': '13px', 'lineHeight': '1.6'}
                             )
-                        ])
+                        ], id='card-details-container')
                     ],
                     style={
                         'flex': '0 0 28%',
@@ -1011,8 +1003,7 @@ def clear_status_message(n_intervals):
      Output('current-deck-file-store', 'data'),
      Output('role-filter-data', 'data'),
      Output('card-list-store', 'data'),
-     Output('simulation-results-banner', 'children'),
-     Output('simulation-results-banner', 'style')],
+     Output('simulation-results-section', 'children')],
     Input('deck-selector', 'value'),
     prevent_initial_call=True
 )
@@ -1022,7 +1013,7 @@ def update_graph(deck_file):
 
     if not deck_file:
         print("[UPDATE GRAPH] No deck file provided, using dash.no_update to preserve current state")
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     try:
         # Check if file exists before trying to load
@@ -1030,7 +1021,7 @@ def update_graph(deck_file):
         if not Path(deck_file).exists():
             print(f"[UPDATE GRAPH] WARNING: Deck file does not exist: {deck_file}")
             print(f"[UPDATE GRAPH] Using dash.no_update to preserve current state")
-            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
         # Load deck data
         print(f"[UPDATE GRAPH] Loading deck from file: {deck_file}")
@@ -1055,9 +1046,8 @@ def update_graph(deck_file):
         card_names = sorted([card.get('name') for card in cards if card.get('name')])
         print(f"[UPDATE GRAPH] Extracted {len(card_names)} card names for search")
 
-        # Build simulation results banner
-        sim_banner_content = []
-        sim_banner_style = {'display': 'none'}
+        # Build simulation results for info panel
+        sim_section_content = []
 
         if simulation_results and 'summary' in simulation_results:
             summary = simulation_results['summary']
@@ -1067,49 +1057,44 @@ def update_graph(deck_file):
                 peak_power = summary.get('peak_power', 0)
                 commander_turn = summary.get('commander_avg_cast_turn')
 
-                sim_banner_content = html.Div([
-                    html.H4("Deck Effectiveness (Simulation)", style={'color': '#2e7d32', 'marginBottom': '12px', 'fontSize': '18px', 'fontWeight': 'bold'}),
+                sim_section_content = html.Div([
+                    html.H4("Deck Effectiveness", style={
+                        'color': '#2e7d32',
+                        'marginBottom': '8px',
+                        'fontSize': '14px',
+                        'fontWeight': 'bold',
+                        'borderBottom': '2px solid #4caf50',
+                        'paddingBottom': '4px'
+                    }),
                     html.Div([
                         html.Div([
-                            html.Div([
-                                html.Span("Total Damage (10 turns)", style={'fontSize': '12px', 'color': '#666', 'display': 'block'}),
-                                html.Span(f"{total_dmg:.0f}", style={'fontSize': '24px', 'fontWeight': 'bold', 'color': '#2e7d32'})
-                            ], style={'textAlign': 'center'}),
-                        ], style={'flex': '1'}),
+                            html.Span("Total Damage (10 turns)", style={'fontSize': '10px', 'color': '#666', 'display': 'block'}),
+                            html.Span(f"{total_dmg:.0f}", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#2e7d32'})
+                        ], style={'marginBottom': '8px'}),
                         html.Div([
-                            html.Div([
-                                html.Span("Avg Damage/Turn", style={'fontSize': '12px', 'color': '#666', 'display': 'block'}),
-                                html.Span(f"{avg_dmg:.1f}", style={'fontSize': '24px', 'fontWeight': 'bold', 'color': '#2e7d32'})
-                            ], style={'textAlign': 'center'}),
-                        ], style={'flex': '1'}),
+                            html.Span("Avg Damage/Turn", style={'fontSize': '10px', 'color': '#666', 'display': 'block'}),
+                            html.Span(f"{avg_dmg:.1f}", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#2e7d32'})
+                        ], style={'marginBottom': '8px'}),
                         html.Div([
-                            html.Div([
-                                html.Span("Peak Board Power", style={'fontSize': '12px', 'color': '#666', 'display': 'block'}),
-                                html.Span(f"{peak_power:.0f}", style={'fontSize': '24px', 'fontWeight': 'bold', 'color': '#2e7d32'})
-                            ], style={'textAlign': 'center'}),
-                        ], style={'flex': '1'}),
+                            html.Span("Peak Board Power", style={'fontSize': '10px', 'color': '#666', 'display': 'block'}),
+                            html.Span(f"{peak_power:.0f}", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#2e7d32'})
+                        ], style={'marginBottom': '8px'}),
                         html.Div([
-                            html.Div([
-                                html.Span("Commander Avg Turn", style={'fontSize': '12px', 'color': '#666', 'display': 'block'}),
-                                html.Span(f"{commander_turn:.1f}" if commander_turn else "N/A", style={'fontSize': '24px', 'fontWeight': 'bold', 'color': '#2e7d32'})
-                            ], style={'textAlign': 'center'}),
-                        ], style={'flex': '1'}),
-                    ], style={'display': 'flex', 'gap': '20px', 'justifyContent': 'space-around'})
-                ])
-
-                sim_banner_style = {
+                            html.Span("Commander Avg Turn", style={'fontSize': '10px', 'color': '#666', 'display': 'block'}),
+                            html.Span(f"{commander_turn:.1f}" if commander_turn else "N/A", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#2e7d32'})
+                        ], style={'marginBottom': '0px'}),
+                    ])
+                ], style={
                     'backgroundColor': '#e8f5e9',
                     'border': '2px solid #4caf50',
-                    'borderRadius': '8px',
-                    'padding': '16px',
-                    'marginBottom': '20px',
-                    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-                    'display': 'block'
-                }
+                    'borderRadius': '6px',
+                    'padding': '12px',
+                    'marginBottom': '16px'
+                })
 
         print(f"[UPDATE GRAPH] SUCCESS - Graph updated!")
 
-        return elements, deck_file, role_summary, card_names, sim_banner_content, sim_banner_style
+        return elements, deck_file, role_summary, card_names, sim_section_content
 
     except Exception as e:
         import traceback
@@ -1117,7 +1102,7 @@ def update_graph(deck_file):
         print(f"\n[UPDATE GRAPH ERROR] Failed to update graph!")
         print(f"[UPDATE GRAPH ERROR] Error: {e}")
         print(f"[UPDATE GRAPH ERROR] Full traceback:\n{error_details}")
-        return [], None, {}, [], [], {'display': 'none'}
+        return [], None, {}, [], []
 
 
 @app.callback(
@@ -1587,7 +1572,7 @@ def update_layout(layout_name):
     [Output('card-graph', 'stylesheet', allow_duplicate=True),
      Output('card-graph', 'layout', allow_duplicate=True),
      Output('card-graph', 'elements', allow_duplicate=True),
-     Output('info-panel', 'children', allow_duplicate=True),
+     Output('card-details-container', 'children', allow_duplicate=True),
      Output('card-images-store', 'data', allow_duplicate=True)],
     Input('view-top-cards-button', 'n_clicks'),
     [State('current-deck-file-store', 'data'),
@@ -1859,7 +1844,7 @@ def view_top_cards_in_graph(n_clicks, deck_file, elements, current_card_images):
 # Callback for node/edge selection and highlighting
 @app.callback(
     [Output('card-graph', 'stylesheet'),
-     Output('info-panel', 'children'),
+     Output('card-details-container', 'children'),
      Output('card-graph', 'layout', allow_duplicate=True),
      Output('card-images-store', 'data')],
     [Input('card-graph', 'tapNodeData'),
