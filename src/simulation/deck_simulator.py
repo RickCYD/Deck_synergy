@@ -290,14 +290,20 @@ def simulate_deck_effectiveness(
         )
 
         # Extract key metrics
-        total_damage = [0] + summary_df['Avg Combat Damage'].tolist()
+        # ARISTOCRATS: Use total damage (combat + drain) instead of just combat
+        total_damage = [0] + summary_df['Avg Total Damage'].tolist()
+        combat_damage = [0] + summary_df['Avg Combat Damage'].tolist()
+        drain_damage = [0] + summary_df['Avg Drain Damage'].tolist()
         total_power = [0] + summary_df['Avg Total Power'].tolist()
         avg_mana = [0] + summary_df['Avg Total Mana'].tolist()
         avg_opponents_alive = [0] + summary_df['Avg Opponents Alive'].tolist()
         avg_opponent_power = [0] + summary_df['Avg Opponent Power'].tolist()
+        tokens_created = [0] + summary_df['Avg Tokens Created'].tolist()
 
         # Calculate total damage over first 10 turns
         total_damage_10_turns = sum(total_damage[:min(11, len(total_damage))])
+        combat_damage_10_turns = sum(combat_damage[:min(11, len(combat_damage))])
+        drain_damage_10_turns = sum(drain_damage[:min(11, len(drain_damage))])
 
         # Get commander cast turn stats
         commander_avg_turn = None
@@ -309,16 +315,22 @@ def simulate_deck_effectiveness(
 
         return {
             'total_damage': total_damage,
+            'combat_damage': combat_damage,  # NEW
+            'drain_damage': drain_damage,  # NEW
             'total_power': total_power,
             'avg_mana': avg_mana,
             'avg_opponents_alive': avg_opponents_alive,
             'avg_opponent_power': avg_opponent_power,
+            'tokens_created': tokens_created,  # NEW
             'summary': {
                 'total_damage_10_turns': round(total_damage_10_turns, 2),
+                'combat_damage_10_turns': round(combat_damage_10_turns, 2),  # NEW
+                'drain_damage_10_turns': round(drain_damage_10_turns, 2),  # NEW
                 'avg_damage_per_turn': round(total_damage_10_turns / max_turns, 2),
                 'peak_power': round(max(total_power), 2) if total_power else 0,
                 'commander_avg_cast_turn': round(commander_avg_turn, 2) if commander_avg_turn else None,
                 'num_games_simulated': num_games,
+                'total_tokens_created': round(sum(tokens_created), 1),  # NEW
                 **interaction_summary  # Include new interaction metrics
             },
             'summary_df': summary_df,

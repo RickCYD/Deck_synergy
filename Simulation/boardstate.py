@@ -72,9 +72,19 @@ class BoardState:
                 'threat_level': 0.0,  # 0-1 scale
             })
 
-        # Interaction tracking
-        self.removal_probability = 0.15  # 15% chance per turn a creature gets removed
-        self.board_wipe_probability = 0.08  # 8% chance per turn of board wipe
+        # Interaction tracking - Base rates (Option A: Reduced for more realistic gameplay)
+        self.base_removal_probability = 0.05  # 5% chance per turn (down from 15%)
+        self.base_board_wipe_probability = 0.03  # 3% chance per turn (down from 8%)
+
+        # Option B & C: Strategy-aware adjustment
+        deck_analysis = self._analyze_deck_strategy(deck)
+        self.deck_archetype = deck_analysis['archetype']
+        self.protection_count = deck_analysis['protection_count']
+
+        # Apply archetype-based modifiers
+        self.removal_probability = self.base_removal_probability * deck_analysis['removal_modifier']
+        self.board_wipe_probability = self.base_board_wipe_probability * deck_analysis['wipe_modifier']
+
         self.wipes_survived = 0
         self.creatures_removed = 0
         self.reanimation_targets = []  # Creatures that died and could be reanimated
@@ -101,11 +111,127 @@ class BoardState:
         self.creatures_sacrificed = 0
         self.sacrifice_value = 0  # Total power sacrificed
 
+        # Aristocrats mechanics tracking
+        self.drain_damage_this_turn = 0  # Track drain separate from combat
+        self.tokens_created_this_turn = 0  # Track token generation
+        self.creatures_died_this_turn = 0  # PRIORITY 2: For Mahadi treasure generation
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
         for kw in getattr(creature, "keywords_when_equipped", []):
             if kw.lower() == "first strike":
                 creature.has_first_strike = bool(equipped)
+
+    def _analyze_deck_strategy(self, deck):
+        """
+        Analyze deck composition to detect archetype and adjust interaction rates.
+
+        Options B & C: Strategy-aware simulation with archetype detection.
+
+        Returns dict with:
+            - archetype: Detected deck strategy
+            - removal_modifier: Multiplier for removal probability (lower = fewer removals)
+            - wipe_modifier: Multiplier for board wipe probability
+            - protection_count: Number of protection spells detected
+        """
+        equipment_count = 0
+        creature_count = 0
+        protection_count = 0
+        token_generators = 0
+        go_wide_count = 0
+
+        # Protection spell keywords to detect
+        protection_keywords = [
+            'hexproof', 'indestructible', 'protection from',
+            'heroic intervention', 'clever concealment', 'teferi\'s protection',
+            'boros charm', 'flawless maneuver', 'unbreakable formation',
+            'mithril coat', 'lightning greaves', 'swiftfoot boots'
+        ]
+
+        for card in deck:
+            card_type = getattr(card, 'type', '').lower()
+            oracle_text = getattr(card, 'oracle_text', '').lower()
+            name = getattr(card, 'name', '').lower()
+
+            # Count equipment
+            if 'equipment' in card_type:
+                equipment_count += 1
+
+            # Count creatures
+            if 'creature' in card_type:
+                creature_count += 1
+
+            # Detect protection spells
+            for keyword in protection_keywords:
+                if keyword in oracle_text or keyword in name:
+                    protection_count += 1
+                    break
+
+            # Detect token generators (go-wide strategy)
+            if 'create' in oracle_text and 'token' in oracle_text:
+                token_generators += 1
+
+            # Detect anthems and +1/+1 effects (go-wide)
+            if ('get +' in oracle_text or 'gets +' in oracle_text) and 'creatures you control' in oracle_text:
+                go_wide_count += 1
+
+        total_cards = len(deck)
+        equipment_ratio = equipment_count / total_cards if total_cards > 0 else 0
+        creature_ratio = creature_count / total_cards if total_cards > 0 else 0
+
+        # Determine archetype
+        archetype = 'unknown'
+        removal_modifier = 1.0  # Default: use base rates
+        wipe_modifier = 1.0
+
+        # Voltron/Equipment deck (lots of equipment, few creatures)
+        if equipment_ratio > 0.12 and creature_ratio < 0.25:
+            archetype = 'voltron'
+            # Voltron decks have fewer creatures, so removals hurt more
+            # But they often run protection, so reduce removal significantly
+            removal_modifier = 0.4  # 60% reduction (5% -> 2%)
+            wipe_modifier = 0.5  # 50% reduction (3% -> 1.5%)
+
+        # Go-wide/Token deck (many token generators)
+        elif token_generators >= 5 or go_wide_count >= 3:
+            archetype = 'go_wide'
+            # Go-wide cares less about single removals, more about wipes
+            removal_modifier = 1.2  # Slightly more removals
+            wipe_modifier = 0.8  # But fewer wipes (they have board presence)
+
+        # Creature-heavy aggro (lots of creatures, few equipment)
+        elif creature_ratio > 0.30 and equipment_ratio < 0.08:
+            archetype = 'aggro'
+            removal_modifier = 1.0  # Standard rates
+            wipe_modifier = 0.9
+
+        # Midrange (balanced)
+        elif creature_ratio > 0.20 and creature_ratio < 0.35:
+            archetype = 'midrange'
+            removal_modifier = 0.9
+            wipe_modifier = 0.9
+
+        # Combo/Control (few creatures)
+        elif creature_ratio < 0.15:
+            archetype = 'combo_control'
+            # Combo decks don't care much about creature removal
+            removal_modifier = 0.5
+            wipe_modifier = 0.6
+
+        # Apply protection spell bonus (each protection spell reduces removal)
+        if protection_count > 0:
+            protection_bonus = 0.9 ** protection_count  # Each spell reduces by 10%
+            removal_modifier *= protection_bonus
+            wipe_modifier *= protection_bonus
+
+        return {
+            'archetype': archetype,
+            'removal_modifier': removal_modifier,
+            'wipe_modifier': wipe_modifier,
+            'protection_count': protection_count,
+            'equipment_count': equipment_count,
+            'creature_count': creature_count
+        }
 
     def _mana_pool_str(self) -> str:
         """Return a readable representation of the current mana pool."""
@@ -586,6 +712,9 @@ class BoardState:
         self.creatures.append(card)
         card.tapped = False
 
+        # PRIORITY 2: Apply +1/+1 counter effects (Cathars' Crusade)
+        self.apply_etb_counter_effects(card, verbose=verbose)
+
         if verbose:
             print(f"Played creature: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -1015,8 +1144,9 @@ class BoardState:
         creatures_died = []
 
         for attacker in self.creatures[:]:
-            attack_power = attacker.power or 0
-            attacker_toughness = attacker.toughness or 0
+            # PRIORITY 3: Use effective power/toughness including anthem bonuses
+            attack_power = self.get_effective_power(attacker)
+            attacker_toughness = self.get_effective_toughness(attacker)
 
             # Check for evasion/unblockable
             is_unblockable = getattr(attacker, 'is_unblockable', False)
@@ -1045,6 +1175,7 @@ class BoardState:
             if random.random() < base_block_prob:
                 # Choose a random blocker
                 blocker = random.choice(target_opp['creatures'])
+                # Simplified: opponents don't get anthem bonuses (would need separate BoardState)
                 blocker_power = blocker.power or 0
                 blocker_toughness = blocker.toughness or 0
 
@@ -1080,9 +1211,8 @@ class BoardState:
                     self.graveyard.append(creature)
                     self.reanimation_targets.append(creature)
 
-                    # Trigger death effects (aristocrats)
-                    if getattr(creature, 'death_trigger_value', 0) > 0:
-                        self.sacrifice_value += creature.death_trigger_value
+                # ARISTOCRATS: Trigger full death effects!
+                self.trigger_death_effects(creature, verbose=verbose)
 
         # Apply life gain from lifelink
         if life_gained > 0:
@@ -1093,11 +1223,31 @@ class BoardState:
         # Apply damage to opponent
         target_opp['life_total'] -= unblocked_damage
 
+        # PRIORITY 2: Grim Hireling - create treasures when creatures deal combat damage
+        if unblocked_damage > 0:
+            for permanent in self.creatures + self.artifacts + self.enchantments:
+                oracle = getattr(permanent, 'oracle_text', '').lower()
+                name = getattr(permanent, 'name', '').lower()
+
+                # Grim Hireling: "Whenever one or more creatures you control deal combat damage, create treasure"
+                if 'grim hireling' in name or ('combat damage' in oracle and 'treasure' in oracle):
+                    # Create treasures based on number of attacking creatures that dealt damage
+                    num_attackers = len(self.creatures)
+                    treasures_to_make = min(num_attackers, 3)  # Cap at 3 for balance
+                    for _ in range(treasures_to_make):
+                        self.create_treasure(verbose=verbose)
+
         # Track commander damage if commander dealt damage
-        if self.commander in self.creatures:
-            commander_damage = self.commander.power or 0
-            if random.random() >= base_block_prob:  # If not blocked
-                target_opp['commander_damage'] += commander_damage
+        # Note: Commander damage should be tracked during the combat loop above
+        # This is a simplified approach - assuming commander damage is proportional to unblocked damage
+        if self.commander in self.creatures and unblocked_damage > 0:
+            # PRIORITY 3: Use effective power including anthems
+            commander_power = self.get_effective_power(self.commander)
+            # Estimate commander contributed to damage based on its power vs total power
+            total_power = sum(self.get_effective_power(c) for c in self.creatures)
+            if total_power > 0:
+                commander_contribution = int(unblocked_damage * commander_power / total_power)
+                target_opp['commander_damage'] += commander_contribution
 
         total_damage_dealt = unblocked_damage
 
@@ -1122,8 +1272,8 @@ class BoardState:
 
         # Each turn there's a chance one of your creatures gets removed
         if random.random() < self.removal_probability:
-            # Target the biggest threat (highest power)
-            target = max(self.creatures, key=lambda c: c.power or 0)
+            # PRIORITY 3: Target the biggest threat (highest effective power including anthems)
+            target = max(self.creatures, key=lambda c: self.get_effective_power(c))
             self.creatures.remove(target)
 
             # Commanders go back to command zone instead of graveyard
@@ -1139,6 +1289,9 @@ class BoardState:
 
             self.creatures_removed += 1
 
+            # ARISTOCRATS: Trigger death effects!
+            self.trigger_death_effects(target, verbose=verbose)
+
     def simulate_board_wipe(self, verbose: bool = False):
         """Simulate a board wipe that destroys all creatures."""
         import random
@@ -1148,13 +1301,19 @@ class BoardState:
             num_creatures = len(self.creatures)
 
             if num_creatures > 0:
+                # ARISTOCRATS: Board wipes trigger death effects for EACH creature!
+                creatures_to_wipe = self.creatures[:]
+
                 # Move all creatures to graveyard (except commander)
-                for creature in self.creatures[:]:
+                for creature in creatures_to_wipe:
                     if getattr(creature, 'is_commander', False):
                         self.command_zone.append(creature)
                     else:
                         self.graveyard.append(creature)
                         self.reanimation_targets.append(creature)
+
+                    # Trigger death effects for this creature
+                    self.trigger_death_effects(creature, verbose=verbose)
 
                 self.creatures.clear()
                 self.wipes_survived += 1
@@ -1301,9 +1460,12 @@ class BoardState:
         if creature not in self.creatures:
             return False
 
+        # PRIORITY 3: Track effective power (including anthems) for sacrifice value
+        sacrifice_power = self.get_effective_power(creature)
+
         self.creatures.remove(creature)
         self.creatures_sacrificed += 1
-        self.sacrifice_value += creature.power or 0
+        self.sacrifice_value += sacrifice_power
 
         # Commander goes to command zone
         if getattr(creature, 'is_commander', False):
@@ -1389,8 +1551,9 @@ class BoardState:
         # If opponents have a lot of power, we might be facing a board wipe soon
         # Hold back our best creatures
         if total_opp_power > self.threat_threshold:
-            creature_power = creature.power or 0
-            our_power = sum(c.power or 0 for c in self.creatures)
+            # PRIORITY 3: Use effective power including anthems
+            creature_power = self.get_effective_power(creature)
+            our_power = sum(self.get_effective_power(c) for c in self.creatures)
 
             # Hold back if this is one of our best creatures and we already have board presence
             if creature_power >= 4 and our_power >= 8:
@@ -1473,6 +1636,507 @@ class BoardState:
                     return True
 
         return False
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # ARISTOCRATS MECHANICS (Priority 1 Implementation)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def create_token(self, token_name: str, power: int, toughness: int, has_haste: bool = False,
+                     token_type: str = None, keywords: list = None, verbose: bool = False,
+                     apply_counters: bool = True):
+        """
+        Create a creature token and add it to the battlefield.
+
+        PRIORITY 2: Now supports token doublers (Mondrak, Doubling Season, etc.)
+
+        Returns the created token Card object(s) - may be a list if doubled!
+        """
+        from simulate_game import Card
+
+        # PRIORITY 2: Check for token doublers!
+        num_to_create = 1
+        token_doubler_names = []
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            perm_name = getattr(permanent, 'name', '')
+
+            # Mondrak, Glory Dominus / Doubling Season / Parallel Lives / Anointed Procession
+            if 'if you would create' in oracle and 'token' in oracle:
+                if 'twice that many' in oracle or 'double' in oracle:
+                    num_to_create *= 2
+                    token_doubler_names.append(perm_name)
+                    if verbose:
+                        print(f"  → {perm_name} doubles tokens!")
+
+        created_tokens = []
+
+        for i in range(num_to_create):
+            # Create token as a creature
+            token = Card(
+                name=token_name,
+                type="Creature — Token",
+                mana_cost="",
+                power=power,
+                toughness=toughness,
+                produces_colors=[],
+                mana_production=0,
+                etb_tapped=False,
+                etb_tapped_conditions={},
+                has_haste=has_haste,
+                token_type=token_type
+            )
+
+            # Apply keywords
+            if keywords:
+                for kw in keywords:
+                    kw_lower = kw.lower()
+                    if 'haste' in kw_lower:
+                        token.has_haste = True
+                    elif 'trample' in kw_lower:
+                        token.has_trample = True
+                    elif 'flying' in kw_lower:
+                        token.has_flying = True
+                    elif 'lifelink' in kw_lower:
+                        token.has_lifelink = True
+
+            # Add to battlefield
+            self.creatures.append(token)
+            created_tokens.append(token)
+
+            # Trigger ETB effects
+            self._execute_triggers("etb", token, verbose=verbose)
+
+            # PRIORITY 2: Apply +1/+1 counters from Cathars' Crusade!
+            if apply_counters:
+                self.apply_etb_counter_effects(token, verbose=verbose)
+
+            # Apply drain from ETB triggers (Impact Tremors, Warleader's Call)
+            drain_on_etb = self.calculate_etb_drain()
+            if drain_on_etb > 0:
+                self.drain_damage_this_turn += drain_on_etb
+
+        if verbose:
+            if num_to_create > 1:
+                print(f"Created {num_to_create}x {token_name} tokens ({power}/{toughness}) [DOUBLED!]")
+            else:
+                print(f"Created {token_name} token ({power}/{toughness})")
+
+        return created_tokens if len(created_tokens) > 1 else created_tokens[0]
+
+    def apply_etb_counter_effects(self, entering_creature, verbose: bool = False):
+        """
+        PRIORITY 2: Apply +1/+1 counters from ETB triggers like Cathars' Crusade.
+
+        When a creature enters, check for effects that put counters on creatures.
+        """
+        counters_applied = False
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            perm_name = getattr(permanent, 'name', '')
+
+            # Cathars' Crusade: "Whenever a creature enters, put a +1/+1 counter on each creature you control"
+            if 'whenever a creature enters' in oracle or 'whenever a creature you control enters' in oracle:
+                if '+1/+1 counter' in oracle:
+                    # Put a counter on each creature
+                    for creature in self.creatures:
+                        creature.add_counter("+1/+1", 1)
+                        counters_applied = True
+
+                    if verbose:
+                        print(f"  → {perm_name} added +1/+1 counters to {len(self.creatures)} creatures!")
+
+        return counters_applied
+
+    def trigger_death_effects(self, creature, verbose: bool = False):
+        """
+        Trigger all death-based effects when a creature dies.
+
+        This handles aristocrats payoffs like:
+        - Zulaport Cutthroat
+        - Cruel Celebrant
+        - Bastion of Remembrance
+        - Mirkwood Bats
+        """
+        drain_total = 0
+
+        # PRIORITY 2: Track creature deaths for Mahadi
+        self.creatures_died_this_turn += 1
+
+        # Count all permanents with death triggers
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            death_value = getattr(permanent, 'death_trigger_value', 0)
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+
+            # Zulaport Cutthroat / Cruel Celebrant type effects
+            if death_value > 0 and 'opponent' in oracle and 'loses' in oracle:
+                # Each opponent loses X life
+                drain_per_opp = death_value
+                num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+                drain_total += drain_per_opp * num_alive_opps
+
+                if verbose:
+                    print(f"  → {permanent.name} drains {drain_per_opp} × {num_alive_opps} opponents = {drain_per_opp * num_alive_opps}")
+
+            # Pitiless Plunderer - create treasure
+            if 'treasure' in oracle and 'dies' in oracle:
+                self.create_treasure(verbose=verbose)
+
+        # Track total drain damage
+        if drain_total > 0:
+            self.drain_damage_this_turn += drain_total
+
+            # Apply drain to opponents
+            alive_opps = [o for o in self.opponents if o['is_alive']]
+            if alive_opps:
+                drain_per_opp = drain_total // len(alive_opps)
+                for opp in alive_opps:
+                    opp['life_total'] -= drain_per_opp
+
+                    # Check if they died
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                        if verbose:
+                            print(f"  → {opp['name']} eliminated by drain damage!")
+
+        return drain_total
+
+    def calculate_etb_drain(self) -> int:
+        """
+        Calculate drain damage from ETB triggers like Impact Tremors, Warleader's Call.
+
+        Returns total drain damage per ETB.
+        """
+        drain = 0
+        num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+
+        for permanent in self.enchantments + self.artifacts + self.creatures:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+
+            # Impact Tremors / Warleader's Call
+            if 'creature enters' in oracle or 'creature you control enters' in oracle:
+                if 'deals 1 damage' in oracle or 'deal 1 damage' in oracle:
+                    if 'each opponent' in oracle:
+                        drain += 1 * num_alive_opps
+
+        return drain
+
+    def calculate_anthem_bonus(self, creature) -> tuple[int, int]:
+        """
+        Calculate the total power/toughness bonus from anthem effects.
+
+        Returns (power_bonus, toughness_bonus).
+
+        Handles anthem effects like:
+        - Glorious Anthem: Creatures you control get +1/+1
+        - Intangible Virtue: Tokens you control get +1/+1
+        - Honor of the Pure: White creatures you control get +1/+1
+        - Spear of Heliod: Creatures you control get +1/+1
+        - Benalish Marshal: Creatures you control get +1/+1
+        """
+        power_bonus = 0
+        toughness_bonus = 0
+
+        creature_is_token = getattr(creature, 'token_type', None) is not None
+        creature_name = getattr(creature, 'name', '').lower()
+
+        # Check all permanents for anthem effects
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            perm_name = getattr(permanent, 'name', '').lower()
+
+            # Skip self (creature doesn't buff itself)
+            if permanent is creature:
+                continue
+
+            # Pattern 1: "Creatures you control get +X/+X"
+            if 'creatures you control get +' in oracle or 'creature you control gets +' in oracle:
+                # Parse the bonus (e.g., "+1/+1", "+2/+2")
+                if '+1/+1' in oracle:
+                    power_bonus += 1
+                    toughness_bonus += 1
+                elif '+2/+2' in oracle:
+                    power_bonus += 2
+                    toughness_bonus += 2
+                elif '+3/+3' in oracle:
+                    power_bonus += 3
+                    toughness_bonus += 3
+
+            # Pattern 2: "Tokens you control get +X/+X" (conditional on being a token)
+            elif creature_is_token and ('tokens you control get +' in oracle or 'token creatures you control get +' in oracle):
+                if '+1/+1' in oracle:
+                    power_bonus += 1
+                    toughness_bonus += 1
+                elif '+2/+2' in oracle:
+                    power_bonus += 2
+                    toughness_bonus += 2
+
+            # Pattern 3: "White creatures you control get +1/+1" (color-specific)
+            elif 'white creatures you control get +' in oracle:
+                # Simplified: assume most creatures benefit (proper implementation would check colors)
+                if '+1/+1' in oracle:
+                    power_bonus += 1
+                    toughness_bonus += 1
+
+        return (power_bonus, toughness_bonus)
+
+    def get_effective_power(self, creature) -> int:
+        """
+        Get the effective power of a creature including anthem bonuses.
+
+        This includes:
+        - Base power
+        - Equipment buffs (already applied to creature.power)
+        - +1/+1 counters (already applied to creature.power)
+        - Anthem effects (calculated dynamically)
+        """
+        base_power = creature.power or 0
+        power_bonus, _ = self.calculate_anthem_bonus(creature)
+        return base_power + power_bonus
+
+    def get_effective_toughness(self, creature) -> int:
+        """
+        Get the effective toughness of a creature including anthem bonuses.
+
+        This includes:
+        - Base toughness
+        - Equipment buffs (already applied to creature.toughness)
+        - +1/+1 counters (already applied to creature.toughness)
+        - Anthem effects (calculated dynamically)
+        """
+        base_toughness = creature.toughness or 0
+        _, toughness_bonus = self.calculate_anthem_bonus(creature)
+        return base_toughness + toughness_bonus
+
+    def sacrifice_creature(self, creature, source_name: str = "sacrifice outlet", verbose: bool = False):
+        """
+        Sacrifice a creature and trigger death effects.
+
+        Used for sacrifice outlets like:
+        - Goblin Bombardment
+        - Viscera Seer
+        - Priest of Forgotten Gods
+        """
+        if creature not in self.creatures:
+            return False
+
+        # Remove from battlefield
+        self.creatures.remove(creature)
+
+        # Add to graveyard
+        if getattr(creature, 'is_commander', False):
+            self.command_zone.append(creature)
+            if verbose:
+                print(f"Sacrificed {creature.name} to {source_name} → command zone")
+        else:
+            self.graveyard.append(creature)
+            self.reanimation_targets.append(creature)
+            if verbose:
+                print(f"Sacrificed {creature.name} to {source_name}")
+
+        # Track sacrifice count
+        self.creatures_sacrificed += 1
+
+        # Trigger death effects (aristocrats payoffs!)
+        drain = self.trigger_death_effects(creature, verbose=verbose)
+
+        return True
+
+    def create_treasure(self, verbose: bool = False):
+        """Create a treasure token (artifact that taps for any color)."""
+        from simulate_game import Card
+
+        treasure = Card(
+            name="Treasure Token",
+            type="Artifact",
+            mana_cost="",
+            power=None,
+            toughness=None,
+            produces_colors=["Any"],
+            mana_production=1,
+            etb_tapped=False,
+            etb_tapped_conditions={},
+            has_haste=False,
+            token_type="Treasure"
+        )
+
+        self.artifacts.append(treasure)
+
+        if verbose:
+            print(f"  → Created Treasure token")
+
+        return treasure
+
+    def simulate_attack_triggers(self, verbose: bool = False):
+        """
+        PRIORITY 2: Simulate "whenever you attack" triggers for token generation.
+
+        Handles cards like:
+        - Adeline, Resplendent Cathar (create tokens = # of opponents)
+        - Anim Pakal, Thousandth Moon (create X gnome tokens)
+        - Brimaz, King of Oreskos (create 1/1 cat)
+        - Hero of Bladehold (create 2 soldiers)
+        - Generic attack triggers
+        """
+        tokens_created = 0
+
+        if not self.creatures:
+            return 0
+
+        num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+        num_attacking = len(self.creatures)
+
+        for creature in self.creatures[:]:  # Copy to avoid modification during iteration
+            oracle = getattr(creature, 'oracle_text', '').lower()
+            name = getattr(creature, 'name', '').lower()
+
+            # Skip if no attack trigger
+            if 'whenever you attack' not in oracle and 'whenever ~ attacks' not in oracle:
+                continue
+
+            # === Specific Named Cards ===
+
+            # Adeline, Resplendent Cathar - Create tokens = # of opponents
+            if 'adeline' in name:
+                for _ in range(num_alive_opps):
+                    self.create_token("Human Soldier", 1, 1, has_haste=True, verbose=verbose)
+                    tokens_created += 1
+                if verbose and num_alive_opps > 0:
+                    print(f"  → Adeline created {num_alive_opps} Human tokens")
+
+            # Anim Pakal, Thousandth Moon - Create X gnomes
+            elif 'anim pakal' in name:
+                num_gnomes = min(num_attacking, 5)  # Cap at 5
+                for _ in range(num_gnomes):
+                    self.create_token("Gnome Soldier", 1, 1, has_haste=True, verbose=verbose)
+                    tokens_created += 1
+                if verbose and num_gnomes > 0:
+                    print(f"  → Anim Pakal created {num_gnomes} Gnome tokens")
+
+            # Brimaz, King of Oreskos - Create 1/1 Cat token
+            elif 'brimaz' in name:
+                self.create_token("Cat Soldier", 1, 1, has_haste=False, verbose=verbose)
+                tokens_created += 1
+                if verbose:
+                    print(f"  → Brimaz created 1 Cat token")
+
+            # Hero of Bladehold - Create 2 Soldier tokens
+            elif 'hero of bladehold' in name:
+                for _ in range(2):
+                    self.create_token("Soldier", 1, 1, has_haste=False, keywords=['Battle cry'], verbose=verbose)
+                    tokens_created += 1
+                if verbose:
+                    print(f"  → Hero of Bladehold created 2 Soldier tokens")
+
+            # === Generic Token Creation ===
+            # Parse oracle text for generic "create X token" triggers
+            elif 'create' in oracle and 'token' in oracle:
+                # Try to parse how many tokens
+                num_tokens = 1  # Default
+
+                # Look for patterns like "create a", "create one", "create two", etc.
+                if 'create a ' in oracle or 'create one ' in oracle:
+                    num_tokens = 1
+                elif 'create two ' in oracle:
+                    num_tokens = 2
+                elif 'create three ' in oracle:
+                    num_tokens = 3
+
+                # Try to determine token type (generic)
+                token_name = "Creature Token"
+                token_power = 1
+                token_toughness = 1
+
+                # Common patterns: "1/1 white Soldier", "2/2 red Dragon", etc.
+                if '1/1' in oracle:
+                    token_power, token_toughness = 1, 1
+                elif '2/2' in oracle:
+                    token_power, token_toughness = 2, 2
+                elif '3/3' in oracle:
+                    token_power, token_toughness = 3, 3
+
+                # Create the tokens
+                for _ in range(num_tokens):
+                    self.create_token(token_name, token_power, token_toughness, has_haste=False, verbose=verbose)
+                    tokens_created += 1
+
+                if verbose and num_tokens > 0:
+                    print(f"  → {creature.name} created {num_tokens} {token_power}/{token_toughness} token(s)")
+
+        return tokens_created
+
+    def check_for_sacrifice_opportunities(self, verbose: bool = False):
+        """
+        Check if we should sacrifice creatures for value.
+
+        Looks for sacrifice outlets and weak creatures to sac.
+        """
+        # Only sacrifice if we have:
+        # 1. A sacrifice outlet
+        # 2. Weak creatures (tokens, 1/1s)
+        # 3. Death payoffs active
+
+        has_sac_outlet = any(getattr(c, 'sacrifice_outlet', False)
+                            for c in self.creatures + self.artifacts + self.enchantments)
+
+        if not has_sac_outlet:
+            return 0
+
+        # Check for death payoffs
+        death_payoffs = sum(1 for c in self.creatures + self.enchantments + self.artifacts
+                          if getattr(c, 'death_trigger_value', 0) > 0)
+
+        if death_payoffs == 0:
+            return 0
+
+        # Find weak creatures to sacrifice (tokens, low power)
+        sacrificeable = [c for c in self.creatures
+                        if (getattr(c, 'token_type', None) is not None or
+                            (c.power or 0) <= 1)]
+
+        if not sacrificeable:
+            return 0
+
+        # Sacrifice up to 2 weak creatures for value
+        num_to_sac = min(2, len(sacrificeable))
+        sac_count = 0
+
+        for _ in range(num_to_sac):
+            if sacrificeable:
+                victim = sacrificeable.pop(0)
+                self.sacrifice_creature(victim, "strategic sacrifice", verbose=verbose)
+                sac_count += 1
+
+        return sac_count
+
+    def check_end_of_turn_treasures(self, creatures_died_this_turn: int, verbose: bool = False):
+        """
+        PRIORITY 2: Check for end-of-turn treasure generation (Mahadi, Smothering Tithe, etc.)
+
+        Returns number of treasures created.
+        """
+        treasures_created = 0
+
+        if creatures_died_this_turn == 0:
+            return 0
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Mahadi, Emporium Master: "At beginning of end step, if creature died this turn, create treasures"
+            if 'mahadi' in name or ('end' in oracle and 'creature died' in oracle and 'treasure' in oracle):
+                # Create treasures equal to number of creatures that died (capped)
+                num_treasures = min(creatures_died_this_turn, 5)  # Cap at 5
+                for _ in range(num_treasures):
+                    self.create_treasure(verbose=verbose)
+                    treasures_created += 1
+
+                if verbose and num_treasures > 0:
+                    print(f"  → {permanent.name} created {num_treasures} Treasures (end of turn)")
+
+        return treasures_created
 
 
 class Mana_utils:
