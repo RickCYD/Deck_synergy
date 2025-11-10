@@ -20,6 +20,7 @@ _import_error = None
 def _ensure_simulation_imports():
     """Ensure simulation modules are imported"""
     global _simulation_imports_loaded, _import_error, Card, simulate_game, run_simulations, parse_mana_cost
+    global parse_death_triggers_from_oracle, parse_sacrifice_outlet_from_oracle
 
     if _simulation_imports_loaded:
         return True
@@ -31,12 +32,18 @@ def _ensure_simulation_imports():
         from simulate_game import Card as _Card, simulate_game as _simulate_game
         from run_simulation import run_simulations as _run_simulations
         from convert_dataframe_deck import parse_mana_cost as _parse_mana_cost
+        from oracle_text_parser import (
+            parse_death_triggers_from_oracle as _parse_death,
+            parse_sacrifice_outlet_from_oracle as _parse_sac
+        )
 
         # Store in module namespace
         globals()['Card'] = _Card
         globals()['simulate_game'] = _simulate_game
         globals()['run_simulations'] = _run_simulations
         globals()['parse_mana_cost'] = _parse_mana_cost
+        globals()['parse_death_triggers_from_oracle'] = _parse_death
+        globals()['parse_sacrifice_outlet_from_oracle'] = _parse_sac
 
         _simulation_imports_loaded = True
         return True
@@ -164,6 +171,10 @@ def convert_card_to_simulation_format(card_data: Dict):
     # Check for legendary
     is_legendary = 'legendary' in type_line.lower()
 
+    # ARISTOCRATS: Parse death triggers and sacrifice outlets
+    death_trigger_value = parse_death_triggers_from_oracle(oracle_text)
+    sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
+
     # Create Card object
     return Card(
         name=name,
@@ -182,7 +193,9 @@ def convert_card_to_simulation_format(card_data: Dict):
         is_legendary=is_legendary,
         puts_land=puts_land,
         draw_cards=draw_cards,
-        oracle_text=oracle_text
+        oracle_text=oracle_text,
+        death_trigger_value=death_trigger_value,
+        sacrifice_outlet=sacrifice_outlet
     )
 
 
