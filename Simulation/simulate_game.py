@@ -296,6 +296,8 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         board.turn = turn  # Update turn number in board state
         board.turn_play_count = 0  # Reset play count for this turn
         board.turn_casts = []  # Reset cast list for this turn
+        board.lands_played_this_turn = 0  # Reset land plays for this turn
+        board.landfall_triggers_this_turn = 0  # Reset landfall triggers
 
         if verbose:
             print(f"\n=== Turn {turn} ===")
