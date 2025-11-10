@@ -120,6 +120,24 @@ class BoardState:
         self.lands_played_this_turn = 0  # Track lands played this turn
         self.landfall_triggers_this_turn = 0  # Track number of landfall triggers
 
+        # Spellslinger mechanics tracking
+        self.spells_cast_this_turn = 0  # Storm count
+        self.instant_sorcery_cast_this_turn = 0  # For cast triggers
+        self.spell_damage_this_turn = 0  # Damage from cast triggers (Guttersnipe, etc.)
+        self.prowess_bonus = {}  # Track prowess creatures: {creature: bonus}
+
+        # Reanimator mechanics tracking
+        self.creatures_reanimated = 0  # Total creatures brought back from graveyard
+        self.creatures_reanimated_this_turn = 0  # For per-turn tracking
+        self.cards_discarded_for_value = 0  # Discard outlets like Faithless Looting
+
+        # Counter manipulation mechanics tracking
+        self.proliferate_count = 0  # Total proliferate triggers
+        self.proliferate_this_turn = 0  # Proliferate triggers this turn
+        self.ozolith_counters = {}  # Stored counters from dead creatures (The Ozolith)
+        self.counters_moved_to_ozolith = 0  # Total counters moved to Ozolith
+        self.total_counters_on_creatures = 0  # Total +1/+1 counters on all creatures
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
         for kw in getattr(creature, "keywords_when_equipped", []):
@@ -421,9 +439,65 @@ class BoardState:
         for permanent in battlefield:
             self._execute_triggers("landfall", permanent, verbose)
 
-    def proliferate(self, verbose: bool = False) -> None:
-        """Give each permanent with counters another of each kind."""
+    def add_counters_with_doubling(self, permanent, counter_type: str, amount: int = 1, verbose: bool = False) -> int:
+        """
+        Add counters to a permanent, checking for counter doublers.
 
+        This handles counter doublers like:
+        - Hardened Scales: If you would put +1/+1 counters, put that many plus one
+        - Branching Evolution: If you would put counters, put twice that many
+        - Doubling Season: If you would put counters, put twice that many
+
+        Returns the actual number of counters added.
+        """
+        if amount <= 0:
+            return 0
+
+        actual_amount = amount
+
+        # Check for counter doublers on the battlefield
+        for doubler in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(doubler, 'oracle_text', '').lower()
+            doubler_name = getattr(doubler, 'name', '').lower()
+
+            # Hardened Scales: +1/+1 counters get +1
+            if 'hardened scales' in doubler_name or (
+                'if you would put one or more +1/+1 counter' in oracle and 'put that many plus one' in oracle
+            ):
+                if counter_type == "+1/+1":
+                    actual_amount += 1
+                    if verbose:
+                        print(f"  → {doubler.name}: +1/+1 counters increased by 1")
+
+            # Branching Evolution / Doubling Season: Double all counters
+            elif 'branching evolution' in doubler_name or 'doubling season' in doubler_name or (
+                'if you would put one or more counter' in oracle and 'twice that many' in oracle
+            ):
+                actual_amount *= 2
+                if verbose:
+                    print(f"  → {doubler.name}: Counters doubled!")
+
+            # Vorinclex, Monstrous Raider: Double counters you put
+            elif 'vorinclex' in doubler_name and 'monstrous raider' in doubler_name:
+                actual_amount *= 2
+                if verbose:
+                    print(f"  → {doubler.name}: Counters doubled!")
+
+        # Actually add the counters
+        if hasattr(permanent, 'add_counter'):
+            permanent.add_counter(counter_type, actual_amount)
+        elif hasattr(permanent, 'counters'):
+            # Fallback for cards without add_counter method
+            permanent.counters[counter_type] = permanent.counters.get(counter_type, 0) + actual_amount
+
+        return actual_amount
+
+    def proliferate(self, verbose: bool = False) -> int:
+        """
+        Give each permanent with counters another of each kind.
+
+        Returns the total number of counters added.
+        """
         battlefield = (
             self.lands_untapped
             + self.lands_tapped
@@ -433,13 +507,26 @@ class BoardState:
             + self.planeswalkers
         )
 
+        total_counters_added = 0
+
         for permanent in battlefield:
             counters = getattr(permanent, "counters", {})
             for ctype, amount in list(counters.items()):
                 if amount > 0:
-                    permanent.add_counter(ctype)
+                    # Use the doubling-aware method
+                    added = self.add_counters_with_doubling(permanent, ctype, 1, verbose=False)
+                    total_counters_added += added
                     if verbose:
-                        print(f"{permanent.name} proliferates a {ctype} counter")
+                        print(f"  → {permanent.name} proliferates {added} {ctype} counter(s)")
+
+        # Track proliferate count
+        self.proliferate_count += 1
+        self.proliferate_this_turn += 1
+
+        if verbose and total_counters_added > 0:
+            print(f"✨ Proliferate added {total_counters_added} total counters!")
+
+        return total_counters_added
 
     def attack(self, creature, verbose=False):
         """Declare *creature* as an attacker and handle attack triggers."""
@@ -905,6 +992,9 @@ class BoardState:
         if card in self.hand:
             self.hand.remove(card)
         self.graveyard.append(card)
+
+        # SPELLSLINGER: Trigger cast effects (Guttersnipe, Young Pyromancer, etc.)
+        self.trigger_cast_effects(card, verbose=verbose)
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
         if getattr(card, "puts_land", False):
@@ -958,6 +1048,58 @@ class BoardState:
                     if verbose:
                         print(f"Tutored {chosen.name} to hand")
 
+        # REANIMATOR: Handle reanimation spells
+        card_name = getattr(card, 'name', '').lower()
+        if oracle:
+            # Reanimate / Animate Dead / Necromancy / Exhume
+            if ('return' in oracle and 'creature' in oracle and 'graveyard' in oracle and 'battlefield' in oracle) or \
+               'animate dead' in card_name or 'reanimate' in card_name or 'necromancy' in card_name or 'exhume' in card_name:
+                if verbose:
+                    print(f"  → {card.name} is a reanimation spell!")
+                self.reanimate_creature(verbose=verbose)
+
+            # Living Death (mass reanimation)
+            elif 'living death' in card_name or ('each player' in oracle and 'exile all' in oracle and 'graveyard' in oracle):
+                creatures_in_yard = [c for c in self.graveyard if 'creature' in getattr(c, 'type', '').lower()]
+                reanimated_count = 0
+                for _ in range(min(3, len(creatures_in_yard))):  # Reanimate up to 3
+                    if self.reanimate_creature(verbose=verbose):
+                        reanimated_count += 1
+                if verbose:
+                    print(f"  → Living Death: Reanimated {reanimated_count} creatures!")
+
+            # Entomb / Buried Alive (tutor to graveyard)
+            elif 'entomb' in card_name or ('search your library' in oracle and 'put' in oracle and 'graveyard' in oracle):
+                if 'three' in oracle or 'buried alive' in card_name:
+                    # Buried Alive: Tutor 3 creatures
+                    for _ in range(3):
+                        self.tutor_to_graveyard(verbose=verbose)
+                else:
+                    # Entomb: Tutor 1 card
+                    self.tutor_to_graveyard(verbose=verbose)
+
+            # Faithless Looting / Cathartic Reunion (discard for value)
+            elif ('draw' in oracle and 'discard' in oracle) or 'faithless looting' in card_name or 'cathartic reunion' in card_name:
+                import re
+                draw_match = re.search(r'draw (\w+) card', oracle)
+                discard_match = re.search(r'discard (\w+) card', oracle)
+
+                num_draw = 0
+                num_discard = 0
+
+                if draw_match:
+                    draw_word = draw_match.group(1)
+                    num_map = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'a': 1, 'an': 1}
+                    num_draw = num_map.get(draw_word.lower(), int(draw_word) if draw_word.isdigit() else 0)
+
+                if discard_match:
+                    discard_word = discard_match.group(1)
+                    num_map = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'a': 1, 'an': 1}
+                    num_discard = num_map.get(discard_word.lower(), int(discard_word) if discard_word.isdigit() else 0)
+
+                if num_draw > 0 or num_discard > 0:
+                    self.discard_for_value(num_cards=num_discard, draw_cards=num_draw, verbose=verbose)
+
         for spec in getattr(card, "creates_tokens", []):
             count = spec.get("number", 0)
             if isinstance(count, str) and count.lower() == "x":
@@ -988,6 +1130,10 @@ class BoardState:
         if card in self.hand:
             self.hand.remove(card)
         self.graveyard.append(card)
+
+        # SPELLSLINGER: Trigger cast effects (Guttersnipe, Young Pyromancer, etc.)
+        self.trigger_cast_effects(card, verbose=verbose)
+
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
         if verbose:
@@ -1446,6 +1592,147 @@ class BoardState:
 
         return False
 
+    def reanimate_creature(self, target_creature=None, verbose: bool = False):
+        """
+        Reanimate a creature from the graveyard to the battlefield.
+
+        This handles reanimation spells like:
+        - Animate Dead
+        - Reanimate
+        - Necromancy
+        - Living Death (mass reanimation)
+
+        Args:
+            target_creature: Specific creature to reanimate, or None to choose best
+            verbose: Print output
+        """
+        # Get creatures in graveyard
+        creatures_in_yard = [c for c in self.graveyard if 'creature' in getattr(c, 'type', '').lower()]
+
+        if not creatures_in_yard:
+            if verbose:
+                print("  → No creatures in graveyard to reanimate")
+            return False
+
+        # Choose target (best creature by power if not specified)
+        if target_creature is None:
+            target = max(creatures_in_yard, key=lambda c: (c.power or 0) + (c.toughness or 0))
+        else:
+            target = target_creature
+
+        # Move from graveyard to battlefield
+        if target in self.graveyard:
+            self.graveyard.remove(target)
+        self.creatures.append(target)
+        target.tapped = False
+
+        # Track metrics
+        self.creatures_reanimated += 1
+        self.creatures_reanimated_this_turn += 1
+
+        # Update reanimation targets list
+        if target in self.reanimation_targets:
+            self.reanimation_targets.remove(target)
+
+        if verbose:
+            print(f"♻️  Reanimated {target.name} ({target.power}/{target.toughness}) from graveyard!")
+
+        # Trigger ETB effects
+        self._execute_triggers("etb", target, verbose)
+
+        return True
+
+    def tutor_to_graveyard(self, card_name: str = None, verbose: bool = False):
+        """
+        Tutor a card from library to graveyard.
+
+        This handles graveyard tutors like:
+        - Entomb
+        - Buried Alive (gets 3 creatures)
+        """
+        if not self.library:
+            return False
+
+        # If specific card requested, find it
+        if card_name:
+            target = None
+            for card in self.library:
+                if card_name.lower() in getattr(card, 'name', '').lower():
+                    target = card
+                    break
+        else:
+            # Choose best creature to tutor
+            creatures_in_library = [c for c in self.library if 'creature' in getattr(c, 'type', '').lower()]
+            if creatures_in_library:
+                target = max(creatures_in_library, key=lambda c: (c.power or 0) + (c.toughness or 0))
+            else:
+                target = None
+
+        if target and target in self.library:
+            self.library.remove(target)
+            self.graveyard.append(target)
+
+            # Add to reanimation targets
+            if 'creature' in getattr(target, 'type', '').lower():
+                if target not in self.reanimation_targets:
+                    self.reanimation_targets.append(target)
+
+            if verbose:
+                print(f"  → Tutored {target.name} to graveyard")
+            return True
+
+        return False
+
+    def discard_for_value(self, num_cards: int = 1, draw_cards: int = 0, verbose: bool = False):
+        """
+        Discard cards for value (like Faithless Looting).
+
+        Args:
+            num_cards: Number of cards to discard
+            draw_cards: Number of cards to draw first
+            verbose: Print output
+        """
+        # Draw first (Faithless Looting: draw 2, discard 2)
+        if draw_cards > 0:
+            self.draw_card(draw_cards, verbose=verbose)
+
+        # Discard cards (prioritize lands and low-value spells, keep creatures)
+        cards_discarded = 0
+        for _ in range(min(num_cards, len(self.hand))):
+            # Strategy: Discard lands first, then non-creatures
+            discard_target = None
+
+            # First priority: Extra lands
+            lands_in_hand = [c for c in self.hand if 'land' in getattr(c, 'type', '').lower()]
+            if len(lands_in_hand) > 3:  # Keep 3 lands, discard rest
+                discard_target = lands_in_hand[0]
+
+            # Second priority: Non-creature spells we can't cast
+            if not discard_target:
+                non_creatures = [c for c in self.hand if 'creature' not in getattr(c, 'type', '').lower() and 'land' not in getattr(c, 'type', '').lower()]
+                if non_creatures:
+                    discard_target = non_creatures[0]
+
+            # Last resort: Discard anything
+            if not discard_target and self.hand:
+                discard_target = self.hand[0]
+
+            if discard_target:
+                self.hand.remove(discard_target)
+                self.graveyard.append(discard_target)
+                cards_discarded += 1
+
+                # Track creatures for reanimation
+                if 'creature' in getattr(discard_target, 'type', '').lower():
+                    if discard_target not in self.reanimation_targets:
+                        self.reanimation_targets.append(discard_target)
+
+                if verbose:
+                    print(f"  → Discarded {discard_target.name}")
+
+        self.cards_discarded_for_value += cards_discarded
+        return cards_discarded
+
     def activate_planeswalker(self, planeswalker, verbose: bool = False):
         """Activate a planeswalker ability."""
         import random
@@ -1820,9 +2107,9 @@ class BoardState:
             # Cathars' Crusade: "Whenever a creature enters, put a +1/+1 counter on each creature you control"
             if 'whenever a creature enters' in oracle or 'whenever a creature you control enters' in oracle:
                 if '+1/+1 counter' in oracle:
-                    # Put a counter on each creature
+                    # Put a counter on each creature (with doubling!)
                     for creature in self.creatures:
-                        creature.add_counter("+1/+1", 1)
+                        self.add_counters_with_doubling(creature, "+1/+1", 1, verbose=False)
                         counters_applied = True
 
                     if verbose:
@@ -1839,11 +2126,15 @@ class BoardState:
         - Cruel Celebrant
         - Bastion of Remembrance
         - Mirkwood Bats
+        - The Ozolith (counter preservation)
         """
         drain_total = 0
 
         # PRIORITY 2: Track creature deaths for Mahadi
         self.creatures_died_this_turn += 1
+
+        # COUNTER MANIPULATION: The Ozolith - preserve counters
+        self.handle_ozolith_on_death(creature, verbose=verbose)
 
         # Count all permanents with death triggers
         for permanent in self.creatures + self.enchantments + self.artifacts:
@@ -1902,6 +2193,302 @@ class BoardState:
                         drain += 1 * num_alive_opps
 
         return drain
+
+    def handle_ozolith_on_death(self, creature, verbose: bool = False):
+        """
+        Handle The Ozolith when a creature dies.
+
+        The Ozolith: "Whenever a creature you control leaves the battlefield,
+        if it had counters on it, put those counters on The Ozolith."
+
+        When creature dies, move its counters to self.ozolith_counters storage.
+        """
+        # Check if The Ozolith is on battlefield
+        has_ozolith = False
+        ozolith_card = None
+
+        for artifact in self.artifacts:
+            name = getattr(artifact, 'name', '').lower()
+            oracle = getattr(artifact, 'oracle_text', '').lower()
+
+            if 'ozolith' in name or 'the ozolith' in name:
+                has_ozolith = True
+                ozolith_card = artifact
+                break
+
+        if not has_ozolith:
+            return
+
+        # Get counters from dying creature
+        creature_counters = getattr(creature, 'counters', {})
+
+        if not creature_counters or sum(creature_counters.values()) == 0:
+            return
+
+        # Move counters to Ozolith storage
+        for counter_type, amount in creature_counters.items():
+            if amount > 0:
+                self.ozolith_counters[counter_type] = self.ozolith_counters.get(counter_type, 0) + amount
+                self.counters_moved_to_ozolith += amount
+
+                if verbose:
+                    print(f"  → The Ozolith: Stored {amount} {counter_type} counter(s) from {creature.name}")
+
+    def move_ozolith_counters_to_creature(self, target_creature, verbose: bool = False):
+        """
+        Move counters from The Ozolith storage to a creature.
+
+        At the beginning of combat, can move all Ozolith counters to target creature.
+        """
+        if not self.ozolith_counters:
+            return False
+
+        # Check if The Ozolith is still on battlefield
+        has_ozolith = any(
+            'ozolith' in getattr(artifact, 'name', '').lower()
+            for artifact in self.artifacts
+        )
+
+        if not has_ozolith:
+            return False
+
+        # Move all counters to target
+        for counter_type, amount in self.ozolith_counters.items():
+            if amount > 0:
+                # Use counter doubling if applicable
+                actual_added = self.add_counters_with_doubling(
+                    target_creature, counter_type, amount, verbose=verbose
+                )
+
+                if verbose:
+                    print(f"  → The Ozolith: Moved {actual_added} {counter_type} counter(s) to {target_creature.name}")
+
+        # Clear Ozolith storage
+        self.ozolith_counters = {}
+        return True
+
+    def check_for_proliferate_triggers(self, verbose: bool = False):
+        """
+        Check for permanents that trigger proliferate.
+
+        Common proliferate triggers:
+        - Atraxa, Praetors' Voice: End step proliferate
+        - Karn's Bastion: Activated ability
+        - Evolution Sage: Landfall proliferate
+        - Contagion Engine: Activated ability
+        """
+        should_proliferate = False
+
+        for permanent in self.creatures + self.artifacts + self.enchantments + self.planeswalkers:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Atraxa: End step proliferate
+            if 'atraxa' in name and 'end step' in oracle and 'proliferate' in oracle:
+                should_proliferate = True
+                if verbose:
+                    print(f"  → {permanent.name} triggers proliferate!")
+                break
+
+            # Evolution Sage: Landfall proliferate
+            if 'evolution sage' in name or ('landfall' in oracle and 'proliferate' in oracle):
+                if self.lands_played_this_turn > 0:
+                    should_proliferate = True
+                    if verbose:
+                        print(f"  → {permanent.name} triggers proliferate from landfall!")
+                    break
+
+            # Generic "whenever you..." proliferate triggers
+            if 'proliferate' in oracle and ('whenever' in oracle or 'when' in oracle):
+                # Simplified: Assume it triggers sometimes
+                import random
+                if random.random() < 0.3:  # 30% chance per turn
+                    should_proliferate = True
+                    if verbose:
+                        print(f"  → {permanent.name} triggers proliferate!")
+                    break
+
+        if should_proliferate:
+            self.proliferate(verbose=verbose)
+
+        return should_proliferate
+
+    def trigger_cast_effects(self, card, verbose: bool = False):
+        """
+        Trigger all cast-based effects when an instant or sorcery is cast.
+
+        This handles spellslinger payoffs like:
+        - Storm (Aetherflux Reservoir, Grapeshot)
+        - Cast triggers (Guttersnipe, Young Pyromancer, Talrand)
+        - Prowess/Magecraft (temporary power buffs)
+        - Spell copy effects (Thousand-Year Storm)
+        """
+        card_type = getattr(card, 'type', '').lower()
+
+        # Only trigger for instants and sorceries
+        if 'instant' not in card_type and 'sorcery' not in card_type:
+            return
+
+        # Increment spell counters
+        self.spells_cast_this_turn += 1
+        self.instant_sorcery_cast_this_turn += 1
+
+        spell_damage = 0
+        tokens_created = 0
+        cards_drawn = 0
+
+        num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+
+        # Check all permanents for cast triggers
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Guttersnipe: Deal 2 damage to each opponent when you cast instant/sorcery
+            if 'guttersnipe' in name or (
+                'instant or sorcery' in oracle and 'deals 2 damage' in oracle and 'each opponent' in oracle
+            ):
+                damage = 2 * num_alive_opps
+                spell_damage += damage
+                if verbose:
+                    print(f"  → {permanent.name} deals {damage} damage (2 × {num_alive_opps} opponents)")
+
+            # Young Pyromancer: Create 1/1 Elemental when you cast instant/sorcery
+            if 'young pyromancer' in name or (
+                'instant or sorcery' in oracle and 'create a 1/1' in oracle and 'elemental' in oracle
+            ):
+                self.create_token(
+                    token_name="Elemental Token",
+                    power=1,
+                    toughness=1,
+                    token_type="Elemental",
+                    verbose=verbose
+                )
+                tokens_created += 1
+                if verbose:
+                    print(f"  → {permanent.name} creates 1/1 Elemental token")
+
+            # Talrand, Sky Summoner: Create 2/2 Drake when you cast instant/sorcery
+            if 'talrand' in name or (
+                'instant or sorcery' in oracle and 'create a 2/2' in oracle and 'drake' in oracle
+            ):
+                self.create_token(
+                    token_name="Drake Token",
+                    power=2,
+                    toughness=2,
+                    token_type="Drake",
+                    keywords=['Flying'],
+                    verbose=verbose
+                )
+                tokens_created += 1
+                if verbose:
+                    print(f"  → {permanent.name} creates 2/2 Drake token with flying")
+
+            # Aetherflux Reservoir: Gain life equal to storm count
+            if 'aetherflux reservoir' in name or (
+                'cast a spell' in oracle and 'gain 1 life' in oracle and 'you\'ve cast' in oracle
+            ):
+                life_gained = self.spells_cast_this_turn
+                self.life_total += life_gained
+                if verbose:
+                    print(f"  → {permanent.name} gains {life_gained} life (storm count: {self.spells_cast_this_turn})")
+
+                # Check if we can activate the 50 damage ability
+                if self.life_total >= 51:
+                    # Deal 50 damage to target opponent
+                    alive_opps = [o for o in self.opponents if o['is_alive']]
+                    if alive_opps:
+                        target = alive_opps[0]
+                        target['life_total'] -= 50
+                        spell_damage += 50
+                        if verbose:
+                            print(f"  → {permanent.name} ACTIVATED: Deal 50 damage to {target['name']}!")
+
+                        # Check if they died
+                        if target['life_total'] <= 0:
+                            target['is_alive'] = False
+                            if verbose:
+                                print(f"  → {target['name']} eliminated by Aetherflux Reservoir!")
+
+            # Archmage Emeritus: Draw a card when you cast/copy instant/sorcery
+            if 'archmage emeritus' in name or (
+                'instant or sorcery' in oracle and 'draw a card' in oracle and 'cast' in oracle
+            ):
+                self.draw_card(1, verbose=verbose)
+                cards_drawn += 1
+                if verbose:
+                    print(f"  → {permanent.name} draws a card")
+
+            # Storm-Kiln Artist: Create treasure when you cast/copy instant/sorcery
+            if 'storm-kiln artist' in name or (
+                'instant or sorcery' in oracle and 'create a treasure' in oracle and 'cast' in oracle
+            ):
+                self.create_treasure(verbose=verbose)
+                if verbose:
+                    print(f"  → {permanent.name} creates a Treasure token")
+
+            # Primal Amulet / Primal Wellspring: Add charge counter, flip if 4+
+            if 'primal amulet' in name:
+                # Simplified: Just note we're getting cost reduction
+                if verbose:
+                    print(f"  → {permanent.name} adds charge counter")
+
+        # Apply prowess/magecraft to all creatures
+        self.apply_prowess_bonus()
+
+        # Apply spell damage to opponents
+        if spell_damage > 0:
+            self.spell_damage_this_turn += spell_damage
+
+            # Distribute damage to alive opponents
+            alive_opps = [o for o in self.opponents if o['is_alive']]
+            if alive_opps:
+                damage_per_opp = spell_damage // len(alive_opps)
+                for opp in alive_opps:
+                    opp['life_total'] -= damage_per_opp
+
+                    # Check if they died
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                        if verbose:
+                            print(f"  → {opp['name']} eliminated by spell damage!")
+
+        return {
+            'damage': spell_damage,
+            'tokens': tokens_created,
+            'cards_drawn': cards_drawn
+        }
+
+    def apply_prowess_bonus(self):
+        """
+        Apply prowess/magecraft bonuses to all creatures with those abilities.
+
+        Prowess: +1/+1 until end of turn when you cast a noncreature spell
+        Magecraft: Various effects when you cast/copy instant/sorcery
+        """
+        for creature in self.creatures:
+            oracle = getattr(creature, 'oracle_text', '').lower()
+            name = getattr(creature, 'name', '').lower()
+
+            # Prowess: +1/+1 until end of turn
+            if 'prowess' in oracle or 'prowess' in name:
+                if creature not in self.prowess_bonus:
+                    self.prowess_bonus[creature] = 0
+                self.prowess_bonus[creature] += 1
+
+            # Magecraft: Whenever you cast/copy instant/sorcery, +1/+1 until end of turn
+            if 'magecraft' in oracle and ('+1/+1' in oracle or 'gets +' in oracle):
+                if creature not in self.prowess_bonus:
+                    self.prowess_bonus[creature] = 0
+                self.prowess_bonus[creature] += 1
+
+    def get_prowess_power_bonus(self, creature) -> int:
+        """Get the current prowess power bonus for a creature."""
+        return self.prowess_bonus.get(creature, 0)
+
+    def reset_prowess_bonuses(self):
+        """Reset prowess bonuses at end of turn."""
+        self.prowess_bonus = {}
 
     def calculate_anthem_bonus(self, creature) -> tuple[int, int]:
         """
@@ -1971,10 +2558,12 @@ class BoardState:
         - Equipment buffs (already applied to creature.power)
         - +1/+1 counters (already applied to creature.power)
         - Anthem effects (calculated dynamically)
+        - Prowess/Magecraft bonuses (until end of turn)
         """
         base_power = creature.power or 0
         power_bonus, _ = self.calculate_anthem_bonus(creature)
-        return base_power + power_bonus
+        prowess_bonus = self.get_prowess_power_bonus(creature)
+        return base_power + power_bonus + prowess_bonus
 
     def get_effective_toughness(self, creature) -> int:
         """
@@ -2378,9 +2967,9 @@ class BoardState:
         elementals = [c for c in self.creatures if 'elemental' in getattr(c, 'type', '').lower()]
 
         if elementals:
-            # Buff the strongest elemental
+            # Buff the strongest elemental (with counter doubling!)
             target = max(elementals, key=lambda c: c.power or 0)
-            target.add_counter("+1/+1", 1)
+            self.add_counters_with_doubling(target, "+1/+1", 1, verbose=False)
 
             if verbose:
                 print(f"  → Omnath, Locus of the Roil: Added +1/+1 counter to {target.name}")
@@ -2405,7 +2994,7 @@ class BoardState:
 
         if plants:
             for plant in plants:
-                plant.add_counter("+1/+1", 1)
+                self.add_counters_with_doubling(plant, "+1/+1", 1, verbose=False)
 
             if verbose:
                 print(f"  → Avenger of Zendikar: Added +1/+1 counters to {len(plants)} Plant tokens!")
@@ -2446,12 +3035,11 @@ class BoardState:
         - "Landfall — Put a +1/+1 counter on Scythe Leopard"
         - "Landfall — Put a +1/+1 counter on target creature"
         """
-        # Put a +1/+1 counter on the source permanent
-        if hasattr(permanent, 'add_counter'):
-            permanent.add_counter("+1/+1", 1)
+        # Put a +1/+1 counter on the source permanent (with doubling!)
+        self.add_counters_with_doubling(permanent, "+1/+1", 1, verbose=False)
 
-            if verbose:
-                print(f"  → {permanent.name}: Added +1/+1 counter (landfall)")
+        if verbose:
+            print(f"  → {permanent.name}: Added +1/+1 counter (landfall)")
 
     def handle_generic_landfall_life_gain(self, oracle_text: str, verbose: bool = False):
         """
