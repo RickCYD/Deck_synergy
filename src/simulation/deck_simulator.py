@@ -299,14 +299,15 @@ def simulate_deck_effectiveness(
 
     # Run simulations
     try:
-        summary_df, commander_cast_dist, avg_creature_power, interaction_summary = run_simulations(
+        summary_df, commander_cast_dist, avg_creature_power, interaction_summary, statistical_report = run_simulations(
             cards=sim_cards,
             commander_card=sim_commander,
             num_games=num_games,
             max_turns=max_turns,
             verbose=verbose,
             log_dir=None,  # Don't save logs
-            num_workers=1  # Single worker for compatibility
+            num_workers=1,  # Single worker for compatibility
+            calculate_statistics=True  # Enable statistical analysis
         )
 
         # Extract key metrics
@@ -335,6 +336,13 @@ def simulate_deck_effectiveness(
             total_count = commander_cast_dist.sum()
             if total_count > 0:
                 commander_avg_turn = weighted_sum / total_count
+
+        # Print statistical report if available
+        if statistical_report and statistical_report.get("formatted_report"):
+            print("\n" + "=" * 80)
+            print("STATISTICAL VALIDITY ANALYSIS")
+            print("=" * 80)
+            print(statistical_report["formatted_report"])
 
         return {
             'total_damage': total_damage,
@@ -365,7 +373,8 @@ def simulate_deck_effectiveness(
             'summary_df': summary_df,
             'commander_cast_distribution': commander_cast_dist,
             'creature_power': avg_creature_power,
-            'interaction_summary': interaction_summary
+            'interaction_summary': interaction_summary,
+            'statistical_report': statistical_report  # NEW: Include statistical analysis
         }
 
     except Exception as e:

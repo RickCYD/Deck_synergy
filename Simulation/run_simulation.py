@@ -4,11 +4,16 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 import contextlib
 import random
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Tuple, Dict
 
 import pandas as pd
 
 from simulate_game import Card, simulate_game
+from statistical_analysis import (
+    analyze_metric_distribution,
+    summarize_simulation_validity,
+    format_statistical_report,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -26,8 +31,25 @@ def _simulate_single_game(args: Tuple[List[Card], Card, int, bool, Path | None, 
     return simulate_game(cards, commander_card, max_turns, verbose=verbose)
 
 
-def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
-    """Aggregate per game metrics into summary statistics."""
+def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, calculate_statistics: bool = True):
+    """Aggregate per game metrics into summary statistics.
+
+    Parameters
+    ----------
+    results
+        Iterable of per-game metric dictionaries
+    num_games
+        Number of games simulated
+    max_turns
+        Maximum turns per game
+    calculate_statistics
+        If True, calculate statistical validity metrics (CV, CI, etc.)
+
+    Returns
+    -------
+    tuple
+        (summary_df, commander_distribution, avg_creature_power, interaction_summary, statistical_report)
+    """
     total_cards_played = [0] * (max_turns + 1)
     total_lands_played = [0] * (max_turns + 1)
     total_mana = [0] * (max_turns + 1)
@@ -64,6 +86,15 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
 
     commander_cast_turns: List[int | None] = []
     total_creature_power: dict[str, float] = {}
+
+    # Track per-game cumulative values for statistical analysis
+    per_game_total_damage: List[float] = []
+    per_game_total_mana: List[float] = []
+    per_game_cards_played: List[float] = []
+    per_game_total_power: List[float] = []
+    per_game_drain_damage: List[float] = []
+    per_game_tokens_created: List[float] = []
+    per_game_cards_drawn: List[float] = []
 
     for metrics in results:
         for turn in range(1, max_turns + 1):
@@ -107,6 +138,23 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
         for name, p in metrics.get("creature_power", {}).items():
             total_creature_power[name] = total_creature_power.get(name, 0) + p
         commander_cast_turns.append(metrics.get("commander_cast_turn"))
+
+        # Calculate cumulative per-game values for statistics
+        game_total_damage = sum(metrics["combat_damage"][1:max_turns+1])
+        game_drain_damage = sum(metrics.get("drain_damage", [0] * (max_turns + 1))[1:max_turns+1])
+        game_total_mana = sum(metrics["total_mana"][1:max_turns+1])
+        game_cards_played = sum(metrics["cards_played"][1:max_turns+1])
+        game_total_power = max(metrics.get("total_power", [0])[1:max_turns+1]) if metrics.get("total_power") else 0
+        game_tokens_created = sum(metrics.get("tokens_created", [0] * (max_turns + 1))[1:max_turns+1])
+        game_cards_drawn = sum(metrics.get("cards_drawn", [0] * (max_turns + 1))[1:max_turns+1])
+
+        per_game_total_damage.append(game_total_damage + game_drain_damage)
+        per_game_total_mana.append(game_total_mana)
+        per_game_cards_played.append(game_cards_played)
+        per_game_total_power.append(game_total_power)
+        per_game_drain_damage.append(game_drain_damage)
+        per_game_tokens_created.append(game_tokens_created)
+        per_game_cards_drawn.append(game_cards_drawn)
 
     avg_lands = [round(total_lands_played[t] / num_games, 2) for t in range(max_turns + 1)]
     avg_mana = [round(total_mana[t] / num_games, 2) for t in range(max_turns + 1)]
@@ -205,7 +253,26 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
     turns = range(1, max_turns + 2)
     distribution = commander_cast_series.value_counts().reindex(turns, fill_value=0).sort_index()
 
-    return summary_df, distribution, avg_creature_power, interaction_summary
+    # Calculate statistical validity analysis
+    statistical_report = None
+    if calculate_statistics and num_games >= 10:
+        key_metrics = {
+            "Total Damage (Combat + Drain)": per_game_total_damage,
+            "Total Mana Generated": per_game_total_mana,
+            "Cards Played": per_game_cards_played,
+            "Peak Board Power": per_game_total_power,
+            "Drain Damage": per_game_drain_damage,
+            "Tokens Created": per_game_tokens_created,
+            "Cards Drawn": per_game_cards_drawn,
+        }
+
+        validity_summary = summarize_simulation_validity(key_metrics, num_games)
+        statistical_report = {
+            "summary": validity_summary,
+            "formatted_report": format_statistical_report(validity_summary)
+        }
+
+    return summary_df, distribution, avg_creature_power, interaction_summary, statistical_report
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +287,7 @@ def run_simulations(
     verbose: bool = True,
     log_dir: str | Path | None = "logs",
     num_workers: int = 1,
+    calculate_statistics: bool = True,
 ):
     """Run multiple game simulations and aggregate the results.
 
@@ -242,6 +310,14 @@ def run_simulations(
     num_workers
         When greater than ``1`` the simulations are executed in parallel using
         a :class:`~concurrent.futures.ProcessPoolExecutor`.
+    calculate_statistics
+        If ``True``, calculate statistical validity metrics (CV, confidence intervals, etc.).
+        Adds a statistical report as the 5th return value.
+
+    Returns
+    -------
+    tuple
+        (summary_df, commander_distribution, avg_creature_power, interaction_summary, statistical_report)
     """
     if log_dir is not None:
         log_dir = Path(log_dir)
@@ -255,4 +331,4 @@ def run_simulations(
     else:
         results = [_simulate_single_game(a) for a in args]
 
-    return _aggregate_results(results, num_games, max_turns)
+    return _aggregate_results(results, num_games, max_turns, calculate_statistics)
