@@ -2141,6 +2141,15 @@ class BoardState:
             death_value = getattr(permanent, 'death_trigger_value', 0)
             oracle = getattr(permanent, 'oracle_text', '').lower()
 
+            # DEBUG: Always print if death_value > 0 to see what's happening
+            if death_value > 0:
+                has_opponent = 'opponent' in oracle
+                has_loses = 'loses' in oracle
+                if verbose or not (has_opponent and has_loses):
+                    print(f"  [DEBUG] {permanent.name}: death_value={death_value}, has_opponent={has_opponent}, has_loses={has_loses}")
+                    if not has_opponent or not has_loses:
+                        print(f"    oracle_text: {oracle[:150]}")
+
             # Zulaport Cutthroat / Cruel Celebrant type effects
             if death_value > 0 and 'opponent' in oracle and 'loses' in oracle:
                 # Each opponent loses X life
