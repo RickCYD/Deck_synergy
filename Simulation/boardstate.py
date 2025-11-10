@@ -2105,7 +2105,17 @@ class BoardState:
             perm_name = getattr(permanent, 'name', '')
 
             # Mondrak, Glory Dominus / Doubling Season / Parallel Lives / Anointed Procession
-            if 'if you would create' in oracle and 'token' in oracle:
+            # Check for token doubling effects with various phrasings
+            is_token_doubler = False
+            if 'token' in oracle:
+                # Pattern 1: "if you would create" (Doubling Season, Parallel Lives)
+                if 'if you would create' in oracle:
+                    is_token_doubler = True
+                # Pattern 2: "tokens would be created" (Mondrak, Anointed Procession)
+                elif 'tokens would be created' in oracle or 'token would be created' in oracle:
+                    is_token_doubler = True
+
+            if is_token_doubler:
                 if 'twice that many' in oracle or 'double' in oracle:
                     num_to_create *= 2
                     token_doubler_names.append(perm_name)
@@ -2916,6 +2926,177 @@ class BoardState:
                     print(f"  → {permanent.name} created {num_treasures} Treasures (end of turn)")
 
         return treasures_created
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # UPKEEP TRIGGER SYSTEM (Priority 1 Implementation)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def process_upkeep_triggers(self, verbose: bool = False):
+        """
+        Process all "at the beginning of your upkeep" triggers.
+
+        This handles cards like:
+        - Rite of the Raging Storm (create 5/1 Elemental with haste)
+        - Monarch (draw extra card at end of turn, tracked here)
+        - Various enchantments and artifacts with upkeep triggers
+        - Generic upkeep token creation, card draw, damage, etc.
+
+        Returns number of tokens created during upkeep.
+        """
+        tokens_created = 0
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Skip if no upkeep trigger
+            if 'beginning of' not in oracle or 'upkeep' not in oracle:
+                continue
+
+            # === Rite of the Raging Storm ===
+            # "At the beginning of your upkeep, create a 5/1 red Elemental creature token with haste"
+            if 'rite of the raging storm' in name:
+                token = self.create_token("Elemental", 5, 1, has_haste=True, verbose=verbose)
+                tokens_created += 1
+                if verbose:
+                    print(f"  → {permanent.name} created 5/1 Elemental token (upkeep)")
+
+            # === Generic Upkeep Token Creation ===
+            # Parse oracle text for patterns like "create a X/X token" or "create X tokens"
+            elif 'create' in oracle and 'token' in oracle:
+                # Try to parse token stats
+                import re
+
+                # Pattern: "create a 1/1" or "create one 1/1"
+                match = re.search(r'create (?:a|one|two|three) (\d+)/(\d+)', oracle)
+                if match:
+                    power = int(match.group(1))
+                    toughness = int(match.group(2))
+
+                    # Determine how many tokens
+                    num_tokens = 1
+                    if 'two' in oracle:
+                        num_tokens = 2
+                    elif 'three' in oracle:
+                        num_tokens = 3
+
+                    # Determine if haste
+                    has_haste = 'haste' in oracle
+
+                    for _ in range(num_tokens):
+                        token = self.create_token(f"Token", power, toughness, has_haste=has_haste, verbose=verbose)
+                        tokens_created += 1
+
+                    if verbose:
+                        print(f"  → {permanent.name} created {num_tokens}x {power}/{toughness} token(s) (upkeep)")
+
+            # === Card Draw ===
+            elif 'draw' in oracle and 'card' in oracle:
+                # Parse how many cards
+                import re
+                match = re.search(r'draw (?:a|one|two|three|\d+) card', oracle)
+                if match:
+                    draw_text = match.group(0)
+                    if 'a card' in draw_text or 'one card' in draw_text:
+                        num_cards = 1
+                    elif 'two card' in draw_text:
+                        num_cards = 2
+                    elif 'three card' in draw_text:
+                        num_cards = 3
+                    else:
+                        # Try to extract number
+                        num_match = re.search(r'\d+', draw_text)
+                        num_cards = int(num_match.group(0)) if num_match else 1
+
+                    drawn = self.draw_card(num_cards, verbose=verbose)
+                    if verbose and drawn:
+                        print(f"  → {permanent.name} drew {len(drawn)} card(s) (upkeep)")
+
+            # === Life Gain/Loss ===
+            elif 'gain' in oracle and 'life' in oracle:
+                import re
+                match = re.search(r'gain (\d+) life', oracle)
+                if match:
+                    life_gain = int(match.group(1))
+                    self.life_gained_this_turn += life_gain
+                    if verbose:
+                        print(f"  → {permanent.name} gained {life_gain} life (upkeep)")
+
+            elif 'lose' in oracle and 'life' in oracle and 'opponent' not in oracle:
+                # Only if YOU lose life (not opponents)
+                import re
+                match = re.search(r'(?:you )?lose (\d+) life', oracle)
+                if match:
+                    life_loss = int(match.group(1))
+                    self.life_lost_this_turn += life_loss
+                    if verbose:
+                        print(f"  → {permanent.name} lost {life_loss} life (upkeep)")
+
+        return tokens_created
+
+    def process_beginning_of_combat_triggers(self, verbose: bool = False):
+        """
+        Process all "at the beginning of combat" triggers.
+
+        This handles cards like:
+        - Outlaws' Merriment (create random token)
+        - Other combat-start triggers
+
+        Returns number of tokens created during beginning of combat.
+        """
+        tokens_created = 0
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Skip if no beginning of combat trigger
+            if 'beginning of' not in oracle or 'combat' not in oracle:
+                continue
+
+            # === Outlaws' Merriment ===
+            # "At the beginning of your combat on your turn, choose one at random:
+            # - Create a 1/1 white Human, 1/1 red Mercenary with first strike, or 2/2 green Elf Druid"
+            if 'outlaws\' merriment' in name or 'outlaws merriment' in name:
+                import random
+                choice = random.choice([
+                    ("Human Soldier", 1, 1, False),
+                    ("Mercenary", 1, 1, False),  # Has first strike but we simplify
+                    ("Elf Druid", 2, 2, False),
+                ])
+
+                token_name, power, toughness, has_haste = choice
+                token = self.create_token(token_name, power, toughness, has_haste=has_haste, verbose=verbose)
+                tokens_created += 1
+
+                if verbose:
+                    print(f"  → Outlaws' Merriment created {power}/{toughness} {token_name} token (beginning of combat)")
+
+            # === Generic Beginning of Combat Token Creation ===
+            elif 'create' in oracle and 'token' in oracle:
+                # Similar parsing as upkeep
+                import re
+                match = re.search(r'create (?:a|one|two|three) (\d+)/(\d+)', oracle)
+                if match:
+                    power = int(match.group(1))
+                    toughness = int(match.group(2))
+
+                    num_tokens = 1
+                    if 'two' in oracle:
+                        num_tokens = 2
+                    elif 'three' in oracle:
+                        num_tokens = 3
+
+                    has_haste = 'haste' in oracle
+
+                    for _ in range(num_tokens):
+                        token = self.create_token(f"Token", power, toughness, has_haste=has_haste, verbose=verbose)
+                        tokens_created += 1
+
+                    if verbose:
+                        print(f"  → {permanent.name} created {num_tokens}x {power}/{toughness} token(s) (beginning of combat)")
+
+        return tokens_created
 
     # ═══════════════════════════════════════════════════════════════════════
     # LANDFALL MECHANICS (Priority 3 Implementation)

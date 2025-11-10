@@ -32,15 +32,39 @@ def untap_phase(boards_state, verbose=False):
         else:
             print("Untap Phase: No tapped cards to untap.")
 
-def upkeep_phase():
+def upkeep_phase(board_state, verbose=False):
     """
-    Simulates the upkeep phase of a turn in a card game.
-    In this phase, players may have triggers or effects that occur at the start of their turn.
+    Simulates the upkeep phase of a turn.
+
+    This phase handles:
+    - Saga advancement
+    - "At the beginning of your upkeep" triggers
+    - Upkeep token creation (Rite of the Raging Storm, etc.)
+    - Upkeep card draw, life gain/loss
+    - Other upkeep effects
+
+    Parameters
+    ----------
+    board_state : BoardState
+        The current board state
+    verbose : bool
+        If True, print detailed upkeep information
+
+    Returns
+    -------
+    int
+        Number of tokens created during upkeep
     """
-    print("Upkeep Phase: Check for triggers and effects.")
-    # Logic to handle upkeep triggers would go here
-    # For example, check for cards with "at the beginning of your upkeep" effects
-    # This is a placeholder; actual game logic would depend on the game's rules
+    if verbose:
+        print("Upkeep Phase: Processing triggers and effects")
+
+    # Advance sagas (existing functionality)
+    board_state.advance_sagas(verbose=verbose)
+
+    # Process upkeep triggers (NEW!)
+    tokens_created = board_state.process_upkeep_triggers(verbose=verbose)
+
+    return tokens_created
 def draw_phase(boards_state, verbose=False):
     """Simulates the draw phase of a turn.
 

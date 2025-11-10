@@ -319,8 +319,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # At the start of each turn, move last turn's tapped lands to untapped
         untap_phase(board, verbose=verbose)
 
-        # ---- upkeep phase: advance sagas ----
-        board.advance_sagas(verbose=verbose)
+        # ---- upkeep phase: sagas + upkeep triggers ----
+        upkeep_tokens = upkeep_phase(board, verbose=verbose)
+        metrics["tokens_created"][turn] += upkeep_tokens
 
         # ---- draw phase: draw a card ----
         drawn = draw_phase(board, verbose=verbose)
@@ -673,6 +674,10 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # ARISTOCRATS: Check for sacrifice opportunities before combat
         sacs = board.check_for_sacrifice_opportunities(verbose=verbose)
         metrics["creatures_sacrificed"][turn] += sacs
+
+        # ---- BEGINNING OF COMBAT: Trigger beginning of combat effects ----
+        combat_start_tokens = board.process_beginning_of_combat_triggers(verbose=verbose)
+        metrics["tokens_created"][turn] += combat_start_tokens
 
         # ARISTOCRATS: Trigger attack-based token generation (Adeline, Anim Pakal)
         if board.creatures:
