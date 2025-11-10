@@ -249,13 +249,19 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             "creatures_in_graveyard",
             "tokens_created",  # NEW: Track token generation
             "creatures_sacrificed",  # NEW: Track sacrifice outlets
+            "spells_cast",  # SPELLSLINGER: Storm count
+            "spell_damage",  # SPELLSLINGER: Damage from cast triggers
+            "prowess_creatures",  # SPELLSLINGER: Number of prowess creatures
+            "creatures_reanimated_turn",  # REANIMATOR: Creatures reanimated this turn
+            "graveyard_creature_power",  # REANIMATOR: Total power in graveyard
+            "cards_discarded",  # REANIMATOR: Cards discarded for value
         )
     }
 
     # Track new interaction metrics
     metrics["creatures_removed_by_opponents"] = 0  # type: ignore
     metrics["board_wipes_survived"] = 0  # type: ignore
-    metrics["creatures_reanimated"] = 0  # type: ignore
+    metrics["creatures_reanimated_total"] = 0  # type: ignore
     metrics["game_won"] = None  # type: ignore
 
     # Track colour-specific mana availability
@@ -610,10 +616,41 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         for pw in board.planeswalkers:
             board.activate_planeswalker(pw, verbose=verbose)
 
-        # Reset per-turn aristocrats tracking
+        # Reset per-turn tracking
         board.drain_damage_this_turn = 0
         board.tokens_created_this_turn = 0
         board.creatures_died_this_turn = 0  # PRIORITY 2: For Mahadi
+
+        # SPELLSLINGER: Track spells cast this turn
+        metrics["spells_cast"][turn] = board.spells_cast_this_turn
+        metrics["spell_damage"][turn] = board.spell_damage_this_turn
+
+        # Count prowess creatures
+        prowess_count = 0
+        for creature in board.creatures:
+            oracle = getattr(creature, 'oracle_text', '').lower()
+            if 'prowess' in oracle or 'magecraft' in oracle:
+                prowess_count += 1
+        metrics["prowess_creatures"][turn] = prowess_count
+
+        # REANIMATOR: Track reanimation and graveyard value
+        metrics["creatures_reanimated_turn"][turn] = board.creatures_reanimated_this_turn
+        metrics["creatures_reanimated_total"] = board.creatures_reanimated
+        metrics["cards_discarded"][turn] = board.cards_discarded_for_value
+
+        # Calculate total power in graveyard (reanimation targets)
+        graveyard_power = sum(
+            getattr(c, 'power', 0) or 0
+            for c in board.graveyard
+            if 'creature' in getattr(c, 'type', '').lower()
+        )
+        metrics["graveyard_creature_power"][turn] = graveyard_power
+
+        # Reset per-turn counters for next turn
+        board.spells_cast_this_turn = 0
+        board.spell_damage_this_turn = 0
+        board.creatures_reanimated_this_turn = 0
+        board.reset_prowess_bonuses()  # Prowess lasts until end of turn
 
         # Simulate opponent removal (before combat)
         board.simulate_removal(verbose=verbose)
