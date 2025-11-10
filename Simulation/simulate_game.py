@@ -258,6 +258,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             "proliferate_triggers",  # COUNTERS: Proliferate triggers this turn
             "total_counters_on_creatures",  # COUNTERS: Total +1/+1 counters on creatures
             "ozolith_stored_counters",  # COUNTERS: Counters stored on The Ozolith
+            "cards_drawn",  # DECK POTENTIAL: Total cards drawn this turn
+            "life_gained",  # DECK POTENTIAL: Life gained this turn
+            "life_lost",  # DECK POTENTIAL: Life lost/paid this turn
         )
     }
 
@@ -319,6 +322,10 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
         # ---- draw phase: draw a card ----
         drawn = draw_phase(board, verbose=verbose)
+
+        # Track cards drawn this turn
+        metrics["cards_drawn"][turn] = len(drawn) if drawn else 0
+
         if verbose and drawn:
             print("Drawn:", ", ".join(c.name for c in drawn))
         if verbose:
@@ -606,10 +613,11 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         )
         metrics["unspent_mana"][turn] = len(board.mana_pool)
 
-        # ─────────────────── NEW: Opponent Interaction Phase ───────────────────
-        # Generate opponent creatures each turn
-        board.generate_opponent_creatures(turn, verbose=verbose)
-        board.calculate_threat_levels()
+        # ─────────────────── GOLDFISH MODE: Opponents Disabled ───────────────────
+        # Opponent generation disabled for deck potential measurement
+        # This measures what the deck CAN DO, not realistic game simulation
+        # board.generate_opponent_creatures(turn, verbose=verbose)
+        # board.calculate_threat_levels()
 
         # Attempt reanimation if there are targets
         if board.reanimation_targets:
@@ -623,6 +631,8 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         board.drain_damage_this_turn = 0
         board.tokens_created_this_turn = 0
         board.creatures_died_this_turn = 0  # PRIORITY 2: For Mahadi
+        board.life_gained_this_turn = 0
+        board.life_lost_this_turn = 0
 
         # SPELLSLINGER: Track spells cast this turn
         metrics["spells_cast"][turn] = board.spells_cast_this_turn
@@ -671,27 +681,41 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         for creature in board.creatures:
             board._execute_triggers("attack", creature, verbose)
 
-        # ─────────────────── NEW: Combat with Blockers ───────────────────
-        # Use new combat resolution with blockers
-        actual_damage = board.resolve_combat_with_blockers(verbose=verbose)
-        metrics["combat_damage"][turn] = actual_damage
+        # ─────────────────── GOLDFISH MODE: Unblocked Combat ───────────────────
+        # In goldfish mode, all creatures attack and deal full damage (no blockers)
+        # This measures deck's damage potential
+        total_combat_damage = 0
+        for creature in board.creatures:
+            # Initialize turns on board tracking if needed
+            if not hasattr(creature, '_turns_on_board'):
+                creature._turns_on_board = 0
+
+            # Only creatures without summoning sickness can attack
+            can_attack = creature.has_haste or creature._turns_on_board >= 1
+
+            if can_attack:
+                power = getattr(creature, 'power', 0) or 0
+                total_combat_damage += power
+
+            # Increment turns on board for all creatures (not just attackers)
+            creature._turns_on_board += 1
+
+        if verbose and total_combat_damage > 0:
+            print(f"Combat: {total_combat_damage} damage dealt (goldfish mode - no blockers)")
+
+        metrics["combat_damage"][turn] = total_combat_damage
 
         # ARISTOCRATS: Track drain damage separately!
         metrics["drain_damage"][turn] = board.drain_damage_this_turn
         if verbose and board.drain_damage_this_turn > 0:
             print(f"💀 Drain damage this turn: {board.drain_damage_this_turn}")
 
-        # Check if we won by eliminating all opponents
-        alive_opponents = [opp for opp in board.opponents if opp['is_alive']]
-        if not alive_opponents:
-            if verbose:
-                print(f"🎉 Victory! All opponents eliminated on turn {turn}!")
-            metrics["game_won"] = turn  # type: ignore
-            break
+        # DECK POTENTIAL: Track life metrics
+        metrics["life_gained"][turn] = board.life_gained_this_turn
+        metrics["life_lost"][turn] = board.life_lost_this_turn
 
-        # ─────────────────── NEW: Board Wipe Check ───────────────────
-        # Check for board wipes at end of turn
-        board.simulate_board_wipe(verbose=verbose)
+        # Goldfish mode: No opponents, no board wipes
+        # board.simulate_board_wipe(verbose=verbose)
 
         # PRIORITY 2: End-of-turn treasure generation (Mahadi, etc.)
         board.check_end_of_turn_treasures(board.creatures_died_this_turn, verbose=verbose)

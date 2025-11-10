@@ -319,6 +319,9 @@ def simulate_deck_effectiveness(
         avg_opponents_alive = [0] + summary_df['Avg Opponents Alive'].tolist()
         avg_opponent_power = [0] + summary_df['Avg Opponent Power'].tolist()
         tokens_created = [0] + summary_df['Avg Tokens Created'].tolist()
+        cards_drawn = [0] + summary_df['Avg Cards Drawn'].tolist()
+        life_gained = [0] + summary_df['Avg Life Gained'].tolist()
+        life_lost = [0] + summary_df['Avg Life Lost'].tolist()
 
         # Calculate total damage over first 10 turns
         total_damage_10_turns = sum(total_damage[:min(11, len(total_damage))])
@@ -342,6 +345,9 @@ def simulate_deck_effectiveness(
             'avg_opponents_alive': avg_opponents_alive,
             'avg_opponent_power': avg_opponent_power,
             'tokens_created': tokens_created,  # NEW
+            'cards_drawn': cards_drawn,  # NEW
+            'life_gained': life_gained,  # NEW
+            'life_lost': life_lost,  # NEW
             'summary': {
                 'total_damage_10_turns': round(total_damage_10_turns, 2),
                 'combat_damage_10_turns': round(combat_damage_10_turns, 2),  # NEW
@@ -351,6 +357,9 @@ def simulate_deck_effectiveness(
                 'commander_avg_cast_turn': round(commander_avg_turn, 2) if commander_avg_turn else None,
                 'num_games_simulated': num_games,
                 'total_tokens_created': round(sum(tokens_created), 1),  # NEW
+                'total_cards_drawn': round(sum(cards_drawn), 1),  # NEW
+                'total_life_gained': round(sum(life_gained), 1),  # NEW
+                'total_life_lost': round(sum(life_lost), 1),  # NEW
                 **interaction_summary  # Include new interaction metrics
             },
             'summary_df': summary_df,
