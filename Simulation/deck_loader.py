@@ -19,6 +19,7 @@ from oracle_text_parser import (
     parse_etb_tapped_conditions,
     parse_death_triggers_from_oracle,
     parse_sacrifice_outlet_from_oracle,
+    parse_direct_damage_from_oracle,
 )
 
 
@@ -56,6 +57,15 @@ def build_card_from_row(row):
         card_name=row["Name"]
     )
     fetch = parse_fetch_land_ability(row.get("OracleText", ""))
+
+    # Parse direct damage from oracle text for instants/sorceries
+    deals_damage = row.get("DealsDamage", 0)
+    if not deals_damage and row.get("Type") in ["Instant", "Sorcery"]:
+        deals_damage = parse_direct_damage_from_oracle(
+            row.get("OracleText", ""),
+            card_name=row.get("Name", "")
+        )
+
     return Card(
         name   = row["Name"],
         type   = row["Type"],
@@ -75,6 +85,7 @@ def build_card_from_row(row):
         keywords_when_equipped = row.get("KeywordsWhenEquipped", []),
         puts_land = row.get("PutsLand", False),
         draw_cards = row.get("DrawCards", 0),
+        deals_damage = deals_damage,
         activated_abilities = row.get("ActivatedAbilities") or [],
         triggered_abilities = row.get("TriggeredAbilities") or [],
         oracle_text = row["OracleText"],
@@ -127,6 +138,16 @@ def _df_to_cards(df: pd.DataFrame):
         if sacrifice_outlet is None:
             sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
 
+        # Parse direct damage from oracle text for instants/sorceries
+        deals_damage = row.get("DealsDamage")
+        if deals_damage is None and row.get("Type") in ["Instant", "Sorcery"]:
+            deals_damage = parse_direct_damage_from_oracle(
+                oracle_text,
+                card_name=row.get("Name", "")
+            )
+        else:
+            deals_damage = _safe_int(deals_damage or 0)
+
         c = Card(
             name=row.get("Name", ""),
             type=row.get("Type", ""),
@@ -153,6 +174,7 @@ def _df_to_cards(df: pd.DataFrame):
             keywords_when_equipped=row.get("KeywordsWhenEquipped", []),
             puts_land=str(row.get("PutsLand", "")).lower() in ("true", "yes", "1"),
             draw_cards=_safe_int(row.get("DrawCards", 0)),
+            deals_damage=deals_damage,
             activated_abilities=row.get("ActivatedAbilities", []),
             triggered_abilities=row.get("TriggeredAbilities", []),
             oracle_text=oracle_text,

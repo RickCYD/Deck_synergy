@@ -261,6 +261,71 @@ def parse_damage_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
     return triggers
 
 
+def parse_direct_damage_from_oracle(text: str, card_name: str = "") -> int:
+    """
+    Extract direct damage value from instant/sorcery oracle text.
+
+    Handles common patterns like:
+    - "deals 3 damage to any target"
+    - "deals 2 damage to target creature or planeswalker"
+    - "deals X damage" (returns x_value if available)
+    - "deals damage equal to the number of..."
+
+    Returns:
+        int: Damage value, or 0 if no direct damage found
+    """
+    if not text:
+        return 0
+
+    lower = text.lower()
+
+    # Pattern 1: "deals N damage" where N is a number
+    # Examples: "deals 3 damage", "Lightning Bolt deals 3 damage to any target"
+    damage_pattern = r'(?:^|[^\d])deals?\s+(\d+)\s+damage'
+    match = re.search(damage_pattern, lower)
+    if match:
+        damage = int(match.group(1))
+
+        # Check if it's "each opponent" multiplier
+        if 'each opponent' in lower:
+            # In goldfish mode with 3 opponents, multiply by 3
+            return damage * 3
+
+        return damage
+
+    # Pattern 2: "X damage" - variable damage
+    # Examples: "Fireball deals X damage to any target"
+    if re.search(r'deals?\s+x\s+damage', lower):
+        # X spells need special handling - for now return 0
+        # Could be enhanced to calculate based on mana spent
+        return 0
+
+    # Pattern 3: Named exceptions - common burn spells
+    spell_damages = {
+        'lightning bolt': 3,
+        'shock': 2,
+        'lava spike': 3,
+        'lightning strike': 3,
+        'incinerate': 3,
+        'searing spear': 3,
+        'burst lightning': 2,  # Can be kicked for more, but base is 2
+        'rift bolt': 3,
+        'chain lightning': 3,
+        'flame javelin': 4,
+        'lava axe': 5,
+        'banefire': 0,  # X spell
+        'fireball': 0,  # X spell
+        'comet storm': 0,  # X spell
+        'devil\'s play': 0,  # X spell
+    }
+
+    name_lower = card_name.lower()
+    if name_lower in spell_damages:
+        return spell_damages[name_lower]
+
+    return 0
+
+
 
 def parse_etb_conditions_from_oracle(text: str) -> dict:
     conditions = {}

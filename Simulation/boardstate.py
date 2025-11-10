@@ -1034,6 +1034,25 @@ class BoardState:
         self.trigger_cast_effects(card, verbose=verbose)
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
+
+        # DIRECT DAMAGE: Deal damage from instant/sorcery
+        damage = getattr(card, "deals_damage", 0)
+        if damage > 0:
+            self.spell_damage_this_turn += damage
+            # Deal damage to opponents in goldfish mode
+            alive_opps = [opp for opp in self.opponents if opp['life_total'] > 0]
+            if alive_opps:
+                # Apply damage to first alive opponent (target selection)
+                # Note: For "each opponent" effects, damage would need to be marked differently
+                target_opp = alive_opps[0]
+                target_opp['life_total'] -= damage
+                if target_opp['life_total'] <= 0:
+                    target_opp['is_alive'] = False
+                    if verbose:
+                        print(f"  → {target_opp['name']} eliminated by {card.name} (dealt {damage} damage)!")
+                if verbose:
+                    print(f"  → {card.name} deals {damage} damage to {target_opp['name']}")
+
         if getattr(card, "puts_land", False):
             self.search_basic_land(verbose)
         oracle = getattr(card, "oracle_text", "").lower()
@@ -1173,6 +1192,25 @@ class BoardState:
 
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
+
+        # DIRECT DAMAGE: Deal damage from instant/sorcery
+        damage = getattr(card, "deals_damage", 0)
+        if damage > 0:
+            self.spell_damage_this_turn += damage
+            # Deal damage to opponents in goldfish mode
+            alive_opps = [opp for opp in self.opponents if opp['life_total'] > 0]
+            if alive_opps:
+                # Apply damage to first alive opponent (target selection)
+                # Note: For "each opponent" effects, damage would need to be marked differently
+                target_opp = alive_opps[0]
+                target_opp['life_total'] -= damage
+                if target_opp['life_total'] <= 0:
+                    target_opp['is_alive'] = False
+                    if verbose:
+                        print(f"  → {target_opp['name']} eliminated by {card.name} (dealt {damage} damage)!")
+                if verbose:
+                    print(f"  → {card.name} deals {damage} damage to {target_opp['name']}")
+
         if verbose:
             print(f"Played instant: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")

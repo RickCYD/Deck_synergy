@@ -39,6 +39,7 @@ class Card:
         has_first_strike=False,
         puts_land=False,
         draw_cards=0,
+        deals_damage=0,  # Direct damage dealt by instant/sorcery
         activated_abilities=None,
         triggered_abilities=None,
         oracle_text="",
@@ -88,6 +89,7 @@ class Card:
         self.power_buff = int(power_buff or 0)
         self.puts_land = bool(puts_land)
         self.draw_cards = int(draw_cards or 0)
+        self.deals_damage = int(deals_damage or 0)  # Direct damage from spell
         self.activated_abilities: list[ActivatedAbility] = activated_abilities or []
         self.triggered_abilities: list = triggered_abilities or []
         self.oracle_text = oracle_text or ""
