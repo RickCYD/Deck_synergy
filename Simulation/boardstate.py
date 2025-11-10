@@ -116,6 +116,10 @@ class BoardState:
         self.tokens_created_this_turn = 0  # Track token generation
         self.creatures_died_this_turn = 0  # PRIORITY 2: For Mahadi treasure generation
 
+        # Landfall mechanics tracking
+        self.lands_played_this_turn = 0  # Track lands played this turn
+        self.landfall_triggers_this_turn = 0  # Track number of landfall triggers
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
         for kw in getattr(creature, "keywords_when_equipped", []):
@@ -361,6 +365,36 @@ class BoardState:
 
         return damage
 
+    def _process_special_etb_effects(self, card, verbose: bool = False):
+        """
+        Process special ETB effects for specific cards.
+
+        Handles cards like:
+        - Avenger of Zendikar (create plant tokens equal to lands)
+        - Omnath, Locus of the Roil (ETB counter on elemental + damage)
+        """
+        oracle = getattr(card, 'oracle_text', '').lower()
+        name = getattr(card, 'name', '').lower()
+
+        # === AVENGER OF ZENDIKAR ===
+        if 'avenger of zendikar' in name:
+            # ETB: Create plant tokens equal to number of lands
+            total_lands = len(self.lands_untapped) + len(self.lands_tapped)
+
+            if total_lands > 0:
+                for _ in range(total_lands):
+                    # Create 0/1 Plant tokens
+                    self.create_token("Plant", 0, 1, has_haste=False,
+                                    apply_counters=True, verbose=False)
+
+                if verbose:
+                    print(f"  → Avenger of Zendikar created {total_lands} Plant tokens!")
+
+        # === OMNATH, LOCUS OF THE ROIL (ETB) ===
+        elif 'omnath, locus of the roil' in name or 'omnath, locus of roil' in name:
+            # ETB: Put +1/+1 counter on target Elemental, that Elemental deals damage
+            self.handle_omnath_roil_landfall(verbose=verbose)
+
     def _trigger_landfall(self, verbose: bool = False) -> None:
         """Execute all "landfall" triggers for permanents you control.
 
@@ -369,7 +403,12 @@ class BoardState:
         the land that just entered) and runs any triggered abilities whose
         event is ``"landfall"``.
         """
+        self.landfall_triggers_this_turn += 1
 
+        # First, process specific landfall card effects
+        self.process_landfall_triggers(verbose=verbose)
+
+        # Then, execute any custom triggered abilities
         battlefield = (
             self.lands_untapped
             + self.lands_tapped
@@ -510,6 +549,8 @@ class BoardState:
                 + self.planeswalkers
             ):
                 self._add_abilities_from_card(card)
+                # Process specific ETB effects for landfall cards
+                self._process_special_etb_effects(card, verbose)
                 self._execute_triggers("etb", card, verbose)
                 if card.type in ("Land", "Basic Land"):
                     self._trigger_landfall(verbose)
@@ -568,6 +609,43 @@ class BoardState:
         # Default case: If no condition matches explicitly, lands enter tapped.
         return False
 
+    def get_extra_land_drops(self) -> int:
+        """
+        Calculate how many extra lands can be played this turn.
+
+        Checks for effects like:
+        - Azusa, Lost but Seeking (play 2 additional lands)
+        - Exploration (play 1 additional land)
+        - Oracle of Mul Daya (play 1 additional land)
+
+        Returns: Number of extra land drops available
+        """
+        extra_lands = 0
+
+        # Check all permanents for extra land drop effects
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Azusa, Lost but Seeking: "You may play two additional lands"
+            if 'azusa' in name or 'play two additional lands' in oracle:
+                extra_lands += 2
+
+            # Exploration, Burgeoning, Oracle of Mul Daya: "You may play an additional land"
+            elif 'play an additional land' in oracle or 'play one additional land' in oracle:
+                extra_lands += 1
+
+            # Dryad of the Ilysian Grove: "You may play an additional land"
+            elif 'additional land' in oracle and 'may play' in oracle:
+                extra_lands += 1
+
+        return extra_lands
+
+    def can_play_land(self) -> bool:
+        """Check if we can play a land this turn."""
+        max_lands = 1 + self.get_extra_land_drops()
+        return self.lands_played_this_turn < max_lands
+
     def choose_land_to_play(self):
         """Return the best land from hand based on simple heuristics."""
         lands = [c for c in self.hand if c.type in ("Land", "Basic Land")]
@@ -598,6 +676,9 @@ class BoardState:
         """Play a land card. Check if it enters untapped based on conditions."""
         if card in self.hand:
             self.hand.remove(card)
+
+        # Track land plays for the turn
+        self.lands_played_this_turn += 1
 
         enters_untapped = self.untap_land_condition(card)
 
@@ -2137,6 +2218,301 @@ class BoardState:
                     print(f"  → {permanent.name} created {num_treasures} Treasures (end of turn)")
 
         return treasures_created
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # LANDFALL MECHANICS (Priority 3 Implementation)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def process_landfall_triggers(self, verbose: bool = False):
+        """
+        Process all landfall triggers after a land enters the battlefield.
+
+        This handles specific landfall cards like:
+        - Scute Swarm (create token copies)
+        - Omnath variants (create elementals, gain life, draw cards, deal damage)
+        - Avenger of Zendikar (buff plant tokens)
+        - Generic landfall effects (tokens, counters, life gain)
+        """
+        triggered_count = 0
+
+        # Check all permanents for landfall abilities
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Skip if no landfall trigger
+            if 'landfall' not in oracle and 'land enters' not in oracle:
+                continue
+
+            triggered_count += 1
+
+            # === SCUTE SWARM ===
+            if 'scute swarm' in name:
+                self.handle_scute_swarm_landfall(permanent, verbose=verbose)
+
+            # === OMNATH, LOCUS OF RAGE ===
+            elif 'omnath, locus of rage' in name:
+                self.handle_omnath_rage_landfall(verbose=verbose)
+
+            # === OMNATH, LOCUS OF CREATION ===
+            elif 'omnath, locus of creation' in name:
+                self.handle_omnath_creation_landfall(verbose=verbose)
+
+            # === OMNATH, LOCUS OF THE ROIL ===
+            elif 'omnath, locus of the roil' in name or 'omnath, locus of roil' in name:
+                self.handle_omnath_roil_landfall(verbose=verbose)
+
+            # === AVENGER OF ZENDIKAR ===
+            # Note: Avenger's main ability is ETB, landfall buffs existing plant tokens
+            elif 'avenger of zendikar' in name:
+                self.handle_avenger_landfall(verbose=verbose)
+
+            # === GENERIC LANDFALL TOKEN CREATION ===
+            elif 'create' in oracle and 'token' in oracle and 'landfall' in oracle:
+                self.handle_generic_landfall_tokens(permanent, oracle, verbose=verbose)
+
+            # === GENERIC LANDFALL COUNTERS ===
+            elif '+1/+1 counter' in oracle and 'landfall' in oracle:
+                self.handle_generic_landfall_counters(permanent, oracle, verbose=verbose)
+
+            # === GENERIC LANDFALL LIFE GAIN ===
+            elif 'gain' in oracle and 'life' in oracle and 'landfall' in oracle:
+                self.handle_generic_landfall_life_gain(oracle, verbose=verbose)
+
+            # === GENERIC LANDFALL DAMAGE ===
+            elif 'deals' in oracle and 'damage' in oracle and 'landfall' in oracle:
+                self.handle_generic_landfall_damage(oracle, verbose=verbose)
+
+        return triggered_count
+
+    def handle_scute_swarm_landfall(self, scute_card, verbose: bool = False):
+        """
+        Scute Swarm: Landfall — Create a 1/1 green Insect token. If you control
+        six or more lands, create a token that's a copy of Scute Swarm instead.
+        """
+        total_lands = len(self.lands_untapped) + len(self.lands_tapped)
+
+        if total_lands >= 6:
+            # Create a copy of Scute Swarm itself!
+            from simulate_game import Card
+
+            scute_copy = Card(
+                name="Scute Swarm",
+                type="Creature — Insect",
+                mana_cost="2G",
+                power=1,
+                toughness=1,
+                produces_colors=[],
+                mana_production=0,
+                etb_tapped=False,
+                etb_tapped_conditions={},
+                has_haste=False,
+                oracle_text="Landfall — Whenever a land enters the battlefield under your control, create a 1/1 green Insect creature token. If you control six or more lands, create a token that's a copy of Scute Swarm instead."
+            )
+
+            self.creatures.append(scute_copy)
+
+            # Apply ETB counter effects (like Cathars' Crusade)
+            self.apply_etb_counter_effects(scute_copy, verbose=verbose)
+
+            if verbose:
+                print(f"  → Scute Swarm created a token COPY of itself! ({total_lands} lands)")
+        else:
+            # Create a 1/1 Insect token
+            self.create_token("Insect", 1, 1, has_haste=False, verbose=verbose)
+
+            if verbose:
+                print(f"  → Scute Swarm created a 1/1 Insect token ({total_lands} lands)")
+
+    def handle_omnath_rage_landfall(self, verbose: bool = False):
+        """
+        Omnath, Locus of Rage: Landfall — Create a 5/5 red and green Elemental token.
+        """
+        self.create_token("Elemental", 5, 5, has_haste=False, verbose=verbose)
+
+        if verbose:
+            print("  → Omnath, Locus of Rage created a 5/5 Elemental token!")
+
+    def handle_omnath_creation_landfall(self, verbose: bool = False):
+        """
+        Omnath, Locus of Creation: Landfall — You gain 4 life.
+        (Also: draw a card when playing first land, deal 4 damage when playing third land)
+        """
+        # Track landfall count for this Omnath
+        lands_this_turn = self.lands_played_this_turn
+
+        if lands_this_turn == 1:
+            # First land: Draw a card
+            self.draw_card(1, verbose=verbose)
+            if verbose:
+                print("  → Omnath, Locus of Creation: Drew a card (first land)")
+
+        if lands_this_turn == 2:
+            # Second land: Gain 4 life
+            self.life_total += 4
+            if verbose:
+                print("  → Omnath, Locus of Creation: Gained 4 life (second land)")
+
+        if lands_this_turn == 3:
+            # Third land: Deal 4 damage to any target
+            # Simplified: deal 4 damage to opponent
+            alive_opps = [o for o in self.opponents if o['is_alive']]
+            if alive_opps:
+                target = alive_opps[0]
+                target['life_total'] -= 4
+                self.drain_damage_this_turn += 4
+                if verbose:
+                    print(f"  → Omnath, Locus of Creation: Dealt 4 damage to {target['name']} (third land)")
+
+        if lands_this_turn >= 4:
+            # Fourth+ land: All of the above
+            if verbose:
+                print("  → Omnath, Locus of Creation: Multiple triggers (4+ lands)!")
+
+    def handle_omnath_roil_landfall(self, verbose: bool = False):
+        """
+        Omnath, Locus of the Roil: When Omnath enters or landfall triggers, put a +1/+1
+        counter on target Elemental. That Elemental deals damage equal to its power to target.
+        """
+        # Find Elemental creatures to buff
+        elementals = [c for c in self.creatures if 'elemental' in getattr(c, 'type', '').lower()]
+
+        if elementals:
+            # Buff the strongest elemental
+            target = max(elementals, key=lambda c: c.power or 0)
+            target.add_counter("+1/+1", 1)
+
+            if verbose:
+                print(f"  → Omnath, Locus of the Roil: Added +1/+1 counter to {target.name}")
+
+            # Deal damage equal to its power
+            damage = target.power or 0
+            alive_opps = [o for o in self.opponents if o['is_alive']]
+            if alive_opps and damage > 0:
+                target_opp = alive_opps[0]
+                target_opp['life_total'] -= damage
+                self.drain_damage_this_turn += damage
+
+                if verbose:
+                    print(f"  → {target.name} deals {damage} damage to {target_opp['name']}")
+
+    def handle_avenger_landfall(self, verbose: bool = False):
+        """
+        Avenger of Zendikar: Landfall — Put a +1/+1 counter on each Plant token you control.
+        """
+        # Find all Plant tokens
+        plants = [c for c in self.creatures if 'plant' in getattr(c, 'name', '').lower()]
+
+        if plants:
+            for plant in plants:
+                plant.add_counter("+1/+1", 1)
+
+            if verbose:
+                print(f"  → Avenger of Zendikar: Added +1/+1 counters to {len(plants)} Plant tokens!")
+
+    def handle_generic_landfall_tokens(self, permanent, oracle_text: str, verbose: bool = False):
+        """
+        Handle generic landfall token creation.
+
+        Examples:
+        - "Landfall — Create a 1/1 white Soldier token"
+        - "Landfall — Create a 2/2 green Wolf token"
+        """
+        # Try to parse token stats
+        import re
+
+        # Look for "X/X [color] [type] token"
+        token_pattern = r'(\d+)/(\d+)\s+(?:\w+\s+)?(\w+)\s+(?:creature\s+)?token'
+        match = re.search(token_pattern, oracle_text)
+
+        if match:
+            power = int(match.group(1))
+            toughness = int(match.group(2))
+            token_type = match.group(3).capitalize()
+
+            self.create_token(token_type, power, toughness, has_haste=False, verbose=verbose)
+
+            if verbose:
+                print(f"  → {permanent.name}: Created {power}/{toughness} {token_type} token (landfall)")
+        else:
+            # Default to 1/1 token
+            self.create_token("Creature Token", 1, 1, has_haste=False, verbose=verbose)
+
+    def handle_generic_landfall_counters(self, permanent, oracle_text: str, verbose: bool = False):
+        """
+        Handle generic landfall counter effects.
+
+        Examples:
+        - "Landfall — Put a +1/+1 counter on Scythe Leopard"
+        - "Landfall — Put a +1/+1 counter on target creature"
+        """
+        # Put a +1/+1 counter on the source permanent
+        if hasattr(permanent, 'add_counter'):
+            permanent.add_counter("+1/+1", 1)
+
+            if verbose:
+                print(f"  → {permanent.name}: Added +1/+1 counter (landfall)")
+
+    def handle_generic_landfall_life_gain(self, oracle_text: str, verbose: bool = False):
+        """
+        Handle generic landfall life gain.
+
+        Examples:
+        - "Landfall — You gain 1 life"
+        - "Landfall — You gain 2 life"
+        """
+        import re
+
+        # Look for "gain X life"
+        life_pattern = r'gain (\d+) life'
+        match = re.search(life_pattern, oracle_text)
+
+        if match:
+            life_gain = int(match.group(1))
+            self.life_total += life_gain
+
+            if verbose:
+                print(f"  → Gained {life_gain} life (landfall)")
+
+    def handle_generic_landfall_damage(self, oracle_text: str, verbose: bool = False):
+        """
+        Handle generic landfall damage.
+
+        Examples:
+        - "Landfall — This creature deals 1 damage to any target"
+        - "Landfall — This creature deals 2 damage to each opponent"
+        """
+        import re
+
+        # Look for "deals X damage"
+        damage_pattern = r'deals (\d+) damage'
+        match = re.search(damage_pattern, oracle_text)
+
+        if match:
+            damage = int(match.group(1))
+
+            # Check if it's "each opponent"
+            if 'each opponent' in oracle_text:
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                total_damage = damage * len(alive_opps)
+
+                for opp in alive_opps:
+                    opp['life_total'] -= damage
+
+                self.drain_damage_this_turn += total_damage
+
+                if verbose:
+                    print(f"  → Dealt {damage} damage to each opponent (landfall)")
+            else:
+                # Deal to a single target
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                if alive_opps:
+                    target = alive_opps[0]
+                    target['life_total'] -= damage
+                    self.drain_damage_this_turn += damage
+
+                    if verbose:
+                        print(f"  → Dealt {damage} damage (landfall)")
 
 
 class Mana_utils:

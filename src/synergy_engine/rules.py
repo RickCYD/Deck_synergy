@@ -2880,8 +2880,17 @@ def detect_landfall_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
         r'land.*from.*graveyard.*to.*battlefield'
     ]
 
+    # Extra land drop patterns (high synergy with landfall)
+    extra_land_patterns = [
+        r'you may play an additional land',
+        r'play.*additional lands?',
+        r'play.*extra lands?'
+    ]
+
     card1_text = card1.get('oracle_text', '').lower()
     card2_text = card2.get('oracle_text', '').lower()
+    card1_name = card1.get('name', '').lower()
+    card2_name = card2.get('name', '').lower()
 
     # Check if one has landfall and the other ramps/fetches lands
     card1_has_landfall = any(search_cached(pattern, card1_text) for pattern in landfall_patterns)
@@ -2889,6 +2898,60 @@ def detect_landfall_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 
     card1_ramps_lands = any(search_cached(pattern, card1_text) for pattern in land_ramp_patterns)
     card2_ramps_lands = any(search_cached(pattern, card2_text) for pattern in land_ramp_patterns)
+
+    card1_extra_lands = any(search_cached(pattern, card1_text) for pattern in extra_land_patterns)
+    card2_extra_lands = any(search_cached(pattern, card2_text) for pattern in extra_land_patterns)
+
+    # HIGH VALUE: Scute Swarm + extra land drops (exponential growth!)
+    if ('scute swarm' in card1_name and card2_extra_lands) or ('scute swarm' in card2_name and card1_extra_lands):
+        return {
+            'name': 'Exponential Landfall',
+            'description': f"Scute Swarm creates exponentially more copies with extra land drops!",
+            'value': 5.0,  # Very high value!
+            'category': 'triggers',
+            'subcategory': 'landfall'
+        }
+
+    # HIGH VALUE: Avenger of Zendikar + landfall enablers
+    if ('avenger of zendikar' in card1_name and card2_ramps_lands) or ('avenger of zendikar' in card2_name and card1_ramps_lands):
+        return {
+            'name': 'Massive Token Army',
+            'description': f"Avenger creates plants for each land, then buffs them with landfall",
+            'value': 4.5,
+            'category': 'triggers',
+            'subcategory': 'landfall'
+        }
+
+    # HIGH VALUE: Omnath + extra land drops (multiple triggers per turn)
+    omnath_names = ['omnath, locus of rage', 'omnath, locus of creation', 'omnath, locus of the roil']
+    if (any(name in card1_name for name in omnath_names) and card2_extra_lands) or \
+       (any(name in card2_name for name in omnath_names) and card1_extra_lands):
+        return {
+            'name': 'Multiple Omnath Triggers',
+            'description': f"Omnath triggers multiple times per turn with extra land drops",
+            'value': 4.5,
+            'category': 'triggers',
+            'subcategory': 'landfall'
+        }
+
+    # Landfall + extra land drops (high synergy!)
+    if card1_has_landfall and card2_extra_lands:
+        return {
+            'name': 'Extra Landfall Triggers',
+            'description': f"{card1['name']}'s landfall triggers multiple times with {card2['name']}'s extra drops",
+            'value': 4.0,
+            'category': 'triggers',
+            'subcategory': 'landfall'
+        }
+
+    if card2_has_landfall and card1_extra_lands:
+        return {
+            'name': 'Extra Landfall Triggers',
+            'description': f"{card2['name']}'s landfall triggers multiple times with {card1['name']}'s extra drops",
+            'value': 4.0,
+            'category': 'triggers',
+            'subcategory': 'landfall'
+        }
 
     # Landfall + land ramp
     if card1_has_landfall and card2_ramps_lands:
