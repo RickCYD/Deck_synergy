@@ -36,6 +36,9 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
     total_drain_damage = [0] * (max_turns + 1)  # NEW: Aristocrats drain
     total_tokens_created = [0] * (max_turns + 1)  # NEW: Token generation
     total_creatures_sacrificed = [0] * (max_turns + 1)  # NEW: Sacrifice outlets
+    total_cards_drawn = [0] * (max_turns + 1)  # NEW: Card draw tracking
+    total_life_gained = [0] * (max_turns + 1)  # NEW: Life gained tracking
+    total_life_lost = [0] * (max_turns + 1)  # NEW: Life lost tracking
     total_unspent = [0] * (max_turns + 1)
     ramp_cards_played = [0] * (max_turns + 1)
     total_hand_size = [0] * (max_turns + 1)
@@ -71,6 +74,9 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
             total_drain_damage[turn] += metrics.get("drain_damage", [0] * (max_turns + 1))[turn]  # ARISTOCRATS
             total_tokens_created[turn] += metrics.get("tokens_created", [0] * (max_turns + 1))[turn]  # ARISTOCRATS
             total_creatures_sacrificed[turn] += metrics.get("creatures_sacrificed", [0] * (max_turns + 1))[turn]  # ARISTOCRATS
+            total_cards_drawn[turn] += metrics.get("cards_drawn", [0] * (max_turns + 1))[turn]  # DECK POTENTIAL
+            total_life_gained[turn] += metrics.get("life_gained", [0] * (max_turns + 1))[turn]  # DECK POTENTIAL
+            total_life_lost[turn] += metrics.get("life_lost", [0] * (max_turns + 1))[turn]  # DECK POTENTIAL
             total_unspent[turn] += metrics["unspent_mana"][turn]
             ramp_cards_played[turn] += metrics["ramp_cards_played"][turn]
             total_cards_played[turn] += metrics["cards_played"][turn]
@@ -143,6 +149,11 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
     avg_tokens_created = [round(total_tokens_created[t] / num_games, 2) for t in range(max_turns + 1)]
     avg_creatures_sacrificed = [round(total_creatures_sacrificed[t] / num_games, 2) for t in range(max_turns + 1)]
 
+    # DECK POTENTIAL: Average new metrics
+    avg_cards_drawn = [round(total_cards_drawn[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_life_gained = [round(total_life_gained[t] / num_games, 2) for t in range(max_turns + 1)]
+    avg_life_lost = [round(total_life_lost[t] / num_games, 2) for t in range(max_turns + 1)]
+
     # ARISTOCRATS: Combine combat + drain for total damage
     avg_total_damage = [round(avg_damage[t] + avg_drain_damage[t], 2) for t in range(max_turns + 1)]
 
@@ -156,6 +167,9 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int):
         "Avg Total Damage": avg_total_damage[1:],  # NEW: Combat + Drain
         "Avg Tokens Created": avg_tokens_created[1:],  # NEW
         "Avg Creatures Sacrificed": avg_creatures_sacrificed[1:],  # NEW
+        "Avg Cards Drawn": avg_cards_drawn[1:],  # NEW
+        "Avg Life Gained": avg_life_gained[1:],  # NEW
+        "Avg Life Lost": avg_life_lost[1:],  # NEW
         "Avg Unspent Mana": avg_unspent[1:],
         "Avg Ramp Cards Played": avg_ramp_card[1:],
         "Avg Cards Played": avg_cards_played[1:],

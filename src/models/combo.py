@@ -115,24 +115,36 @@ class Combo:
         cards = []
         for card_data in data.get('uses', []):
             # Commander Spellbook uses 'card' for card info
-            card_info = card_data.get('card', {})
-            cards.append(ComboCard(
-                name=card_info.get('name', ''),
-                oracle_id=card_info.get('oracle_id'),
-                zone_locations=card_data.get('zone_locations', [])
-            ))
+            # Handle both dict and string formats
+            if isinstance(card_data, str):
+                # If it's a string, just use it as the card name
+                cards.append(ComboCard(name=card_data))
+            elif isinstance(card_data, dict):
+                card_info = card_data.get('card', {})
+                cards.append(ComboCard(
+                    name=card_info.get('name', ''),
+                    oracle_id=card_info.get('oracle_id'),
+                    zone_locations=card_data.get('zone_locations', [])
+                ))
+            else:
+                # Skip unknown formats
+                continue
 
         # Parse prerequisites, steps, results
-        prerequisites = [
-            f"{item.get('feature', {}).get('name', '')}"
-            for item in data.get('requires', [])
-        ]
+        prerequisites = []
+        for item in data.get('requires', []):
+            if isinstance(item, str):
+                prerequisites.append(item)
+            elif isinstance(item, dict):
+                prerequisites.append(item.get('feature', {}).get('name', ''))
 
         # Parse results
-        results = [
-            f"{item.get('feature', {}).get('name', '')}"
-            for item in data.get('produces', [])
-        ]
+        results = []
+        for item in data.get('produces', []):
+            if isinstance(item, str):
+                results.append(item)
+            elif isinstance(item, dict):
+                results.append(item.get('feature', {}).get('name', ''))
 
         return cls(
             id=str(data.get('id', '')),

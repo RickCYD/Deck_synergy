@@ -116,6 +116,10 @@ class BoardState:
         self.tokens_created_this_turn = 0  # Track token generation
         self.creatures_died_this_turn = 0  # PRIORITY 2: For Mahadi treasure generation
 
+        # Life tracking for deck potential metrics
+        self.life_gained_this_turn = 0  # Life gained this turn
+        self.life_lost_this_turn = 0  # Life lost/paid this turn
+
         # Landfall mechanics tracking
         self.lands_played_this_turn = 0  # Track lands played this turn
         self.landfall_triggers_this_turn = 0  # Track number of landfall triggers
@@ -575,6 +579,39 @@ class BoardState:
 
         return drawn
 
+    def gain_life(self, amount: int, verbose: bool = False):
+        """
+        Gain life and track it for metrics.
+
+        Parameters
+        ----------
+        amount : int
+            Amount of life to gain.
+        verbose : bool, optional
+            If ``True`` print debug information.
+        """
+        if amount > 0:
+            self.life_total += amount
+            self.life_gained_this_turn += amount
+            if verbose:
+                print(f"Gained {amount} life. Life total: {self.life_total}")
+
+    def lose_life(self, amount: int, verbose: bool = False):
+        """
+        Lose or pay life and track it for metrics.
+
+        Parameters
+        ----------
+        amount : int
+            Amount of life to lose/pay.
+        verbose : bool, optional
+            If ``True`` print debug information.
+        """
+        if amount > 0:
+            self.life_total -= amount
+            self.life_lost_this_turn += amount
+            if verbose:
+                print(f"Lost {amount} life. Life total: {self.life_total}")
 
     def play_card(self, card, verbose=False, cast=True):
         """Play *card* using the appropriate method or simply put it into play."""
