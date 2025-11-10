@@ -255,6 +255,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             "creatures_reanimated_turn",  # REANIMATOR: Creatures reanimated this turn
             "graveyard_creature_power",  # REANIMATOR: Total power in graveyard
             "cards_discarded",  # REANIMATOR: Cards discarded for value
+            "proliferate_triggers",  # COUNTERS: Proliferate triggers this turn
+            "total_counters_on_creatures",  # COUNTERS: Total +1/+1 counters on creatures
+            "ozolith_stored_counters",  # COUNTERS: Counters stored on The Ozolith
         )
     }
 
@@ -692,6 +695,32 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
         # PRIORITY 2: End-of-turn treasure generation (Mahadi, etc.)
         board.check_end_of_turn_treasures(board.creatures_died_this_turn, verbose=verbose)
+
+        # COUNTER MANIPULATION: Check for proliferate triggers
+        board.check_for_proliferate_triggers(verbose=verbose)
+
+        # COUNTER MANIPULATION: Try to move Ozolith counters to a creature
+        if board.ozolith_counters and board.creatures:
+            # Move Ozolith counters to the biggest creature
+            best_target = max(board.creatures, key=lambda c: (c.power or 0) + (c.toughness or 0))
+            board.move_ozolith_counters_to_creature(best_target, verbose=verbose)
+
+        # COUNTER MANIPULATION: Track counter metrics
+        metrics["proliferate_triggers"][turn] = board.proliferate_this_turn
+
+        # Count total +1/+1 counters on all creatures
+        total_counters = sum(
+            getattr(c, 'counters', {}).get('+1/+1', 0)
+            for c in board.creatures
+        )
+        metrics["total_counters_on_creatures"][turn] = total_counters
+
+        # Track Ozolith stored counters
+        ozolith_total = sum(board.ozolith_counters.values())
+        metrics["ozolith_stored_counters"][turn] = ozolith_total
+
+        # Reset proliferate counter for next turn
+        board.proliferate_this_turn = 0
 
         # ─────────────────── NEW: Track Interaction Metrics ───────────────────
         metrics["opponents_alive"][turn] = sum(1 for opp in board.opponents if opp['is_alive'])

@@ -131,6 +131,13 @@ class BoardState:
         self.creatures_reanimated_this_turn = 0  # For per-turn tracking
         self.cards_discarded_for_value = 0  # Discard outlets like Faithless Looting
 
+        # Counter manipulation mechanics tracking
+        self.proliferate_count = 0  # Total proliferate triggers
+        self.proliferate_this_turn = 0  # Proliferate triggers this turn
+        self.ozolith_counters = {}  # Stored counters from dead creatures (The Ozolith)
+        self.counters_moved_to_ozolith = 0  # Total counters moved to Ozolith
+        self.total_counters_on_creatures = 0  # Total +1/+1 counters on all creatures
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
         for kw in getattr(creature, "keywords_when_equipped", []):
@@ -432,9 +439,65 @@ class BoardState:
         for permanent in battlefield:
             self._execute_triggers("landfall", permanent, verbose)
 
-    def proliferate(self, verbose: bool = False) -> None:
-        """Give each permanent with counters another of each kind."""
+    def add_counters_with_doubling(self, permanent, counter_type: str, amount: int = 1, verbose: bool = False) -> int:
+        """
+        Add counters to a permanent, checking for counter doublers.
 
+        This handles counter doublers like:
+        - Hardened Scales: If you would put +1/+1 counters, put that many plus one
+        - Branching Evolution: If you would put counters, put twice that many
+        - Doubling Season: If you would put counters, put twice that many
+
+        Returns the actual number of counters added.
+        """
+        if amount <= 0:
+            return 0
+
+        actual_amount = amount
+
+        # Check for counter doublers on the battlefield
+        for doubler in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(doubler, 'oracle_text', '').lower()
+            doubler_name = getattr(doubler, 'name', '').lower()
+
+            # Hardened Scales: +1/+1 counters get +1
+            if 'hardened scales' in doubler_name or (
+                'if you would put one or more +1/+1 counter' in oracle and 'put that many plus one' in oracle
+            ):
+                if counter_type == "+1/+1":
+                    actual_amount += 1
+                    if verbose:
+                        print(f"  → {doubler.name}: +1/+1 counters increased by 1")
+
+            # Branching Evolution / Doubling Season: Double all counters
+            elif 'branching evolution' in doubler_name or 'doubling season' in doubler_name or (
+                'if you would put one or more counter' in oracle and 'twice that many' in oracle
+            ):
+                actual_amount *= 2
+                if verbose:
+                    print(f"  → {doubler.name}: Counters doubled!")
+
+            # Vorinclex, Monstrous Raider: Double counters you put
+            elif 'vorinclex' in doubler_name and 'monstrous raider' in doubler_name:
+                actual_amount *= 2
+                if verbose:
+                    print(f"  → {doubler.name}: Counters doubled!")
+
+        # Actually add the counters
+        if hasattr(permanent, 'add_counter'):
+            permanent.add_counter(counter_type, actual_amount)
+        elif hasattr(permanent, 'counters'):
+            # Fallback for cards without add_counter method
+            permanent.counters[counter_type] = permanent.counters.get(counter_type, 0) + actual_amount
+
+        return actual_amount
+
+    def proliferate(self, verbose: bool = False) -> int:
+        """
+        Give each permanent with counters another of each kind.
+
+        Returns the total number of counters added.
+        """
         battlefield = (
             self.lands_untapped
             + self.lands_tapped
@@ -444,13 +507,26 @@ class BoardState:
             + self.planeswalkers
         )
 
+        total_counters_added = 0
+
         for permanent in battlefield:
             counters = getattr(permanent, "counters", {})
             for ctype, amount in list(counters.items()):
                 if amount > 0:
-                    permanent.add_counter(ctype)
+                    # Use the doubling-aware method
+                    added = self.add_counters_with_doubling(permanent, ctype, 1, verbose=False)
+                    total_counters_added += added
                     if verbose:
-                        print(f"{permanent.name} proliferates a {ctype} counter")
+                        print(f"  → {permanent.name} proliferates {added} {ctype} counter(s)")
+
+        # Track proliferate count
+        self.proliferate_count += 1
+        self.proliferate_this_turn += 1
+
+        if verbose and total_counters_added > 0:
+            print(f"✨ Proliferate added {total_counters_added} total counters!")
+
+        return total_counters_added
 
     def attack(self, creature, verbose=False):
         """Declare *creature* as an attacker and handle attack triggers."""
@@ -2031,9 +2107,9 @@ class BoardState:
             # Cathars' Crusade: "Whenever a creature enters, put a +1/+1 counter on each creature you control"
             if 'whenever a creature enters' in oracle or 'whenever a creature you control enters' in oracle:
                 if '+1/+1 counter' in oracle:
-                    # Put a counter on each creature
+                    # Put a counter on each creature (with doubling!)
                     for creature in self.creatures:
-                        creature.add_counter("+1/+1", 1)
+                        self.add_counters_with_doubling(creature, "+1/+1", 1, verbose=False)
                         counters_applied = True
 
                     if verbose:
@@ -2050,11 +2126,15 @@ class BoardState:
         - Cruel Celebrant
         - Bastion of Remembrance
         - Mirkwood Bats
+        - The Ozolith (counter preservation)
         """
         drain_total = 0
 
         # PRIORITY 2: Track creature deaths for Mahadi
         self.creatures_died_this_turn += 1
+
+        # COUNTER MANIPULATION: The Ozolith - preserve counters
+        self.handle_ozolith_on_death(creature, verbose=verbose)
 
         # Count all permanents with death triggers
         for permanent in self.creatures + self.enchantments + self.artifacts:
@@ -2113,6 +2193,125 @@ class BoardState:
                         drain += 1 * num_alive_opps
 
         return drain
+
+    def handle_ozolith_on_death(self, creature, verbose: bool = False):
+        """
+        Handle The Ozolith when a creature dies.
+
+        The Ozolith: "Whenever a creature you control leaves the battlefield,
+        if it had counters on it, put those counters on The Ozolith."
+
+        When creature dies, move its counters to self.ozolith_counters storage.
+        """
+        # Check if The Ozolith is on battlefield
+        has_ozolith = False
+        ozolith_card = None
+
+        for artifact in self.artifacts:
+            name = getattr(artifact, 'name', '').lower()
+            oracle = getattr(artifact, 'oracle_text', '').lower()
+
+            if 'ozolith' in name or 'the ozolith' in name:
+                has_ozolith = True
+                ozolith_card = artifact
+                break
+
+        if not has_ozolith:
+            return
+
+        # Get counters from dying creature
+        creature_counters = getattr(creature, 'counters', {})
+
+        if not creature_counters or sum(creature_counters.values()) == 0:
+            return
+
+        # Move counters to Ozolith storage
+        for counter_type, amount in creature_counters.items():
+            if amount > 0:
+                self.ozolith_counters[counter_type] = self.ozolith_counters.get(counter_type, 0) + amount
+                self.counters_moved_to_ozolith += amount
+
+                if verbose:
+                    print(f"  → The Ozolith: Stored {amount} {counter_type} counter(s) from {creature.name}")
+
+    def move_ozolith_counters_to_creature(self, target_creature, verbose: bool = False):
+        """
+        Move counters from The Ozolith storage to a creature.
+
+        At the beginning of combat, can move all Ozolith counters to target creature.
+        """
+        if not self.ozolith_counters:
+            return False
+
+        # Check if The Ozolith is still on battlefield
+        has_ozolith = any(
+            'ozolith' in getattr(artifact, 'name', '').lower()
+            for artifact in self.artifacts
+        )
+
+        if not has_ozolith:
+            return False
+
+        # Move all counters to target
+        for counter_type, amount in self.ozolith_counters.items():
+            if amount > 0:
+                # Use counter doubling if applicable
+                actual_added = self.add_counters_with_doubling(
+                    target_creature, counter_type, amount, verbose=verbose
+                )
+
+                if verbose:
+                    print(f"  → The Ozolith: Moved {actual_added} {counter_type} counter(s) to {target_creature.name}")
+
+        # Clear Ozolith storage
+        self.ozolith_counters = {}
+        return True
+
+    def check_for_proliferate_triggers(self, verbose: bool = False):
+        """
+        Check for permanents that trigger proliferate.
+
+        Common proliferate triggers:
+        - Atraxa, Praetors' Voice: End step proliferate
+        - Karn's Bastion: Activated ability
+        - Evolution Sage: Landfall proliferate
+        - Contagion Engine: Activated ability
+        """
+        should_proliferate = False
+
+        for permanent in self.creatures + self.artifacts + self.enchantments + self.planeswalkers:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Atraxa: End step proliferate
+            if 'atraxa' in name and 'end step' in oracle and 'proliferate' in oracle:
+                should_proliferate = True
+                if verbose:
+                    print(f"  → {permanent.name} triggers proliferate!")
+                break
+
+            # Evolution Sage: Landfall proliferate
+            if 'evolution sage' in name or ('landfall' in oracle and 'proliferate' in oracle):
+                if self.lands_played_this_turn > 0:
+                    should_proliferate = True
+                    if verbose:
+                        print(f"  → {permanent.name} triggers proliferate from landfall!")
+                    break
+
+            # Generic "whenever you..." proliferate triggers
+            if 'proliferate' in oracle and ('whenever' in oracle or 'when' in oracle):
+                # Simplified: Assume it triggers sometimes
+                import random
+                if random.random() < 0.3:  # 30% chance per turn
+                    should_proliferate = True
+                    if verbose:
+                        print(f"  → {permanent.name} triggers proliferate!")
+                    break
+
+        if should_proliferate:
+            self.proliferate(verbose=verbose)
+
+        return should_proliferate
 
     def trigger_cast_effects(self, card, verbose: bool = False):
         """
@@ -2768,9 +2967,9 @@ class BoardState:
         elementals = [c for c in self.creatures if 'elemental' in getattr(c, 'type', '').lower()]
 
         if elementals:
-            # Buff the strongest elemental
+            # Buff the strongest elemental (with counter doubling!)
             target = max(elementals, key=lambda c: c.power or 0)
-            target.add_counter("+1/+1", 1)
+            self.add_counters_with_doubling(target, "+1/+1", 1, verbose=False)
 
             if verbose:
                 print(f"  → Omnath, Locus of the Roil: Added +1/+1 counter to {target.name}")
@@ -2795,7 +2994,7 @@ class BoardState:
 
         if plants:
             for plant in plants:
-                plant.add_counter("+1/+1", 1)
+                self.add_counters_with_doubling(plant, "+1/+1", 1, verbose=False)
 
             if verbose:
                 print(f"  → Avenger of Zendikar: Added +1/+1 counters to {len(plants)} Plant tokens!")
@@ -2836,12 +3035,11 @@ class BoardState:
         - "Landfall — Put a +1/+1 counter on Scythe Leopard"
         - "Landfall — Put a +1/+1 counter on target creature"
         """
-        # Put a +1/+1 counter on the source permanent
-        if hasattr(permanent, 'add_counter'):
-            permanent.add_counter("+1/+1", 1)
+        # Put a +1/+1 counter on the source permanent (with doubling!)
+        self.add_counters_with_doubling(permanent, "+1/+1", 1, verbose=False)
 
-            if verbose:
-                print(f"  → {permanent.name}: Added +1/+1 counter (landfall)")
+        if verbose:
+            print(f"  → {permanent.name}: Added +1/+1 counter (landfall)")
 
     def handle_generic_landfall_life_gain(self, oracle_text: str, verbose: bool = False):
         """
