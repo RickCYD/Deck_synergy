@@ -3250,6 +3250,327 @@ def detect_storm_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     return None
 
 
+def detect_aetherflux_reservoir_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect Aetherflux Reservoir synergy - life gain triggers + cast triggers
+    Cards like Aetherflux Reservoir that trigger on spell casts and gain life
+    """
+    # Aetherflux Reservoir-like patterns
+    aetherflux_patterns = [
+        r'whenever you cast a spell.*gain.*life',
+        r'whenever you cast.*you gain.*life',
+        r'whenever you cast.*gain 1 life'
+    ]
+
+    # Life gain payoff patterns
+    life_gain_payoff_patterns = [
+        r'whenever you gain life',
+        r'when you gain life',
+        r'if you gained life',
+        r'for each life gained'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card2_cmc = card2.get('cmc', 0)
+    card1_cmc = card1.get('cmc', 0)
+
+    # Check if card1 is Aetherflux-like (gains life on cast)
+    card1_is_aetherflux = any(search_cached(pattern, card1_text) for pattern in aetherflux_patterns)
+    card2_is_spell = 'instant' in card2_type or 'sorcery' in card2_type
+
+    if card1_is_aetherflux and card2_is_spell:
+        return {
+            'name': 'Aetherflux Engine',
+            'description': f"{card1['name']} gains life when casting {card2['name']}",
+            'value': 4.5,
+            'category': 'combo',
+            'subcategory': 'storm'
+        }
+
+    # Check reverse - card2 is Aetherflux-like
+    card2_is_aetherflux = any(search_cached(pattern, card2_text) for pattern in aetherflux_patterns)
+    card1_is_spell = 'instant' in card1_type or 'sorcery' in card1_type
+
+    if card2_is_aetherflux and card1_is_spell:
+        return {
+            'name': 'Aetherflux Engine',
+            'description': f"{card2['name']} gains life when casting {card1['name']}",
+            'value': 4.5,
+            'category': 'combo',
+            'subcategory': 'storm'
+        }
+
+    # Life gain payoff + cheap spells that trigger Aetherflux
+    card1_payoff = any(search_cached(pattern, card1_text) for pattern in life_gain_payoff_patterns)
+    card2_payoff = any(search_cached(pattern, card2_text) for pattern in life_gain_payoff_patterns)
+
+    if (card1_payoff and card2_is_aetherflux) or (card2_payoff and card1_is_aetherflux):
+        payoff_card = card1['name'] if card1_payoff else card2['name']
+        aetherflux_card = card2['name'] if card2_is_aetherflux else card1['name']
+        return {
+            'name': 'Life Gain Storm',
+            'description': f"{aetherflux_card} gains life on casts, {payoff_card} rewards life gain",
+            'value': 5.0,
+            'category': 'combo',
+            'subcategory': 'storm'
+        }
+
+    return None
+
+
+def detect_spell_cost_reduction(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect spell cost reduction synergies
+    Cost reducers + instants/sorceries
+    """
+    # Cost reduction patterns
+    cost_reduction_patterns = [
+        r'instant.*cost.*\{[0-9]+\} less',
+        r'sorcery.*cost.*\{[0-9]+\} less',
+        r'instant and sorcery spells.*cost.*less',
+        r'noncreature spells.*cost.*less',
+        r'spells you cast.*cost.*less',
+        r'instant.*cost.*\{1\} less',
+        r'sorcery.*cost.*\{1\} less'
+    ]
+
+    # Flashback/graveyard cost reduction
+    graveyard_cost_patterns = [
+        r'you may cast.*from your graveyard',
+        r'instant.*from.*graveyard',
+        r'sorcery.*from.*graveyard',
+        r'flashback'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_keywords = [kw.lower() for kw in card1.get('keywords', [])]
+    card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
+
+    # Check if card1 reduces costs
+    card1_reduces_costs = any(search_cached(pattern, card1_text) for pattern in cost_reduction_patterns)
+    card1_graveyard_casts = any(search_cached(pattern, card1_text) for pattern in graveyard_cost_patterns) or \
+                           'flashback' in card1_keywords
+
+    card2_is_spell = 'instant' in card2_type or 'sorcery' in card2_type
+
+    if card1_reduces_costs and card2_is_spell:
+        return {
+            'name': 'Cost Reduction Engine',
+            'description': f"{card1['name']} reduces the cost of {card2['name']}",
+            'value': 3.5,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    if card1_graveyard_casts and card2_is_spell:
+        return {
+            'name': 'Graveyard Recursion',
+            'description': f"{card1['name']} enables casting {card2['name']} from graveyard",
+            'value': 3.0,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    # Check reverse
+    card2_reduces_costs = any(search_cached(pattern, card2_text) for pattern in cost_reduction_patterns)
+    card2_graveyard_casts = any(search_cached(pattern, card2_text) for pattern in graveyard_cost_patterns) or \
+                           'flashback' in card2_keywords
+
+    card1_is_spell = 'instant' in card1_type or 'sorcery' in card1_type
+
+    if card2_reduces_costs and card1_is_spell:
+        return {
+            'name': 'Cost Reduction Engine',
+            'description': f"{card2['name']} reduces the cost of {card1['name']}",
+            'value': 3.5,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    if card2_graveyard_casts and card1_is_spell:
+        return {
+            'name': 'Graveyard Recursion',
+            'description': f"{card2['name']} enables casting {card1['name']} from graveyard",
+            'value': 3.0,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    return None
+
+
+def detect_flashback_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect flashback/rebound synergies
+    Flashback spells + cast triggers or graveyard enablers
+    """
+    # Flashback/rebound patterns
+    flashback_patterns = [
+        r'flashback',
+        r'you may cast this card from your graveyard',
+        r'cast.*from your graveyard'
+    ]
+
+    rebound_patterns = [
+        r'rebound'
+    ]
+
+    # Graveyard enabler patterns
+    graveyard_enabler_patterns = [
+        r'mill',
+        r'put.*into your graveyard',
+        r'self-mill',
+        r'discard'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_keywords = [kw.lower() for kw in card1.get('keywords', [])]
+    card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+
+    # Check for flashback/rebound
+    card1_has_flashback = any(search_cached(pattern, card1_text) for pattern in flashback_patterns) or \
+                         'flashback' in card1_keywords
+    card1_has_rebound = any(search_cached(pattern, card1_text) for pattern in rebound_patterns) or \
+                       'rebound' in card1_keywords
+
+    card2_has_flashback = any(search_cached(pattern, card2_text) for pattern in flashback_patterns) or \
+                         'flashback' in card2_keywords
+    card2_has_rebound = any(search_cached(pattern, card2_text) for pattern in rebound_patterns) or \
+                       'rebound' in card2_keywords
+
+    # Check for graveyard enablers
+    card1_enables_graveyard = any(search_cached(pattern, card1_text) for pattern in graveyard_enabler_patterns)
+    card2_enables_graveyard = any(search_cached(pattern, card2_text) for pattern in graveyard_enabler_patterns)
+
+    # Flashback spell + graveyard enabler
+    if card1_has_flashback and card2_enables_graveyard:
+        return {
+            'name': 'Flashback Enabler',
+            'description': f"{card2['name']} fills graveyard for {card1['name']}'s flashback",
+            'value': 3.5,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    if card2_has_flashback and card1_enables_graveyard:
+        return {
+            'name': 'Flashback Enabler',
+            'description': f"{card1['name']} fills graveyard for {card2['name']}'s flashback",
+            'value': 3.5,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    # Rebound spell + spell triggers (double trigger value)
+    spell_trigger_patterns = [
+        r'whenever you cast an instant or sorcery',
+        r'whenever you cast a noncreature spell',
+        r'magecraft',
+        r'prowess'
+    ]
+
+    card1_has_spell_trigger = any(search_cached(pattern, card1_text) for pattern in spell_trigger_patterns)
+    card2_has_spell_trigger = any(search_cached(pattern, card2_text) for pattern in spell_trigger_patterns)
+
+    if card1_has_rebound and card2_has_spell_trigger:
+        return {
+            'name': 'Rebound Value',
+            'description': f"{card1['name']}'s rebound triggers {card2['name']} twice",
+            'value': 4.0,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    if card2_has_rebound and card1_has_spell_trigger:
+        return {
+            'name': 'Rebound Value',
+            'description': f"{card2['name']}'s rebound triggers {card1['name']} twice",
+            'value': 4.0,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    return None
+
+
+def detect_cantrip_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect cantrip synergies
+    Cheap card draw spells + spell triggers
+    """
+    # Cantrip patterns (cheap spells that draw cards)
+    cantrip_patterns = [
+        r'draw a card',
+        r'draw two cards',
+        r'scry.*draw'
+    ]
+
+    # Spell velocity patterns (care about casting multiple spells)
+    spell_velocity_patterns = [
+        r'whenever you cast an instant or sorcery',
+        r'whenever you cast a noncreature spell',
+        r'magecraft',
+        r'prowess',
+        r'storm',
+        r'for each spell cast'
+    ]
+
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_cmc = card1.get('cmc', 999)
+    card2_cmc = card2.get('cmc', 999)
+    card1_keywords = [kw.lower() for kw in card1.get('keywords', [])]
+    card2_keywords = [kw.lower() for kw in card2.get('keywords', [])]
+
+    # Check if card1 is a cantrip
+    card1_is_cantrip = (card1_cmc <= 2) and \
+                      ('instant' in card1_type or 'sorcery' in card1_type) and \
+                      any(search_cached(pattern, card1_text) for pattern in cantrip_patterns)
+
+    # Check if card2 cares about spell velocity
+    card2_spell_velocity = any(search_cached(pattern, card2_text) for pattern in spell_velocity_patterns) or \
+                          any(kw in card2_keywords for kw in ['prowess', 'storm'])
+
+    if card1_is_cantrip and card2_spell_velocity:
+        return {
+            'name': 'Cantrip Engine',
+            'description': f"{card1['name']} fuels {card2['name']}'s spell triggers while maintaining card advantage",
+            'value': 4.5,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    # Check reverse
+    card2_is_cantrip = (card2_cmc <= 2) and \
+                      ('instant' in card2_type or 'sorcery' in card2_type) and \
+                      any(search_cached(pattern, card2_text) for pattern in cantrip_patterns)
+
+    card1_spell_velocity = any(search_cached(pattern, card1_text) for pattern in spell_velocity_patterns) or \
+                          any(kw in card1_keywords for kw in ['prowess', 'storm'])
+
+    if card2_is_cantrip and card1_spell_velocity:
+        return {
+            'name': 'Cantrip Engine',
+            'description': f"{card2['name']} fuels {card1['name']}'s spell triggers while maintaining card advantage",
+            'value': 4.5,
+            'category': 'type_synergy',
+            'subcategory': 'instant_sorcery_matters'
+        }
+
+    return None
+
+
 def detect_energy_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     """
     Detect energy synergy - energy generation + energy consumption
@@ -5263,6 +5584,11 @@ ALL_RULES = [
     detect_counter_synergy,
     detect_copy_synergy,
     detect_storm_synergy,
+    # Spellslinger archetype rules
+    detect_aetherflux_reservoir_synergy,
+    detect_spell_cost_reduction,
+    detect_flashback_synergy,
+    detect_cantrip_synergy,
     detect_energy_synergy,
     detect_stax_synergy,
     # New comprehensive synergy rules (46 new rules added)
