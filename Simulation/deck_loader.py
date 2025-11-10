@@ -17,6 +17,8 @@ from oracle_text_parser import (
     parse_damage_triggers_from_oracle,
     parse_activated_abilities,
     parse_etb_tapped_conditions,
+    parse_death_triggers_from_oracle,
+    parse_sacrifice_outlet_from_oracle,
 )
 
 
@@ -114,6 +116,17 @@ def _df_to_cards(df: pd.DataFrame):
     commander = None
     for _, row in df.iterrows():
         fetch = parse_fetch_land_ability(row.get("OracleText", ""))
+        oracle_text = row.get("OracleText", "")
+
+        # Parse death triggers and sacrifice outlets if not already in the dataframe
+        death_trigger_value = row.get("DeathTriggerValue")
+        if death_trigger_value is None:
+            death_trigger_value = parse_death_triggers_from_oracle(oracle_text)
+
+        sacrifice_outlet = row.get("SacrificeOutlet")
+        if sacrifice_outlet is None:
+            sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
+
         c = Card(
             name=row.get("Name", ""),
             type=row.get("Type", ""),
@@ -142,10 +155,12 @@ def _df_to_cards(df: pd.DataFrame):
             draw_cards=_safe_int(row.get("DrawCards", 0)),
             activated_abilities=row.get("ActivatedAbilities", []),
             triggered_abilities=row.get("TriggeredAbilities", []),
-            oracle_text=row.get("OracleText", ""),
+            oracle_text=oracle_text,
             fetch_basic=fetch["fetch_basic"],
             fetch_land_types=fetch["fetch_land_types"],
             fetch_land_tapped=fetch["fetch_land_tapped"],
+            death_trigger_value=death_trigger_value,
+            sacrifice_outlet=sacrifice_outlet,
         )
 
         if c.is_commander:
@@ -207,6 +222,8 @@ def fetch_cards_from_scryfall_bulk(names: list[str]) -> list[dict]:
                 oracle_text, type_line, card.get("name", "")
             )
             conditions = parse_etb_conditions_from_oracle(oracle_text)
+            death_trigger_value = parse_death_triggers_from_oracle(oracle_text)
+            sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
             rows.append(
                 {
                     "Name": card.get("name", ""),
@@ -225,6 +242,8 @@ def fetch_cards_from_scryfall_bulk(names: list[str]) -> list[dict]:
                     "DrawCards": 0,
                     "PutsLand": 0,
                     "OracleText": oracle_text,
+                    "DeathTriggerValue": death_trigger_value,
+                    "SacrificeOutlet": sacrifice_outlet,
                 }
             )
 
@@ -253,6 +272,8 @@ def fetch_card_from_scryfall(name: str) -> dict:
     mana_production = parse_mana_production(oracle_text, type_line, name)
 
     conditions = parse_etb_conditions_from_oracle(oracle_text)
+    death_trigger_value = parse_death_triggers_from_oracle(oracle_text)
+    sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
     # print(f"Parsed conditions for {name}: {conditions}")
     info = {
         "Name": data.get("name", name),
@@ -271,6 +292,8 @@ def fetch_card_from_scryfall(name: str) -> dict:
         "DrawCards": 0,
         "PutsLand": 0,
         "OracleText": oracle_text,
+        "DeathTriggerValue": death_trigger_value,
+        "SacrificeOutlet": sacrifice_outlet,
     }
     return info
 
