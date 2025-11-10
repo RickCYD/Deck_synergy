@@ -438,60 +438,36 @@ def parse_triggers_with_gpt(text: str) -> list[TriggeredAbility]:
 def parse_death_triggers_from_oracle(text: str) -> int:
     """
     Parse oracle text to detect death drain triggers.
-    Returns the amount of life drained per creature death.
 
-    Examples:
-    - "Whenever another creature dies, each opponent loses 1 life" -> 1
-    - "Whenever a creature dies, each opponent loses 1 life and you gain 1 life" -> 1
-    - "Whenever a token leaves the battlefield, each opponent loses 1 life" -> 1 (Nadier's Nightblade)
+    **SINGLE SOURCE OF TRUTH**: Uses shared_mechanics.py
+    All detection logic is in shared_mechanics.detect_death_drain_value()
     """
-    if not text:
-        return 0
+    import sys
+    from pathlib import Path
 
-    lower = text.lower()
+    # Add parent directory to import shared_mechanics
+    parent_dir = Path(__file__).parent.parent
+    if str(parent_dir) not in sys.path:
+        sys.path.insert(0, str(parent_dir))
 
-    # Pattern for death drain effects
-    # Examples: Zulaport Cutthroat, Cruel Celebrant, Bastion of Remembrance
-    if 'dies' in lower and 'opponent' in lower and ('lose' in lower or 'loses' in lower):
-        # Try to extract the amount
-        # Pattern: "loses 1 life" or "lose 1 life"
-        m = re.search(r'loses? (\d+) life', lower)
-        if m:
-            return int(m.group(1))
-
-        # Default to 1 if we can't parse the exact amount
-        return 1
-
-    # Pattern for "leaves the battlefield" drain effects (e.g., Nadier's Nightblade)
-    if 'leaves the battlefield' in lower and 'opponent' in lower and ('lose' in lower or 'loses' in lower):
-        # Try to extract the amount
-        m = re.search(r'loses? (\d+) life', lower)
-        if m:
-            return int(m.group(1))
-
-        # Default to 1 if we can't parse the exact amount
-        return 1
-
-    return 0
+    from shared_mechanics import detect_death_drain_value
+    return detect_death_drain_value(text)
 
 
 def parse_sacrifice_outlet_from_oracle(text: str) -> bool:
     """
     Parse oracle text to detect sacrifice outlets.
-    Returns True if the card can sacrifice creatures for value.
 
-    Examples:
-    - "Sacrifice a creature: ..." -> True
-    - "T, Sacrifice a creature: ..." -> True
+    **SINGLE SOURCE OF TRUTH**: Uses shared_mechanics.py
+    All detection logic is in shared_mechanics.detect_sacrifice_outlet()
     """
-    if not text:
-        return False
+    import sys
+    from pathlib import Path
 
-    lower = text.lower()
+    # Add parent directory to import shared_mechanics
+    parent_dir = Path(__file__).parent.parent
+    if str(parent_dir) not in sys.path:
+        sys.path.insert(0, str(parent_dir))
 
-    # Look for activated abilities that sacrifice creatures
-    # Pattern: cost including "sacrifice" : effect
-    if re.search(r'sacrifice [^:]*?creature[^:]*?:', lower):
-        return True
-
-    return False
+    from shared_mechanics import detect_sacrifice_outlet
+    return detect_sacrifice_outlet(text)

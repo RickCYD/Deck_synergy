@@ -175,6 +175,13 @@ def convert_card_to_simulation_format(card_data: Dict):
     death_trigger_value = parse_death_triggers_from_oracle(oracle_text)
     sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
 
+    # DEBUG: Print aristocrats cards
+    if death_trigger_value > 0 or sacrifice_outlet:
+        print(f"  [ARISTOCRATS] {name}:")
+        print(f"    death_trigger_value={death_trigger_value}")
+        print(f"    sacrifice_outlet={sacrifice_outlet}")
+        print(f"    oracle_text={oracle_text[:100] if oracle_text else 'MISSING'}...")
+
     # Create Card object
     return Card(
         name=name,
