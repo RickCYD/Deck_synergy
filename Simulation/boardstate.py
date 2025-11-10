@@ -2202,6 +2202,7 @@ class BoardState:
         - Bastion of Remembrance
         - Mirkwood Bats
         - The Ozolith (counter preservation)
+        - Teysa Karlov (doubles death triggers!)
         """
         drain_total = 0
 
@@ -2210,6 +2211,25 @@ class BoardState:
 
         # COUNTER MANIPULATION: The Ozolith - preserve counters
         self.handle_ozolith_on_death(creature, verbose=verbose)
+
+        # Check for death trigger doublers (Teysa Karlov, Parallel Lives for tokens, etc.)
+        death_trigger_multiplier = 1
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            perm_name = getattr(permanent, 'name', '').lower()
+            perm_oracle = getattr(permanent, 'oracle_text', '').lower()
+
+            # Teysa Karlov: "If a creature dying causes a triggered ability of a permanent you control to trigger, that ability triggers an additional time."
+            if 'teysa karlov' in perm_name:
+                death_trigger_multiplier = 2
+                if verbose:
+                    print(f"  → Teysa Karlov doubles death triggers!")
+                break
+            # Generic check for death trigger doublers
+            elif 'dying causes' in perm_oracle and 'triggers an additional time' in perm_oracle:
+                death_trigger_multiplier = 2
+                if verbose:
+                    print(f"  → {permanent.name} doubles death triggers!")
+                break
 
         # Count all permanents with death triggers
         for permanent in self.creatures + self.enchantments + self.artifacts:
@@ -2227,17 +2247,22 @@ class BoardState:
 
             # Zulaport Cutthroat / Cruel Celebrant type effects
             if death_value > 0 and 'opponent' in oracle and 'loses' in oracle:
-                # Each opponent loses X life
-                drain_per_opp = death_value
+                # Each opponent loses X life (multiplied by death trigger doubler!)
+                drain_per_opp = death_value * death_trigger_multiplier
                 num_alive_opps = len([o for o in self.opponents if o['is_alive']])
                 drain_total += drain_per_opp * num_alive_opps
 
                 if verbose:
-                    print(f"  → {permanent.name} drains {drain_per_opp} × {num_alive_opps} opponents = {drain_per_opp * num_alive_opps}")
+                    if death_trigger_multiplier > 1:
+                        print(f"  → {permanent.name} drains {death_value} × {death_trigger_multiplier} (doubled!) × {num_alive_opps} opponents = {drain_per_opp * num_alive_opps}")
+                    else:
+                        print(f"  → {permanent.name} drains {drain_per_opp} × {num_alive_opps} opponents = {drain_per_opp * num_alive_opps}")
 
-            # Pitiless Plunderer - create treasure
+            # Pitiless Plunderer - create treasure (also doubled by Teysa!)
             if 'treasure' in oracle and 'dies' in oracle:
-                self.create_treasure(verbose=verbose)
+                treasures_to_create = 1 * death_trigger_multiplier
+                for _ in range(treasures_to_create):
+                    self.create_treasure(verbose=verbose)
 
         # Track total drain damage
         if drain_total > 0:
