@@ -291,7 +291,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
     def _count_hand_lands(hand):
         counts = {c: 0 for c in COLOURS}
         for card in hand:
-            if card.type in ("Land", "Basic Land"):
+            if 'Land' in card.type:
                 cols = card.produces_colors or ["C"]
                 if "Any" in cols:
                     counts["Any"] += 1
@@ -358,7 +358,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
         # --- metrics after draw step before playing a land ---
         metrics["hand_size"][turn] = len(board.hand)
-        non_lands = [c for c in board.hand if c.type not in ("Land", "Basic Land")]
+        non_lands = [c for c in board.hand if 'Land' not in c.type]
         metrics["non_land_cards"][turn] = len(non_lands)
         pre_pool = board.mana_sources_from_board(
             board.lands_untapped,
@@ -411,7 +411,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             if Mana_utils.can_pay(cost_str, pool_start):
                 castable += 1
         for c in board.hand:
-            if c.type in ("Land", "Basic Land"):
+            if 'Land' in c.type:
                 continue
             if Mana_utils.can_pay(c.mana_cost, pool_start):
                 castable += 1
@@ -420,7 +420,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # Count unplayable cards given current mana pool
         unplayable = 0
         for c in board.hand:
-            if c.type in ("Land", "Basic Land"):
+            if 'Land' in c.type:
                 continue
             if not Mana_utils.can_pay(c.mana_cost, pool_start):
                 unplayable += 1

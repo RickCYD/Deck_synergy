@@ -643,7 +643,9 @@ class BoardState:
         if getattr(card, "is_commander", False) or card.type.lower() == "commander":
             method = getattr(self, "play_commander", None)
         else:
-            method = getattr(self, f"play_{card.type.replace(' ', '_').lower()}", None)
+            # Extract main type before "—" (e.g., "Basic Land — Swamp" -> "Basic Land")
+            main_type = card.type.split('—')[0].strip()
+            method = getattr(self, f"play_{main_type.replace(' ', '_').lower()}", None)
         if not callable(method):
             if verbose:
                 print(f"Card type {card.type} not supported for play.")
@@ -653,7 +655,7 @@ class BoardState:
             success = method(card, verbose)
         else:
             # put card directly onto the battlefield ignoring mana costs
-            if card.type in ("Land", "Basic Land"):
+            if 'Land' in card.type:
                 if card in self.hand:
                     self.hand.remove(card)
                 if card in self.library:
@@ -719,7 +721,7 @@ class BoardState:
                         print("♻️  Meren of Clan Nel Toth enables end-step reanimation!")
 
                 self._execute_triggers("etb", card, verbose)
-                if card.type in ("Land", "Basic Land"):
+                if 'Land' in card.type:
                     self._trigger_landfall(verbose)
 
         if success and cast:
@@ -815,7 +817,7 @@ class BoardState:
 
     def choose_land_to_play(self):
         """Return the best land from hand based on simple heuristics."""
-        lands = [c for c in self.hand if c.type in ("Land", "Basic Land")]
+        lands = [c for c in self.hand if 'Land' in c.type]
         if not lands:
             return None
 
@@ -932,7 +934,7 @@ class BoardState:
 
     def search_basic_land(self, verbose=False):
         """Find the first basic land in library and put it onto the battlefield."""
-        land = next((c for c in self.library if c.type == "Basic Land"), None)
+        land = next((c for c in self.library if 'Basic Land' in c.type), None)
         if not land:
             return False
         success = self.play_card(land, verbose=verbose, cast=False)
@@ -2384,7 +2386,7 @@ class BoardState:
     def should_mulligan(self, hand, verbose: bool = False):
         """Decide if we should mulligan this hand."""
         # Count lands
-        lands = [c for c in hand if c.type in ('Land', 'Basic Land')]
+        lands = [c for c in hand if 'Land' in c.type]
         num_lands = len(lands)
 
         # Basic mulligan rules:
