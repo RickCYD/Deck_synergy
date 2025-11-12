@@ -12,7 +12,7 @@ def draw_starting_hand(deck_cards, commander_card):
     
     def is_hand_acceptable(hand):
         """Decide if an opening hand is keepable based on land count."""
-        land_count = sum(1 for card in hand if card.type == 'Land' )
+        land_count = sum(1 for card in hand if 'Land' in card.type)
         # Heuristic: Commander decks typically want a balanced land count
         # Require at least 2 lands and at most 4 lands in opening 7 (heuristic)
         if land_count < 3 or land_count > 5:
@@ -41,21 +41,21 @@ def draw_starting_hand(deck_cards, commander_card):
         if num_to_bottom > 0:
             # Simple heuristic: identify cards to bottom
             # If too many lands, bottom the extra lands; if too few lands, bottom high-cost spells.
-            land_count = sum(1 for card in new_hand if card.type == 'Land')
+            land_count = sum(1 for card in new_hand if 'Land' in card.type)
             cards_to_bottom = []
             if land_count > 4:
                 # bottom lands if we have way too many
-                lands_in_hand = [card for card in new_hand if card.type == 'Land']
+                lands_in_hand = [card for card in new_hand if 'Land' in card.type]
                 cards_to_bottom = random.sample(lands_in_hand, min(num_to_bottom, len(lands_in_hand)))
             elif land_count < 2:
                 # bottom high cost spells if mana is scarce (keep cheaper spells hoping to draw lands)
-                nonlands = [card for card in new_hand if card.type != 'Land']
+                nonlands = [card for card in new_hand if 'Land' not in card.type]
                 nonlands.sort(key=lambda c: parse_mana_cost(c.mana_cost), reverse=True)  # sort by cost descending
                 # parse_mana_cost will extract total mana value; we'll define it below.
                 cards_to_bottom = nonlands[:num_to_bottom]
             else:
                 # Otherwise, bottom the highest mana cost spells (default strategy).
-                nonlands = [card for card in new_hand if card.type != 'Land']
+                nonlands = [card for card in new_hand if 'Land' not in card.type]
                 nonlands.sort(key=lambda c: parse_mana_cost(c.mana_cost), reverse=True)
                 cards_to_bottom = nonlands[:num_to_bottom]
             # Remove those cards from hand
