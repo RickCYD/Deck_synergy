@@ -57,3 +57,5 @@ Thumbs.db
 debug_sim.py
 test_hand_draw.py
 test_land_play.py
+test_random_seed_fix.py
+test_seed_logic.py

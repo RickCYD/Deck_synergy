@@ -4,6 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 import contextlib
 import random
+import time
 from typing import Iterable, List, Tuple, Dict
 
 import pandas as pd
@@ -20,10 +21,12 @@ from statistical_analysis import (
 # Helper functions
 # ---------------------------------------------------------------------------
 
-def _simulate_single_game(args: Tuple[List[Card], Card, int, bool, Path | None, int]):
+def _simulate_single_game(args: Tuple[List[Card], Card, int, bool, Path | None, int, float]):
     """Wrapper around :func:`simulate_game` to support multiprocessing."""
-    cards, commander_card, max_turns, verbose, log_dir, game_index = args
-    random.seed(game_index)
+    cards, commander_card, max_turns, verbose, log_dir, game_index, base_seed = args
+    # Use base_seed (from time) combined with game_index to ensure different results each run
+    # while maintaining reproducibility within a single batch of simulations
+    random.seed(int(base_seed * 1000000) + game_index)
     if log_dir is not None and verbose:
         log_path = log_dir / f"game_{game_index + 1}.log"
         with open(log_path, "w") as fh, contextlib.redirect_stdout(fh):
@@ -323,7 +326,9 @@ def run_simulations(
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
 
-    args = [(cards, commander_card, max_turns, verbose, log_dir, i) for i in range(num_games)]
+    # Generate base seed from current time to ensure different results on each run
+    base_seed = time.time()
+    args = [(cards, commander_card, max_turns, verbose, log_dir, i, base_seed) for i in range(num_games)]
 
     if num_workers and num_workers > 1:
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
