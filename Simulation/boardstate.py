@@ -142,6 +142,10 @@ class BoardState:
         self.counters_moved_to_ozolith = 0  # Total counters moved to Ozolith
         self.total_counters_on_creatures = 0  # Total +1/+1 counters on all creatures
 
+        # Syr Konrad, the Grim tracking (PRIORITY FIX: +100-150 damage)
+        self.syr_konrad_on_board = False  # Is Syr Konrad on the battlefield?
+        self.syr_konrad_triggers_this_turn = 0  # Number of triggers this turn
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
         for kw in getattr(creature, "keywords_when_equipped", []):
@@ -675,6 +679,13 @@ class BoardState:
                 self._add_abilities_from_card(card)
                 # Process specific ETB effects for landfall cards
                 self._process_special_etb_effects(card, verbose)
+
+                # PRIORITY FIX: Detect Syr Konrad entering battlefield
+                if 'creature' in card.type.lower() and 'syr konrad' in card.name.lower():
+                    self.syr_konrad_on_board = True
+                    if verbose:
+                        print("⚡ Syr Konrad, the Grim is on the battlefield!")
+
                 self._execute_triggers("etb", card, verbose)
                 if card.type in ("Land", "Basic Land"):
                     self._trigger_landfall(verbose)
@@ -1114,15 +1125,43 @@ class BoardState:
                     print(f"  → {card.name} is a reanimation spell!")
                 self.reanimate_creature(verbose=verbose)
 
-            # Living Death (mass reanimation)
+            # PRIORITY FIX: Living Death (mass reanimation - returns ALL creatures)
             elif 'living death' in card_name or ('each player' in oracle and 'exile all' in oracle and 'graveyard' in oracle):
-                creatures_in_yard = [c for c in self.graveyard if 'creature' in getattr(c, 'type', '').lower()]
-                reanimated_count = 0
-                for _ in range(min(3, len(creatures_in_yard))):  # Reanimate up to 3
-                    if self.reanimate_creature(verbose=verbose):
-                        reanimated_count += 1
+                # Use the proper Living Death handler that returns ALL creatures
+                # Note: Mana was already paid above, so we need to refund it and call the method
+                # Actually, cast_living_death will handle mana, but we already paid, so skip calling it
+                # Instead, inline the Living Death logic here since mana is already paid
+                creatures_in_graveyard = [c for c in self.graveyard if 'creature' in c.type.lower()]
+                if verbose and creatures_in_graveyard:
+                    print(f"  💀 LIVING DEATH: Reanimating {len(creatures_in_graveyard)} creatures!")
+
+                # Save creatures on battlefield that will die
+                creatures_to_sacrifice = self.creatures[:]
+
+                # Remove all creatures from graveyard first
+                for creature in creatures_in_graveyard[:]:  # Use slice copy to avoid modification issues
+                    if creature in self.graveyard:
+                        self.graveyard.remove(creature)
+
+                # Sacrifice all creatures on battlefield (trigger death effects including Syr Konrad)
+                for creature in creatures_to_sacrifice:
+                    self.trigger_death_effects(creature, verbose=verbose)
+                self.creatures.clear()
+
+                # Return all creatures from graveyard to battlefield
+                for creature in creatures_in_graveyard:
+                    self.creatures.append(creature)
+                    creature._turns_on_board = 0  # Reset summoning sickness
+
+                    # Trigger Syr Konrad on leaving graveyard
+                    self.trigger_syr_konrad_on_leave_graveyard(creature, verbose=verbose)
+
+                    # Trigger ETB effects
+                    self._execute_triggers("etb", creature, verbose)
+
+                total_power = sum(c.power or 0 for c in creatures_in_graveyard)
                 if verbose:
-                    print(f"  → Living Death: Reanimated {reanimated_count} creatures!")
+                    print(f"  → Returned {len(creatures_in_graveyard)} creatures ({total_power} total power) to battlefield!")
 
             # Entomb / Buried Alive (tutor to graveyard)
             elif 'entomb' in card_name or ('search your library' in oracle and 'put' in oracle and 'graveyard' in oracle):
@@ -1698,6 +1737,10 @@ class BoardState:
         # Move from graveyard to battlefield
         if target in self.graveyard:
             self.graveyard.remove(target)
+
+        # PRIORITY FIX: Syr Konrad triggers when creature leaves graveyard
+        self.trigger_syr_konrad_on_leave_graveyard(target, verbose=verbose)
+
         self.creatures.append(target)
         target.tapped = False
 
@@ -1714,6 +1757,74 @@ class BoardState:
 
         # Trigger ETB effects
         self._execute_triggers("etb", target, verbose)
+
+        return True
+
+    def cast_living_death(self, spell, verbose: bool = False):
+        """
+        Cast Living Death: Mass reanimation spell.
+
+        PRIORITY FIX: Living Death should return ALL creatures from graveyard,
+        not just one. This is critical for graveyard decks.
+
+        Living Death (Sorcery):
+        Each player exiles all creature cards from their graveyard, then sacrifices
+        all creatures they control, then puts all cards they exiled this way onto
+        the battlefield.
+
+        Args:
+            spell: The Living Death card object
+            verbose: Print detailed output
+        """
+        from boardstate import Mana_utils
+
+        if not Mana_utils.can_pay(spell.mana_cost, self.mana_pool):
+            return False
+
+        # Pay mana cost
+        Mana_utils.pay(spell.mana_cost, self.mana_pool)
+
+        if verbose:
+            print(f"\n💀 LIVING DEATH RESOLVES 💀")
+
+        # Step 1: Exile all creatures from graveyard
+        creatures_in_graveyard = [c for c in self.graveyard if 'creature' in c.type.lower()]
+        for creature in creatures_in_graveyard:
+            self.graveyard.remove(creature)
+
+        if verbose:
+            print(f"  → Exiled {len(creatures_in_graveyard)} creatures from graveyard")
+
+        # Step 2: Sacrifice all creatures currently on battlefield
+        creatures_to_sacrifice = self.creatures[:]
+        for creature in creatures_to_sacrifice:
+            # Trigger death effects (including Syr Konrad)
+            self.trigger_death_effects(creature, verbose=verbose)
+
+        self.creatures.clear()
+
+        if verbose:
+            print(f"  → Sacrificed {len(creatures_to_sacrifice)} creatures on battlefield")
+
+        # Step 3: Return all exiled creatures to battlefield
+        for creature in creatures_in_graveyard:
+            self.creatures.append(creature)
+
+            # Trigger Syr Konrad on leaving graveyard (even though they were exiled first)
+            self.trigger_syr_konrad_on_leave_graveyard(creature, verbose=verbose)
+
+            # Trigger ETB effects
+            self._execute_triggers("etb", creature, verbose)
+
+            # Reset summoning sickness
+            creature._turns_on_board = 0
+
+        total_power = sum(c.power or 0 for c in creatures_in_graveyard)
+
+        if verbose:
+            print(f"  → Returned {len(creatures_in_graveyard)} creatures ({total_power} total power)")
+            if self.syr_konrad_on_board:
+                print(f"  → Syr Konrad dealt {self.syr_konrad_triggers_this_turn * self.num_opponents} damage this turn")
 
         return True
 
@@ -2202,6 +2313,63 @@ class BoardState:
 
         return counters_applied
 
+    def trigger_syr_konrad_on_mill(self, cards_milled: list, verbose: bool = False):
+        """
+        Trigger Syr Konrad when creatures are milled from library to graveyard.
+
+        PRIORITY FIX: Syr Konrad, the Grim deals 1 damage to each opponent whenever
+        a creature card is put into your graveyard from anywhere.
+        """
+        if not self.syr_konrad_on_board:
+            return 0
+
+        creature_count = sum(1 for card in cards_milled if 'creature' in card.type.lower())
+        if creature_count > 0:
+            # 1 damage per creature × 3 opponents in goldfish mode
+            damage = creature_count * self.num_opponents
+            self.drain_damage_this_turn += damage
+            self.syr_konrad_triggers_this_turn += creature_count
+            if verbose:
+                print(f"⚡ Syr Konrad triggers {creature_count} times for {damage} damage (mill)")
+            return damage
+        return 0
+
+    def trigger_syr_konrad_on_death(self, creature, verbose: bool = False):
+        """
+        Trigger Syr Konrad when a creature dies (goes from battlefield to graveyard).
+
+        PRIORITY FIX: Syr Konrad deals damage when creatures die.
+        """
+        if not self.syr_konrad_on_board:
+            return 0
+
+        if 'creature' in creature.type.lower():
+            damage = self.num_opponents  # 1 damage × number of opponents
+            self.drain_damage_this_turn += damage
+            self.syr_konrad_triggers_this_turn += 1
+            if verbose:
+                print(f"⚡ Syr Konrad triggers on {creature.name} death: {damage} damage")
+            return damage
+        return 0
+
+    def trigger_syr_konrad_on_leave_graveyard(self, creature, verbose: bool = False):
+        """
+        Trigger Syr Konrad when a creature leaves the graveyard (reanimation/exile).
+
+        PRIORITY FIX: Syr Konrad triggers when creatures leave graveyard.
+        """
+        if not self.syr_konrad_on_board:
+            return 0
+
+        if 'creature' in creature.type.lower():
+            damage = self.num_opponents  # 1 damage × number of opponents
+            self.drain_damage_this_turn += damage
+            self.syr_konrad_triggers_this_turn += 1
+            if verbose:
+                print(f"⚡ Syr Konrad triggers on {creature.name} leaving graveyard: {damage} damage")
+            return damage
+        return 0
+
     def trigger_death_effects(self, creature, verbose: bool = False):
         """
         Trigger all death-based effects when a creature dies.
@@ -2221,6 +2389,9 @@ class BoardState:
 
         # COUNTER MANIPULATION: The Ozolith - preserve counters
         self.handle_ozolith_on_death(creature, verbose=verbose)
+
+        # PRIORITY FIX: Syr Konrad triggers on death
+        self.trigger_syr_konrad_on_death(creature, verbose=verbose)
 
         # Check for death trigger doublers (Teysa Karlov, Parallel Lives for tokens, etc.)
         death_trigger_multiplier = 1
