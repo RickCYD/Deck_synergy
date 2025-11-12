@@ -156,6 +156,11 @@ class BoardState:
             'planeswalker': False
         }
 
+        # Meren of Clan Nel Toth tracking (PRIORITY FIX P2: +5-7 reanimates)
+        self.meren_on_board = False  # Is Meren on the battlefield?
+        self.experience_counters = 0  # Experience counters for Meren
+        self.meren_triggered_this_turn = False  # Has Meren's end step triggered this turn?
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
         for kw in getattr(creature, "keywords_when_equipped", []):
@@ -706,6 +711,12 @@ class BoardState:
                     self.muldrotha_on_board = True
                     if verbose:
                         print("♻️  Muldrotha, the Gravetide enables graveyard casting!")
+
+                # PRIORITY FIX P2: Detect Meren entering battlefield
+                if 'creature' in card.type.lower() and 'meren' in card.name.lower():
+                    self.meren_on_board = True
+                    if verbose:
+                        print("♻️  Meren of Clan Nel Toth enables end-step reanimation!")
 
                 self._execute_triggers("etb", card, verbose)
                 if card.type in ("Land", "Basic Land"):
@@ -1959,6 +1970,127 @@ class BoardState:
 
         return True
 
+    def has_zombie_on_board(self) -> bool:
+        """
+        Check if there's a Zombie creature on the battlefield.
+
+        PRIORITY FIX P2: Needed for Gravecrawler recursion.
+        """
+        for creature in self.creatures:
+            creature_type = getattr(creature, 'type', '').lower()
+            oracle_text = getattr(creature, 'oracle_text', '').lower()
+            name = getattr(creature, 'name', '').lower()
+
+            # Check if it's a Zombie
+            if 'zombie' in creature_type or 'zombie' in oracle_text:
+                return True
+
+            # Some creatures that create zombies or are zombies
+            if any(z in name for z in ['gravecrawler', 'diregraf', 'undead', 'lich']):
+                return True
+
+        return False
+
+    def attempt_gravecrawler_cast(self, verbose: bool = False):
+        """
+        Try to cast Gravecrawler from graveyard.
+
+        PRIORITY FIX P2: Gravecrawler can be cast from graveyard if you control
+        a Zombie. This provides infinite recursion value.
+
+        Gravecrawler ability: "You may cast Gravecrawler from your graveyard
+        as long as you control a Zombie."
+
+        Returns:
+            bool: True if Gravecrawler was cast, False otherwise
+        """
+        # Check if we control a Zombie
+        if not self.has_zombie_on_board():
+            return False
+
+        # Find Gravecrawler in graveyard
+        gravecrawler = None
+        for card in self.graveyard:
+            if 'gravecrawler' in card.name.lower():
+                gravecrawler = card
+                break
+
+        if not gravecrawler:
+            return False
+
+        # Check if we can pay {B} (one black mana)
+        if not Mana_utils.can_pay("{B}", self.mana_pool):
+            return False
+
+        # Cast from graveyard
+        if self.play_card_from_graveyard(gravecrawler, verbose):
+            if verbose:
+                print(f"♻️  Gravecrawler cast from graveyard (zombie recursion)")
+            return True
+
+        return False
+
+    def meren_end_step_trigger(self, verbose: bool = False):
+        """
+        Trigger Meren's end-step reanimation ability.
+
+        PRIORITY FIX P2: Meren of Clan Nel Toth triggers at beginning of your
+        end step to reanimate a creature from graveyard.
+
+        Meren ability: "At the beginning of your end step, choose target creature
+        card in your graveyard. If that card's mana value is less than or equal to
+        the number of experience counters you have, return it to the battlefield.
+        Otherwise, put it into your hand."
+
+        Returns:
+            bool: True if a creature was reanimated, False otherwise
+        """
+        if not self.meren_on_board:
+            return False
+
+        if self.meren_triggered_this_turn:
+            return False
+
+        # Find creatures in graveyard
+        creatures_in_yard = [c for c in self.graveyard if 'creature' in c.type.lower()]
+
+        if not creatures_in_yard:
+            return False
+
+        # Find best creature we can reanimate (CMC <= experience counters)
+        from convert_dataframe_deck import parse_mana_cost
+
+        reanimatable = []
+        for creature in creatures_in_yard:
+            cmc = parse_mana_cost(creature.mana_cost)
+            if cmc <= self.experience_counters:
+                reanimatable.append((creature, cmc))
+
+        if not reanimatable:
+            # If no creature fits, put highest value one in hand
+            if creatures_in_yard:
+                best = max(creatures_in_yard, key=lambda c: (c.power or 0) + (c.toughness or 0))
+                if best in self.graveyard:
+                    self.graveyard.remove(best)
+                    self.hand.append(best)
+                    self.meren_triggered_this_turn = True
+                    if verbose:
+                        print(f"♻️  Meren: Returned {best.name} to hand (CMC too high)")
+                    return False
+            return False
+
+        # Choose best creature to reanimate (highest power + toughness)
+        best_creature, cmc = max(reanimatable, key=lambda x: (x[0].power or 0) + (x[0].toughness or 0))
+
+        # Reanimate it
+        if self.reanimate_creature(target_creature=best_creature, verbose=False):
+            self.meren_triggered_this_turn = True
+            if verbose:
+                print(f"♻️  Meren: Reanimated {best_creature.name} (CMC {cmc} <= {self.experience_counters} experience)")
+            return True
+
+        return False
+
     def tutor_to_graveyard(self, card_name: str = None, verbose: bool = False):
         """
         Tutor a card from library to graveyard.
@@ -2553,6 +2685,12 @@ class BoardState:
 
         # PRIORITY FIX: Syr Konrad triggers on death
         self.trigger_syr_konrad_on_death(creature, verbose=verbose)
+
+        # PRIORITY FIX P2: Meren experience counter gain
+        if self.meren_on_board:
+            self.experience_counters += 1
+            if verbose:
+                print(f"  → Meren: Gained experience counter (now {self.experience_counters})")
 
         # Check for death trigger doublers (Teysa Karlov, Parallel Lives for tokens, etc.)
         death_trigger_multiplier = 1
