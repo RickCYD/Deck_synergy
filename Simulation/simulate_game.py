@@ -313,6 +313,18 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         board.lands_played_this_turn = 0  # Reset land plays for this turn
         board.landfall_triggers_this_turn = 0  # Reset landfall triggers
 
+        # PRIORITY FIX P1: Reset Muldrotha graveyard casts for new turn
+        board.muldrotha_casts_this_turn = {
+            'creature': False,
+            'artifact': False,
+            'enchantment': False,
+            'land': False,
+            'planeswalker': False
+        }
+
+        # PRIORITY FIX P2: Reset Meren end-step trigger for new turn
+        board.meren_triggered_this_turn = False
+
         if verbose:
             print(f"\n=== Turn {turn} ===")
 
@@ -554,6 +566,20 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                     did_action = True
                     continue
 
+            # PRIORITY FIX P1: Try Muldrotha graveyard casting if on board
+            if board.muldrotha_on_board:
+                muldrotha_casts = board.attempt_muldrotha_casts(verbose=verbose)
+                if muldrotha_casts > 0:
+                    if verbose:
+                        print(f"♻️  Muldrotha enabled {muldrotha_casts} casts from graveyard")
+                    did_action = True
+                    continue
+
+            # PRIORITY FIX P2: Try Gravecrawler recursion if we have a zombie
+            if board.attempt_gravecrawler_cast(verbose=verbose):
+                did_action = True
+                continue
+
             # 4) play a piece of equipment and attach to first creature
             equipment = next(
                 (
@@ -725,6 +751,10 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # board.simulate_board_wipe(verbose=verbose)
 
         # PRIORITY 2: End-of-turn treasure generation (Mahadi, etc.)
+        # PRIORITY FIX P2: Meren end-step reanimation trigger
+        if board.meren_on_board:
+            board.meren_end_step_trigger(verbose=verbose)
+
         board.check_end_of_turn_treasures(board.creatures_died_this_turn, verbose=verbose)
 
         # COUNTER MANIPULATION: Check for proliferate triggers

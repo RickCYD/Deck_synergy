@@ -138,6 +138,12 @@ def _df_to_cards(df: pd.DataFrame):
         if sacrifice_outlet is None:
             sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
 
+        # PRIORITY FIX (P1): Parse mill values for aggressive self-mill
+        from oracle_text_parser import parse_mill_value
+        mill_value = row.get("MillValue")
+        if mill_value is None:
+            mill_value = parse_mill_value(oracle_text, card_name=row.get("Name", ""))
+
         # Parse direct damage from oracle text for instants/sorceries
         deals_damage = row.get("DealsDamage")
         if deals_damage is None and row.get("Type") in ["Instant", "Sorcery"]:
@@ -184,6 +190,9 @@ def _df_to_cards(df: pd.DataFrame):
             death_trigger_value=death_trigger_value,
             sacrifice_outlet=sacrifice_outlet,
         )
+
+        # PRIORITY FIX (P1): Add mill_value as card attribute
+        c.mill_value = mill_value
 
         if c.is_commander:
             commander = c
