@@ -1,0 +1,42 @@
+# Teval Graveyard Deck
+# Commander
+Teval, the Balanced Scale
+
+# Key Creatures
+Syr Konrad, the Grim
+Muldrotha, the Gravetide
+Meren of Clan Nel Toth
+Gravecrawler
+Diregraf Captain
+Ob Nixilis, the Fallen
+
+# Mill
+Hedron Crab
+Stitcher's Supplier
+Sidisi, Brood Tyrant
+Aftermath Analyst
+Nyx Weaver
+Eccentric Farmer
+
+# Reanimation
+Living Death
+Dread Return
+Eternal Witness
+The Scarab God
+
+# Ramp
+Sol Ring
+Arcane Signet
+Deathrite Shaman
+Skull Prophet
+Millikin
+
+# Lands (just a few for testing)
+Command Tower
+Opulent Palace
+Sunken Hollow
+Contaminated Aquifer
+Haunted Mire
+5 Swamp
+5 Forest
+3 Island
