@@ -146,6 +146,16 @@ class BoardState:
         self.syr_konrad_on_board = False  # Is Syr Konrad on the battlefield?
         self.syr_konrad_triggers_this_turn = 0  # Number of triggers this turn
 
+        # Muldrotha, the Gravetide tracking (PRIORITY FIX P1: +10-15 casts)
+        self.muldrotha_on_board = False  # Is Muldrotha on the battlefield?
+        self.muldrotha_casts_this_turn = {
+            'creature': False,
+            'artifact': False,
+            'enchantment': False,
+            'land': False,
+            'planeswalker': False
+        }
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
         for kw in getattr(creature, "keywords_when_equipped", []):
@@ -690,6 +700,12 @@ class BoardState:
                     self.syr_konrad_on_board = True
                     if verbose:
                         print("⚡ Syr Konrad, the Grim is on the battlefield!")
+
+                # PRIORITY FIX P1: Detect Muldrotha entering battlefield
+                if 'creature' in card.type.lower() and 'muldrotha' in card.name.lower():
+                    self.muldrotha_on_board = True
+                    if verbose:
+                        print("♻️  Muldrotha, the Gravetide enables graveyard casting!")
 
                 self._execute_triggers("etb", card, verbose)
                 if card.type in ("Land", "Basic Land"):
@@ -1830,6 +1846,116 @@ class BoardState:
             print(f"  → Returned {len(creatures_in_graveyard)} creatures ({total_power} total power)")
             if self.syr_konrad_on_board:
                 print(f"  → Syr Konrad dealt {self.syr_konrad_triggers_this_turn * self.num_opponents} damage this turn")
+
+        return True
+
+    def attempt_muldrotha_casts(self, verbose: bool = False):
+        """
+        Try to cast permanents from graveyard with Muldrotha, the Gravetide.
+
+        PRIORITY FIX P1: Muldrotha allows casting one permanent of each type
+        from graveyard each turn. This is critical for graveyard value decks.
+
+        Muldrotha ability: "During each of your turns, you may play up to one
+        permanent card of each permanent type from your graveyard."
+
+        Returns:
+            int: Number of permanents cast from graveyard this attempt
+        """
+        if not self.muldrotha_on_board:
+            return 0
+
+        casts = 0
+        permanent_types = ['creature', 'artifact', 'enchantment', 'land', 'planeswalker']
+
+        for perm_type in permanent_types:
+            # Skip if already cast this type this turn
+            if self.muldrotha_casts_this_turn.get(perm_type, False):
+                continue
+
+            # Find best permanent of this type in graveyard
+            candidates = [
+                c for c in self.graveyard
+                if perm_type in c.type.lower()
+                and Mana_utils.can_pay(c.mana_cost, self.mana_pool)
+            ]
+
+            if not candidates:
+                continue
+
+            # Choose highest value card
+            if perm_type == 'creature':
+                best = max(candidates, key=lambda c: (c.power or 0) + (c.toughness or 0))
+            elif perm_type == 'land':
+                # For lands, prefer ones that produce colored mana
+                colored_lands = [c for c in candidates if c.produces_colors and c.produces_colors != ['C']]
+                best = colored_lands[0] if colored_lands else candidates[0]
+            else:
+                # For artifacts/enchantments, prefer higher mana cost (usually more powerful)
+                from convert_dataframe_deck import parse_mana_cost
+                best = max(candidates, key=lambda c: parse_mana_cost(c.mana_cost))
+
+            # Cast from graveyard
+            if self.play_card_from_graveyard(best, verbose):
+                self.muldrotha_casts_this_turn[perm_type] = True
+                casts += 1
+                if verbose:
+                    print(f"♻️  Muldrotha: Cast {best.name} from graveyard")
+
+        return casts
+
+    def play_card_from_graveyard(self, card, verbose: bool = False):
+        """
+        Cast a permanent from graveyard (Muldrotha, Conduit of Worlds, etc.).
+
+        PRIORITY FIX P1: Allows casting from graveyard as if from hand.
+
+        Args:
+            card: Card object to cast from graveyard
+            verbose: Print output
+
+        Returns:
+            bool: True if successfully cast, False otherwise
+        """
+        if card not in self.graveyard:
+            return False
+
+        if not Mana_utils.can_pay(card.mana_cost, self.mana_pool):
+            return False
+
+        # Remove from graveyard
+        self.graveyard.remove(card)
+
+        # Trigger Syr Konrad leaving graveyard
+        if 'creature' in card.type.lower():
+            self.trigger_syr_konrad_on_leave_graveyard(card, verbose=verbose)
+
+        # Pay mana cost
+        Mana_utils.pay(card.mana_cost, self.mana_pool)
+
+        # Add to appropriate zone based on card type
+        if 'creature' in card.type.lower():
+            self.creatures.append(card)
+            card._turns_on_board = 0  # Has summoning sickness
+        elif 'artifact' in card.type.lower():
+            self.artifacts.append(card)
+        elif 'enchantment' in card.type.lower():
+            self.enchantments.append(card)
+        elif 'planeswalker' in card.type.lower():
+            self.planeswalkers.append(card)
+        elif 'land' in card.type.lower():
+            # Playing land from graveyard counts as land drop
+            if not getattr(card, 'etb_tapped', False):
+                self.lands_untapped.append(card)
+            else:
+                self.lands_tapped.append(card)
+                card.tapped = True
+
+        # Trigger ETB effects
+        self._execute_triggers("etb", card, verbose)
+
+        if verbose:
+            print(f"♻️  Cast {card.name} from graveyard")
 
         return True
 

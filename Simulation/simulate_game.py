@@ -313,6 +313,15 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         board.lands_played_this_turn = 0  # Reset land plays for this turn
         board.landfall_triggers_this_turn = 0  # Reset landfall triggers
 
+        # PRIORITY FIX P1: Reset Muldrotha graveyard casts for new turn
+        board.muldrotha_casts_this_turn = {
+            'creature': False,
+            'artifact': False,
+            'enchantment': False,
+            'land': False,
+            'planeswalker': False
+        }
+
         if verbose:
             print(f"\n=== Turn {turn} ===")
 
@@ -551,6 +560,15 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                             if board.equip_equipment(eq, creature, verbose=verbose):
                                 mana_spent_this_turn += parse_mana_cost(eq.equip_cost)
                     metrics["creature_power"][creature.name] = int(creature.power or 0)
+                    did_action = True
+                    continue
+
+            # PRIORITY FIX P1: Try Muldrotha graveyard casting if on board
+            if board.muldrotha_on_board:
+                muldrotha_casts = board.attempt_muldrotha_casts(verbose=verbose)
+                if muldrotha_casts > 0:
+                    if verbose:
+                        print(f"♻️  Muldrotha enabled {muldrotha_casts} casts from graveyard")
                     did_action = True
                     continue
 
