@@ -1,8 +1,39 @@
 # Teval Deck Effectiveness Analysis
 
-## Summary
+## 🚨 Executive Summary
 
-Your deck's performance metrics are severely underperforming because the simulation is missing critical graveyard/recursion mechanics that are the core of your strategy.
+**Critical Finding:** The simulation is missing **85-95%** of this deck's power due to incomplete graveyard mechanics implementation.
+
+| Metric | Actual Result | Expected | Missing Power |
+|--------|---------------|----------|---------------|
+| **Total Damage (10 turns)** | **26** | 190-310 | **88-92%** |
+| **Peak Board Power** | **6** | 25-50 | **76-88%** |
+| **Avg Damage/Turn** | **2.6** | 8-15 | **67-83%** |
+| **Commander Cast Turn** | **8.6** | 4-6 | 43-52% slower |
+
+**Root Cause:** Reanimation spells are treated as probabilistic (5-15% chance) instead of deterministic effects.
+
+**Biggest Single Issue:** Syr Konrad, the Grim should deal 90-150 damage alone but deals ~0-5 because mill/recursion triggers aren't tracked.
+
+---
+
+## 🎯 Priority Fix List (By Impact)
+
+| Priority | Issue | Impact | Files to Modify | Est. Effort |
+|----------|-------|--------|-----------------|-------------|
+| **P0 - Critical** | Syr Konrad triggers missing | +100-150 dmg | `boardstate.py`, `oracle_text_parser.py` | 4-6 hours |
+| **P0 - Critical** | Living Death returns 1 not ALL | +30-50 power | `boardstate.py`, `simulate_game.py` | 3-4 hours |
+| **P1 - High** | Muldrotha not implemented | +10-15 casts | `boardstate.py`, `turn_phases.py` | 6-8 hours |
+| **P1 - High** | Mill cards underpowered | +20-30 cards | `oracle_text_parser.py`, `boardstate.py` | 2-3 hours |
+| **P2 - Medium** | Gravecrawler infinite loop | +10-20 casts | `boardstate.py`, `turn_phases.py` | 3-4 hours |
+| **P2 - Medium** | Meren end-step triggers | +5-7 reanimates | `turn_phases.py`, `boardstate.py` | 2-3 hours |
+| **P3 - Low** | Zombie tribal tracking | +30-60 dmg | `boardstate.py`, `simulate_game.py` | 2-3 hours |
+
+**Total Estimated Impact:** +190-284 damage, +40-65 power, +15-22 extra casts
+
+---
+
+## 📊 Current vs Expected Performance
 
 ### Current Metrics (Your Deck)
 - **Total Damage (10 turns)**: 26
@@ -11,7 +42,7 @@ Your deck's performance metrics are severely underperforming because the simulat
 - **Commander Avg Turn**: 8.6
 
 ### Expected Metrics (For Graveyard Recursion Deck)
-- **Total Damage (10 turns)**: 80-150
+- **Total Damage (10 turns)**: 190-310
 - **Avg Damage/Turn**: 8-15
 - **Peak Board Power**: 25-50
 - **Commander Avg Turn**: 4-6
@@ -308,6 +339,443 @@ Current simulation shows **26 damage**, meaning you're missing **85-95%** of you
 
 ---
 
+## 💻 Implementation Guide
+
+### Fix #1: Syr Konrad Triggers (HIGHEST IMPACT: +100-150 damage)
+
+**Step 1: Add Syr Konrad detection to boardstate.py**
+
+```python
+# Add to BoardState.__init__() around line 80
+self.syr_konrad_on_board = False
+self.syr_konrad_triggers_this_turn = 0
+```
+
+**Step 2: Detect when Syr Konrad enters battlefield**
+
+```python
+# In play_card() method, add after card is added to creatures list
+if 'syr konrad' in card.name.lower():
+    self.syr_konrad_on_board = True
+    if verbose:
+        print("⚡ Syr Konrad, the Grim is on the battlefield!")
+```
+
+**Step 3: Add trigger methods**
+
+```python
+def trigger_syr_konrad_on_mill(self, cards_milled: list, verbose: bool = False):
+    """Trigger Syr Konrad when creatures are milled from library to graveyard."""
+    if not self.syr_konrad_on_board:
+        return 0
+
+    creature_count = sum(1 for card in cards_milled if 'creature' in card.type.lower())
+    if creature_count > 0:
+        # 1 damage per creature × 3 opponents in goldfish mode
+        damage = creature_count * 3
+        self.drain_damage_this_turn += damage
+        self.syr_konrad_triggers_this_turn += creature_count
+        if verbose:
+            print(f"⚡ Syr Konrad triggers {creature_count} times for {damage} damage")
+        return damage
+    return 0
+
+def trigger_syr_konrad_on_death(self, creature, verbose: bool = False):
+    """Trigger Syr Konrad when a creature dies."""
+    if not self.syr_konrad_on_board:
+        return 0
+
+    if 'creature' in creature.type.lower():
+        damage = 3  # 1 damage × 3 opponents
+        self.drain_damage_this_turn += damage
+        self.syr_konrad_triggers_this_turn += 1
+        if verbose:
+            print(f"⚡ Syr Konrad triggers on {creature.name} death: {damage} damage")
+        return damage
+    return 0
+
+def trigger_syr_konrad_on_leave_graveyard(self, creature, verbose: bool = False):
+    """Trigger Syr Konrad when a creature leaves the graveyard (reanimation)."""
+    if not self.syr_konrad_on_board:
+        return 0
+
+    if 'creature' in creature.type.lower():
+        damage = 3  # 1 damage × 3 opponents
+        self.drain_damage_this_turn += damage
+        self.syr_konrad_triggers_this_turn += 1
+        if verbose:
+            print(f"⚡ Syr Konrad triggers on {creature.name} leaving graveyard: {damage} damage")
+        return damage
+    return 0
+```
+
+**Step 4: Hook into existing systems**
+
+```python
+# In mill_cards() method (around line 800), add:
+def mill_cards(self, num_cards: int, verbose: bool = False):
+    milled = []
+    for _ in range(min(num_cards, len(self.library))):
+        card = self.library.pop(0)
+        self.graveyard.append(card)
+        milled.append(card)
+        # ... existing code ...
+
+    # NEW: Trigger Syr Konrad on mill
+    self.trigger_syr_konrad_on_mill(milled, verbose)
+    return milled
+
+# In trigger_death_effects() method (around line 1900), add:
+def trigger_death_effects(self, creature, verbose: bool = False):
+    # Existing code for death triggers...
+
+    # NEW: Trigger Syr Konrad on death
+    self.trigger_syr_konrad_on_death(creature, verbose)
+
+    # ... rest of existing code ...
+
+# In reanimate_creature() method (around line 1670), add:
+def reanimate_creature(self, target_creature=None, verbose: bool = False):
+    # ... existing reanimation code ...
+
+    # NEW: Trigger Syr Konrad when leaving graveyard
+    self.trigger_syr_konrad_on_leave_graveyard(target, verbose)
+
+    # ... rest of existing code ...
+```
+
+**Expected Impact:**
+- 30 creatures milled × 3 = 90 damage
+- 10 creatures reanimated × 3 = 30 damage
+- 10 creatures dying × 3 = 30 damage
+- **Total: 150 damage** (vs current 0-5)
+
+---
+
+### Fix #2: Living Death Mass Reanimation (CRITICAL: +30-50 power)
+
+**Step 1: Add specific card detection in play_card()**
+
+```python
+# In play_card() method in boardstate.py, add special handling:
+def play_card(self, card, verbose=False):
+    # ... existing casting logic ...
+
+    # Special handling for mass reanimation spells
+    if 'living death' in card.name.lower():
+        return self.cast_living_death(card, verbose)
+
+    # ... rest of existing code ...
+
+def cast_living_death(self, spell, verbose: bool = False):
+    """
+    Living Death: Each player exiles all creature cards from their graveyard,
+    then sacrifices all creatures they control, then puts all cards they
+    exiled this way onto the battlefield.
+    """
+    if not Mana_utils.can_pay(spell.mana_cost, self.mana_pool):
+        return False
+
+    # Pay mana cost
+    Mana_utils.pay(spell.mana_cost, self.mana_pool)
+
+    if verbose:
+        print(f"\n💀 LIVING DEATH RESOLVES 💀")
+
+    # Step 1: Exile all creatures from graveyard
+    creatures_in_graveyard = [c for c in self.graveyard if 'creature' in c.type.lower()]
+    for creature in creatures_in_graveyard:
+        self.graveyard.remove(creature)
+
+    if verbose:
+        print(f"  → Exiled {len(creatures_in_graveyard)} creatures from graveyard")
+
+    # Step 2: Sacrifice all creatures currently on battlefield
+    creatures_to_sacrifice = self.creatures[:]
+    for creature in creatures_to_sacrifice:
+        # Trigger Syr Konrad on death
+        self.trigger_syr_konrad_on_death(creature, verbose)
+
+    self.creatures.clear()
+
+    if verbose:
+        print(f"  → Sacrificed {len(creatures_to_sacrifice)} creatures on battlefield")
+
+    # Step 3: Return all exiled creatures to battlefield
+    for creature in creatures_in_graveyard:
+        self.creatures.append(creature)
+
+        # Trigger Syr Konrad on leaving graveyard
+        self.trigger_syr_konrad_on_leave_graveyard(creature, verbose)
+
+        # Trigger ETB effects
+        self._execute_triggers("etb", creature, verbose)
+
+        # Reset summoning sickness
+        creature._turns_on_board = 0
+
+    total_power = sum(c.power or 0 for c in creatures_in_graveyard)
+
+    if verbose:
+        print(f"  → Returned {len(creatures_in_graveyard)} creatures ({total_power} total power)")
+        print(f"  → Syr Konrad dealt {self.syr_konrad_triggers_this_turn * 3} damage this turn")
+
+    return True
+```
+
+**Expected Impact:**
+- Living Death with 10 creatures in graveyard + 5 on battlefield:
+  - 10 creatures leaving graveyard = 30 damage (Syr Konrad)
+  - 5 creatures dying = 15 damage (Syr Konrad)
+  - 10 creatures returned = 40 power on board
+- **Total: 45 damage + 40 power** (vs current 0-5 damage + 0-5 power)
+
+---
+
+### Fix #3: Muldrotha Graveyard Casting (HIGH IMPACT: +10-15 casts)
+
+**Step 1: Add Muldrotha tracking**
+
+```python
+# In BoardState.__init__()
+self.muldrotha_on_board = False
+self.muldrotha_casts_this_turn = {
+    'creature': False,
+    'artifact': False,
+    'enchantment': False,
+    'land': False,
+    'planeswalker': False
+}
+```
+
+**Step 2: Detect Muldrotha**
+
+```python
+# In play_card()
+if 'muldrotha' in card.name.lower():
+    self.muldrotha_on_board = True
+    if verbose:
+        print("♻️  Muldrotha, the Gravetide enables graveyard casting!")
+```
+
+**Step 3: Add graveyard casting logic to main phase**
+
+```python
+# In simulate_game.py main phase loop, add after normal spell casting:
+def attempt_muldrotha_casts(self, verbose: bool = False):
+    """Try to cast permanents from graveyard with Muldrotha."""
+    if not self.muldrotha_on_board:
+        return 0
+
+    casts = 0
+    permanent_types = ['creature', 'artifact', 'enchantment', 'land']
+
+    for perm_type in permanent_types:
+        # Skip if already cast this type this turn
+        if self.muldrotha_casts_this_turn.get(perm_type, False):
+            continue
+
+        # Find best permanent of this type in graveyard
+        candidates = [
+            c for c in self.graveyard
+            if perm_type in c.type.lower()
+            and Mana_utils.can_pay(c.mana_cost, self.mana_pool)
+        ]
+
+        if not candidates:
+            continue
+
+        # Choose highest value card (by mana cost or power)
+        if perm_type == 'creature':
+            best = max(candidates, key=lambda c: (c.power or 0) + (c.toughness or 0))
+        else:
+            best = max(candidates, key=lambda c: parse_mana_cost(c.mana_cost))
+
+        # Cast from graveyard
+        if self.play_card_from_graveyard(best, verbose):
+            self.muldrotha_casts_this_turn[perm_type] = True
+            casts += 1
+            if verbose:
+                print(f"♻️  Muldrotha: Cast {best.name} from graveyard")
+
+    return casts
+
+def play_card_from_graveyard(self, card, verbose: bool = False):
+    """Cast a permanent from graveyard (Muldrotha)."""
+    if card not in self.graveyard:
+        return False
+
+    if not Mana_utils.can_pay(card.mana_cost, self.mana_pool):
+        return False
+
+    # Remove from graveyard
+    self.graveyard.remove(card)
+
+    # Trigger Syr Konrad leaving graveyard
+    if 'creature' in card.type.lower():
+        self.trigger_syr_konrad_on_leave_graveyard(card, verbose)
+
+    # Pay mana and play card normally
+    Mana_utils.pay(card.mana_cost, self.mana_pool)
+
+    # Add to appropriate zone
+    if 'creature' in card.type.lower():
+        self.creatures.append(card)
+        card._turns_on_board = 0
+    elif 'artifact' in card.type.lower():
+        self.artifacts.append(card)
+    # ... etc
+
+    return True
+```
+
+**Step 4: Call in main phase**
+
+```python
+# In simulate_game.py main phase (around line 426), add after creature casting:
+if board.muldrotha_on_board:
+    muldrotha_casts = board.attempt_muldrotha_casts(verbose=verbose)
+    if muldrotha_casts > 0 and verbose:
+        print(f"♻️  Muldrotha enabled {muldrotha_casts} casts from graveyard")
+```
+
+**Expected Impact:**
+- Muldrotha on board turns 5-10 = 5 turns
+- 3 permanents per turn × 5 turns = 15 extra casts
+- Each cast averages 3-4 power/value = **45-60 extra power**
+
+---
+
+### Fix #4: Aggressive Self-Mill (MEDIUM IMPACT: +25-35 cards milled)
+
+**Step 1: Update oracle text parser for mill effects**
+
+```python
+# In oracle_text_parser.py, add:
+def parse_mill_value(oracle_text: str, card_name: str = "") -> int:
+    """Parse how many cards a mill effect mills."""
+    if not oracle_text:
+        return 0
+
+    lower = oracle_text.lower()
+    name_lower = card_name.lower()
+
+    # Specific card overrides
+    mill_cards = {
+        'hedron crab': 3,  # Per landfall
+        "stitcher's supplier": 3,  # ETB and on death
+        'sidisi, brood tyrant': 3,  # Each spell cast
+        'eccentric farmer': 3,
+        'nyx weaver': 2,  # Per upkeep
+    }
+
+    if name_lower in mill_cards:
+        return mill_cards[name_lower]
+
+    # Pattern: "mill N cards"
+    match = re.search(r'(?:mill|put.*top.*cards.*graveyard)\s+(\d+|one|two|three|four|five|six)', lower)
+    if match:
+        num_map = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6}
+        val = match.group(1)
+        return num_map.get(val, int(val) if val.isdigit() else 1)
+
+    return 0
+```
+
+**Step 2: Apply mill values to cards**
+
+```python
+# In deck_loader.py build_card_from_row(), add:
+mill_value = parse_mill_value(oracle_text, name)
+if mill_value > 0:
+    card.mill_value = mill_value
+```
+
+**Step 3: Increase mill aggressiveness in boardstate**
+
+```python
+# In BoardState methods, increase mill amounts:
+def trigger_landfall_mill(self, card, verbose: bool = False):
+    """Trigger mill effects on landfall (Hedron Crab)."""
+    mill_amount = getattr(card, 'mill_value', 0)
+    if mill_amount > 0:
+        milled = self.mill_cards(mill_amount, verbose)
+        if verbose:
+            print(f"  → {card.name} mills {mill_amount} cards")
+```
+
+**Expected Impact:**
+- 10 mill cards averaging 3 cards each = 30 cards milled
+- Triggers 30 Syr Konrad triggers = 90 damage
+- Fills graveyard for reanimation targets
+
+---
+
+## 🧪 Test Cases
+
+### Test 1: Syr Konrad + Mill Interaction
+```python
+def test_syr_konrad_mill_triggers():
+    # Setup: Syr Konrad on board, Hedron Crab, play a land
+    board.creatures.append(syr_konrad)
+    board.syr_konrad_on_board = True
+    board.creatures.append(hedron_crab)
+
+    # Play a land (triggers Hedron Crab)
+    board.play_card(island)
+
+    # Assert: Should mill 3 cards, trigger Syr Konrad 3× for creatures
+    assert board.syr_konrad_triggers_this_turn >= 1
+    assert board.drain_damage_this_turn >= 3  # At least 1 creature milled
+```
+
+### Test 2: Living Death Returns All Creatures
+```python
+def test_living_death_mass_reanimation():
+    # Setup: 10 creatures in graveyard, 5 on battlefield
+    for i in range(10):
+        board.graveyard.append(create_test_creature(power=2))
+    for i in range(5):
+        board.creatures.append(create_test_creature(power=3))
+
+    # Cast Living Death
+    board.cast_living_death(living_death_spell, verbose=True)
+
+    # Assert: All 10 creatures should be on battlefield
+    assert len(board.creatures) == 10
+    assert sum(c.power for c in board.creatures) == 20
+```
+
+### Test 3: Muldrotha Graveyard Casting
+```python
+def test_muldrotha_graveyard_casting():
+    # Setup: Muldrotha on board, 1 creature/artifact/enchantment in graveyard
+    board.muldrotha_on_board = True
+    board.graveyard.extend([test_creature, test_artifact, test_enchantment])
+    board.mana_pool = [('Any',)] * 10
+
+    # Attempt casts
+    casts = board.attempt_muldrotha_casts(verbose=True)
+
+    # Assert: Should cast 3 permanents
+    assert casts == 3
+    assert len(board.graveyard) == 0  # All moved to battlefield
+```
+
+---
+
+## 📈 Expected Results After Fixes
+
+| Metric | Before Fixes | After Fixes | Improvement |
+|--------|--------------|-------------|-------------|
+| **Total Damage** | 26 | 190-310 | **+631-1092%** |
+| **Peak Board Power** | 6 | 25-50 | **+317-733%** |
+| **Creatures Cast** | 8-12 | 23-35 | **+188-192%** |
+| **Graveyard Size** | 5-10 | 30-40 | **+200-300%** |
+| **Syr Konrad Damage** | 0-5 | 90-150 | **+1700-3000%** |
+
+---
+
 ## Conclusion
 
 Your deck's **actual power level** is probably **7-8/10** for a graveyard recursion strategy.
@@ -320,3 +788,10 @@ The **simulation's assessment** is treating it as a **2-3/10** because it's miss
 
 **Bottom Line:**
 The simulation needs a complete overhaul of graveyard mechanics. Current implementation is designed for creatures-that-stay-dead-when-they-die strategies, not recursion-based graveyard decks.
+
+**These fixes are estimated to take 20-30 hours of development time** but will unlock accurate simulation of:
+- Graveyard/recursion decks (your deck archetype)
+- Aristocrats/death trigger decks
+- Mill strategies
+- Zombie tribal decks
+- Mass reanimation strategies
