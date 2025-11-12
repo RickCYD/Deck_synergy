@@ -421,6 +421,11 @@ class BoardState:
             # ETB: Put +1/+1 counter on target Elemental, that Elemental deals damage
             self.handle_omnath_roil_landfall(verbose=verbose)
 
+        # PRIORITY FIX (P1): ETB MILL TRIGGERS (Stitcher's Supplier, Eccentric Farmer, etc.)
+        mill_value = getattr(card, 'mill_value', 0)
+        if mill_value > 0 and 'enters' in oracle:
+            self.mill_cards(mill_value, verbose=verbose)
+
     def _trigger_landfall(self, verbose: bool = False) -> None:
         """Execute all "landfall" triggers for permanents you control.
 
@@ -2313,6 +2318,36 @@ class BoardState:
 
         return counters_applied
 
+    def mill_cards(self, num_cards: int, verbose: bool = False):
+        """
+        Mill cards from library to graveyard.
+
+        PRIORITY FIX (P1): Aggressive mill to fill graveyard for recursion strategies.
+        Also triggers Syr Konrad for each creature milled.
+
+        Args:
+            num_cards: Number of cards to mill
+            verbose: Print output
+
+        Returns:
+            list: Cards that were milled
+        """
+        milled = []
+        for _ in range(min(num_cards, len(self.library))):
+            if not self.library:
+                break
+            card = self.library.pop(0)
+            self.graveyard.append(card)
+            milled.append(card)
+
+        if verbose and milled:
+            print(f"  → Milled {len(milled)} cards: {', '.join(c.name for c in milled[:3])}{' ...' if len(milled) > 3 else ''}")
+
+        # Trigger Syr Konrad on mill
+        self.trigger_syr_konrad_on_mill(milled, verbose)
+
+        return milled
+
     def trigger_syr_konrad_on_mill(self, cards_milled: list, verbose: bool = False):
         """
         Trigger Syr Konrad when creatures are milled from library to graveyard.
@@ -3328,6 +3363,12 @@ class BoardState:
             # === GENERIC LANDFALL LIFE GAIN ===
             elif 'gain' in oracle and 'life' in oracle and 'landfall' in oracle:
                 self.handle_generic_landfall_life_gain(oracle, verbose=verbose)
+
+            # PRIORITY FIX (P1): LANDFALL MILL (Hedron Crab, etc.)
+            elif 'mill' in oracle and 'landfall' in oracle:
+                mill_value = getattr(permanent, 'mill_value', 0)
+                if mill_value > 0:
+                    self.mill_cards(mill_value, verbose=verbose)
 
             # === GENERIC LANDFALL DAMAGE ===
             elif 'deals' in oracle and 'damage' in oracle and 'landfall' in oracle:

@@ -536,3 +536,53 @@ def parse_sacrifice_outlet_from_oracle(text: str) -> bool:
 
     from shared_mechanics import detect_sacrifice_outlet
     return detect_sacrifice_outlet(text)
+
+
+def parse_mill_value(oracle_text: str, card_name: str = "") -> int:
+    """
+    Parse how many cards a mill effect mills.
+
+    PRIORITY FIX (P1): Aggressive mill values for graveyard strategies.
+
+    Args:
+        oracle_text: Card's oracle text
+        card_name: Card's name for specific overrides
+
+    Returns:
+        int: Number of cards milled per trigger (0 if not a mill card)
+    """
+    if not oracle_text:
+        return 0
+
+    lower = oracle_text.lower()
+    name_lower = card_name.lower()
+
+    # Specific card overrides for known mill cards
+    mill_cards = {
+        'hedron crab': 3,  # Per landfall
+        "stitcher's supplier": 3,  # ETB and on death
+        'sidisi, brood tyrant': 3,  # Each spell cast
+        'eccentric farmer': 3,  # ETB
+        'nyx weaver': 2,  # Per upkeep
+        'millikin': 2,  # When tapped for mana
+        'deranged assistant': 1,  # When tapped for mana
+        'cemetery tampering': 3,  # Casualty trigger
+        'aftermath analyst': 3,  # ETB
+        'dredger\'s insight': 2,  # Per turn
+    }
+
+    if name_lower in mill_cards:
+        return mill_cards[name_lower]
+
+    # Pattern: "mill N cards" or "put the top N cards ... into your graveyard"
+    match = re.search(r'(?:mill|put.*top.*cards.*graveyard)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)', lower)
+    if match:
+        num_map = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10}
+        val = match.group(1)
+        return num_map.get(val, int(val) if val.isdigit() else 1)
+
+    # Generic "mill" keyword
+    if 'mill' in lower:
+        return 1  # Default to 1 if amount not specified
+
+    return 0
