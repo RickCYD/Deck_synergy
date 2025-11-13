@@ -2583,6 +2583,24 @@ class BoardState:
 
         return counters_applied
 
+    def remove_from_graveyard(self, card, verbose: bool = False):
+        """
+        Remove a card from graveyard and trigger Teval's ability if needed.
+
+        This wrapper ensures we trigger "whenever cards leave your graveyard" effects.
+        """
+        if card in self.graveyard:
+            self.graveyard.remove(card)
+
+            # Check for Teval, the Balanced Scale
+            for creature in self.creatures:
+                if 'teval' in getattr(creature, 'name', '').lower() and 'balanced scale' in getattr(creature, 'name', '').lower():
+                    # Create a 2/2 black Zombie Druid token
+                    self.create_token("Zombie Druid", 2, 2, has_haste=False, verbose=verbose)
+                    if verbose:
+                        print(f"  → Teval created a 2/2 Zombie Druid token (card left graveyard)")
+                    break  # Only trigger once per card leaving
+
     def mill_cards(self, num_cards: int, verbose: bool = False):
         """
         Mill cards from library to graveyard.
@@ -3239,6 +3257,7 @@ class BoardState:
         PRIORITY 2: Simulate "whenever you attack" triggers for token generation.
 
         Handles cards like:
+        - Teval, the Balanced Scale (mill 3, return land, create tokens)
         - Adeline, Resplendent Cathar (create tokens = # of opponents)
         - Anim Pakal, Thousandth Moon (create X gnome tokens)
         - Brimaz, King of Oreskos (create 1/1 cat)
@@ -3257,14 +3276,38 @@ class BoardState:
             oracle = getattr(creature, 'oracle_text', '').lower()
             name = getattr(creature, 'name', '').lower()
 
-            # Skip if no attack trigger
-            if 'whenever you attack' not in oracle and 'whenever ~ attacks' not in oracle:
+            # Skip if no attack trigger (but Teval uses different trigger text)
+            if 'whenever you attack' not in oracle and 'whenever ~ attacks' not in oracle and 'whenever teval attacks' not in oracle:
                 continue
 
             # === Specific Named Cards ===
 
+            # TEVAL, THE BALANCED SCALE - Mill 3, return land from graveyard
+            if 'teval' in name and 'balanced scale' in name:
+                # Mill 3 cards
+                self.mill_cards(3, verbose=verbose)
+                if verbose:
+                    print(f"  → Teval milled 3 cards")
+
+                # Return a land card from graveyard to battlefield tapped
+                land_cards = [c for c in self.graveyard if 'Land' in getattr(c, 'type', '')]
+                if land_cards:
+                    # Choose a land to return (prefer basic lands for consistency)
+                    basic_lands = [c for c in land_cards if c.name in ['Forest', 'Swamp', 'Island', 'Mountain', 'Plains']]
+                    land_to_return = basic_lands[0] if basic_lands else land_cards[0]
+
+                    # Use the wrapper to trigger Teval's token creation
+                    self.remove_from_graveyard(land_to_return, verbose=verbose)
+                    self.lands_tapped.append(land_to_return)
+
+                    if verbose:
+                        print(f"  → Teval returned {land_to_return.name} from graveyard to battlefield tapped")
+
+                    # Trigger landfall effects (for Ob Nixilis, etc.)
+                    self._trigger_landfall(verbose=verbose)
+
             # Adeline, Resplendent Cathar - Create tokens = # of opponents
-            if 'adeline' in name:
+            elif 'adeline' in name:
                 for _ in range(num_alive_opps):
                     self.create_token("Human Soldier", 1, 1, has_haste=True, verbose=verbose)
                     tokens_created += 1
@@ -3584,6 +3627,7 @@ class BoardState:
         Process all landfall triggers after a land enters the battlefield.
 
         This handles specific landfall cards like:
+        - Ob Nixilis, the Fallen (3 damage per land, grows)
         - Scute Swarm (create token copies)
         - Omnath variants (create elementals, gain life, draw cards, deal damage)
         - Avenger of Zendikar (buff plant tokens)
@@ -3597,13 +3641,40 @@ class BoardState:
             name = getattr(permanent, 'name', '').lower()
 
             # Skip if no landfall trigger
-            if 'landfall' not in oracle and 'land enters' not in oracle:
+            if 'landfall' not in oracle and 'land enters' not in oracle and 'whenever a land you control enters' not in oracle:
                 continue
 
             triggered_count += 1
 
+            # === OB NIXILIS, THE FALLEN ===
+            if 'ob nixilis' in name and 'fallen' in name:
+                # Deal 3 damage to target opponent
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                if alive_opps:
+                    target = alive_opps[0]
+                    target['life_total'] -= 3
+                    self.drain_damage_this_turn += 3
+
+                    if verbose:
+                        print(f"  → Ob Nixilis dealt 3 damage to opponent (landfall)")
+
+                # Put a +1/+1 counter on Ob Nixilis
+                if hasattr(permanent, 'counters'):
+                    permanent.counters += 1
+                else:
+                    permanent.counters = 1
+
+                # Update power/toughness
+                if hasattr(permanent, 'power') and permanent.power is not None:
+                    permanent.power += 1
+                if hasattr(permanent, 'toughness') and permanent.toughness is not None:
+                    permanent.toughness += 1
+
+                if verbose:
+                    print(f"  → Ob Nixilis grew to {permanent.power}/{permanent.toughness}")
+
             # === SCUTE SWARM ===
-            if 'scute swarm' in name:
+            elif 'scute swarm' in name:
                 self.handle_scute_swarm_landfall(permanent, verbose=verbose)
 
             # === OMNATH, LOCUS OF RAGE ===
