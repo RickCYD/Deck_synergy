@@ -128,6 +128,53 @@ def parse_etb_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
             TriggeredAbility(event="etb", effect=effect, description="proliferate")
         )
 
+    # NEW: Pattern for token creation on ETB
+    # Matches: "When [card] enters the battlefield, create X Y tokens"
+    # or: "When [card] enters the battlefield or attacks, create X Y tokens"
+    m_token = re.search(
+        r"when [^,]* enters the battlefield(?:[^,]*)?, (?:.*?create|create) (?P<num>a|an|one|two|three|four|five|six|seven|eight|nine|ten|x|\d+) (?P<stats>\d+/\d+)?[^.]*token",
+        lower,
+    )
+    if m_token:
+        num_map = {
+            "a": 1,
+            "an": 1,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+        }
+        val = m_token.group("num")
+        if val == "x":
+            amount = 1  # X tokens - default to 1 for simulation
+        else:
+            amount = num_map.get(val, int(val) if val.isdigit() else 1)
+
+        stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+        # Create effect with closure to capture amount and stats
+        def make_token_effect(num_tokens, token_stats):
+            def effect(board_state):
+                # Create tokens on the battlefield
+                if hasattr(board_state, 'create_tokens'):
+                    board_state.create_tokens(num_tokens, token_stats)
+                else:
+                    # Fallback: just track the count
+                    if not hasattr(board_state, 'tokens_created_this_turn'):
+                        board_state.tokens_created_this_turn = 0
+                    board_state.tokens_created_this_turn += num_tokens
+            return effect
+
+        triggers.append(
+            TriggeredAbility(event="etb", effect=make_token_effect(amount, stats), description=f"create {amount} {stats} token(s)")
+        )
+
     return triggers
 
 
@@ -219,6 +266,53 @@ def parse_attack_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
             TriggeredAbility(event="attack", effect=effect, description="proliferate")
         )
 
+    # NEW: Pattern for token creation on attack
+    # Matches: "Whenever [something] attacks, create X Y tokens"
+    # Matches: "Whenever you attack, create X Y tokens"
+    m_token = re.search(
+        r"whenever (?:you attack|[^,]+ attacks?)(?:[^,]*)?, (?:.*?create|create) (?P<num>a|an|one|two|three|four|five|six|seven|eight|nine|ten|x|\d+) (?P<stats>\d+/\d+)?[^.]*token",
+        lower,
+    )
+    if m_token:
+        num_map = {
+            "a": 1,
+            "an": 1,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+        }
+        val = m_token.group("num")
+        if val == "x":
+            amount = 2  # X tokens on attack - default to 2 for simulation
+        else:
+            amount = num_map.get(val, int(val) if val.isdigit() else 1)
+
+        stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+        # Create effect with closure to capture amount and stats
+        def make_token_effect(num_tokens, token_stats):
+            def effect(board_state):
+                # Create tokens on the battlefield
+                if hasattr(board_state, 'create_tokens'):
+                    board_state.create_tokens(num_tokens, token_stats)
+                else:
+                    # Fallback: just track the count
+                    if not hasattr(board_state, 'tokens_created_this_turn'):
+                        board_state.tokens_created_this_turn = 0
+                    board_state.tokens_created_this_turn += num_tokens
+            return effect
+
+        triggers.append(
+            TriggeredAbility(event="attack", effect=make_token_effect(amount, stats), description=f"create {amount} {stats} token(s)")
+        )
+
     return triggers
 
 
@@ -255,6 +349,130 @@ def parse_damage_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
                 event="damage",
                 effect=effect,
                 description="Create a tapped Treasure token",
+            )
+        )
+
+    return triggers
+
+
+def parse_death_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
+    """Extract death triggers from oracle text (aristocrats drain effects, etc.)."""
+    if not text:
+        return []
+    lower = text.lower()
+    triggers: list[TriggeredAbility] = []
+
+    # Pattern 1: Life drain on creature death
+    # "Whenever X dies, each opponent loses N life"
+    # "Whenever X or another creature you control dies, each opponent loses N life"
+    m_drain = re.search(
+        r"whenever (?:[^,]+) (?:dies|die), (?:.*?)?each opponent loses (?P<num>a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) life",
+        lower,
+    )
+    if m_drain:
+        num_map = {
+            "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+            "four": 4, "five": 5, "six": 6, "seven": 7,
+            "eight": 8, "nine": 9, "ten": 10,
+        }
+        val = m_drain.group("num")
+        life_loss = num_map.get(val, int(val) if val.isdigit() else 1)
+
+        # Create effect with closure
+        def make_drain_effect(amount):
+            def effect(board_state):
+                # In goldfish mode with 3 opponents
+                total_damage = amount * 3
+                if hasattr(board_state, 'combat_damage_this_turn'):
+                    board_state.combat_damage_this_turn += total_damage
+                if hasattr(board_state, 'life_gained_this_turn'):
+                    board_state.life_gained_this_turn += amount
+            return effect
+
+        triggers.append(
+            TriggeredAbility(
+                event="death",
+                effect=make_drain_effect(life_loss),
+                description=f"each opponent loses {life_loss} life"
+            )
+        )
+
+    # Pattern 2: Token creation on death
+    # "When X dies, create Y tokens"
+    m_token = re.search(
+        r"when (?:[^,]+) (?:dies|die), create (?P<num>a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+)(?: (?P<stats>\d+/\d+))?(?: [^.]*)?tokens?",
+        lower,
+    )
+    if m_token:
+        num_map = {
+            "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+            "four": 4, "five": 5, "six": 6, "seven": 7,
+            "eight": 8, "nine": 9, "ten": 10,
+        }
+        val = m_token.group("num")
+        amount = num_map.get(val, int(val) if val.isdigit() else 1)
+        stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+        # Create effect with closure
+        def make_token_effect(num_tokens, token_stats):
+            def effect(board_state):
+                if hasattr(board_state, 'create_tokens'):
+                    board_state.create_tokens(num_tokens, token_stats)
+            return effect
+
+        triggers.append(
+            TriggeredAbility(
+                event="death",
+                effect=make_token_effect(amount, stats),
+                description=f"create {amount} {stats} token(s)"
+            )
+        )
+
+    # Pattern 3: Treasure token creation on death
+    # "Whenever X dies, create a Treasure token"
+    m_treasure = re.search(
+        r"whenever (?:[^,]+) (?:dies|die), create a treasure token",
+        lower,
+    )
+    if m_treasure and not m_token:  # Only if we didn't already match a token pattern
+        def effect(board_state):
+            # Create a Treasure token (artifact that taps for mana)
+            if hasattr(board_state, 'treasure_tokens'):
+                board_state.treasure_tokens += 1
+
+        triggers.append(
+            TriggeredAbility(
+                event="death",
+                effect=effect,
+                description="create a Treasure token"
+            )
+        )
+
+    # Pattern 4: Card draw on death
+    # "Whenever X dies, draw a card"
+    m_draw = re.search(
+        r"whenever (?:[^,]+) (?:dies|die), (?:.*?)?draw (?P<num>a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) cards?",
+        lower,
+    )
+    if m_draw:
+        num_map = {
+            "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+            "four": 4, "five": 5, "six": 6, "seven": 7,
+            "eight": 8, "nine": 9, "ten": 10,
+        }
+        val = m_draw.group("num")
+        card_count = num_map.get(val, int(val) if val.isdigit() else 1)
+
+        def make_draw_effect(num_cards):
+            def effect(board_state):
+                board_state.draw_card(num_cards)
+            return effect
+
+        triggers.append(
+            TriggeredAbility(
+                event="death",
+                effect=make_draw_effect(card_count),
+                description=f"draw {card_count} card(s)"
             )
         )
 
@@ -500,12 +718,15 @@ def parse_triggers_with_gpt(text: str) -> list[TriggeredAbility]:
     return triggers
 
 
-def parse_death_triggers_from_oracle(text: str) -> int:
+def parse_death_drain_value_from_oracle(text: str) -> int:
     """
-    Parse oracle text to detect death drain triggers.
+    Parse oracle text to detect death drain triggers and return the drain value.
 
     **SINGLE SOURCE OF TRUTH**: Uses shared_mechanics.py
     All detection logic is in shared_mechanics.detect_death_drain_value()
+
+    Note: This returns an int (the drain value), not TriggeredAbility objects.
+    Use parse_death_triggers_from_oracle() for getting TriggeredAbility objects.
     """
     import sys
     from pathlib import Path

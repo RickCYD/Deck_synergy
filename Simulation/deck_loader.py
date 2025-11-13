@@ -118,6 +118,7 @@ def _df_to_cards(df: pd.DataFrame):
                 parse_etb_triggers_from_oracle(text)
                 + parse_attack_triggers_from_oracle(text)
                 + parse_damage_triggers_from_oracle(text)
+                + parse_death_triggers_from_oracle(text)
             )
         )
     else:
@@ -233,12 +234,25 @@ def _save_scryfall_cache(cache: dict) -> None:
 
 def fetch_cards_from_scryfall_bulk(names: list[str]) -> list[dict]:
     """Fetch card data for multiple names using the Scryfall collection API."""
+    import time
     rows = []
+
+    headers = {
+        'User-Agent': 'MTGDeckAnalyzer/1.0',
+        'Accept': 'application/json',
+    }
+
     for i in range(0, len(names), 75):
         identifiers = [{"name": n} for n in names[i : i + 75]]
+
+        # Add delay to respect Scryfall rate limits (100ms between requests)
+        if i > 0:
+            time.sleep(0.1)
+
         resp = requests.post(
             "https://api.scryfall.com/cards/collection",
             json={"identifiers": identifiers},
+            headers=headers,
             timeout=10,
         )
         resp.raise_for_status()
@@ -290,8 +304,14 @@ def fetch_cards_from_scryfall_bulk(names: list[str]) -> list[dict]:
     return rows
 
 def fetch_card_from_scryfall(name: str) -> dict:
+    import time
+    headers = {
+        'User-Agent': 'MTGDeckAnalyzer/1.0',
+        'Accept': 'application/json',
+    }
     url = f"https://api.scryfall.com/cards/named?exact={name}"
-    response = requests.get(url, timeout=10)
+    time.sleep(0.1)  # Respect rate limits
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
     data = response.json()
     type_line = data.get("type_line", "")
@@ -429,4 +449,58 @@ def load_deck_from_archidekt(deck_id: int):
     """Load a deck directly from an Archidekt deck ID."""
     names, commander_name = load_card_names_from_archidekt(deck_id)
     return load_deck_from_scryfall(names, commander_name)
+
+
+def parse_decklist_file(filepath: str):
+    """
+    Parse a decklist file and extract card names and commander.
+
+    Supports various formats:
+    - Commander: Card Name
+    - 1 Card Name
+    - 1x Card Name
+    - Card Name
+    - Lines starting with # are ignored
+
+    Returns:
+        tuple: (list of card names, commander name)
+    """
+    cards = []
+    commander = None
+
+    with open(filepath, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+
+            # Skip empty lines and comments
+            if not line or line.startswith('#'):
+                continue
+
+            # Check if this is commander line
+            if 'commander' in line.lower() and ':' in line:
+                # Extract card name after colon
+                name = line.split(':', 1)[1].strip()
+                # Remove quantity prefix if present
+                match = re.match(r'^\d+x?\s+(.+)$', name)
+                if match:
+                    name = match.group(1).strip()
+                commander = name
+                continue
+
+            # Parse quantity and card name
+            match = re.match(r'^(\d+)x?\s+(.+)$', line)
+            if match:
+                qty = int(match.group(1))
+                name = match.group(2).strip()
+            else:
+                qty = 1
+                name = line.strip()
+
+            # Add cards (expanding quantities)
+            cards.extend([name] * qty)
+
+    if not commander:
+        raise ValueError("No commander found in decklist. Expected line like 'Commander: Card Name'")
+
+    return cards, commander
 

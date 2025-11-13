@@ -645,7 +645,28 @@ class BoardState:
         else:
             # Extract main type before "—" (e.g., "Basic Land — Swamp" -> "Basic Land")
             main_type = card.type.split('—')[0].strip()
-            method = getattr(self, f"play_{main_type.replace(' ', '_').lower()}", None)
+
+            # Normalize card types: strip supertypes to get base type
+            # "Legendary Creature" -> "Creature"
+            # "Artifact Creature" -> "Creature"
+            # "Enchantment Creature" -> "Creature"
+            # "Basic Land" -> "Land"
+            if "Creature" in main_type:
+                main_type = "Creature"
+            elif "Land" in main_type:
+                main_type = "Land"
+            elif "Artifact" in main_type:
+                main_type = "Artifact"
+            elif "Enchantment" in main_type:
+                main_type = "Enchantment"
+            elif "Planeswalker" in main_type:
+                main_type = "Planeswalker"
+            elif "Instant" in main_type:
+                main_type = "Instant"
+            elif "Sorcery" in main_type:
+                main_type = "Sorcery"
+
+            method = getattr(self, f"play_{main_type.lower()}", None)
         if not callable(method):
             if verbose:
                 print(f"Card type {card.type} not supported for play.")
@@ -1103,6 +1124,48 @@ class BoardState:
                 if verbose:
                     print(f"  → {card.name} deals {damage} damage to {target_opp['name']}")
 
+        # TOKEN CREATION: Parse oracle text for token creation
+        oracle = getattr(card, "oracle_text", "").lower()
+        if oracle and "create" in oracle and "token" in oracle:
+            import re
+            # Pattern: "Create X Y/Z tokens" or "Create five 2/2 tokens"
+            m_token = re.search(
+                r"create (?P<num>x|\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten) (?P<stats>\d+/\d+)?[^.]*tokens?",
+                oracle,
+            )
+            if m_token:
+                num_map = {
+                    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+                    "four": 4, "five": 5, "six": 6, "seven": 7,
+                    "eight": 8, "nine": 9, "ten": 10, "x": x_val if "X" in cost else 1,
+                }
+                val = m_token.group("num")
+                if val == "x":
+                    token_count = x_val if x_val > 0 else 1
+                else:
+                    token_count = num_map.get(val, int(val) if val.isdigit() else 1)
+
+                stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+                # Extract keywords (haste, trample, flying, etc.)
+                keywords = []
+                if "haste" in oracle:
+                    keywords.append("haste")
+                if "trample" in oracle:
+                    keywords.append("trample")
+                if "flying" in oracle:
+                    keywords.append("flying")
+                if "vigilance" in oracle:
+                    keywords.append("vigilance")
+                if "lifelink" in oracle:
+                    keywords.append("lifelink")
+
+                # Create the tokens
+                self.create_tokens(token_count, stats, keywords=keywords, verbose=verbose)
+                if verbose:
+                    kw_text = f" with {', '.join(keywords)}" if keywords else ""
+                    print(f"  → {card.name} created {token_count} {stats} token(s){kw_text}")
+
         if getattr(card, "puts_land", False):
             self.search_basic_land(verbose)
         oracle = getattr(card, "oracle_text", "").lower()
@@ -1288,6 +1351,50 @@ class BoardState:
                         print(f"  → {target_opp['name']} eliminated by {card.name} (dealt {damage} damage)!")
                 if verbose:
                     print(f"  → {card.name} deals {damage} damage to {target_opp['name']}")
+
+        # TOKEN CREATION: Parse oracle text for token creation
+        oracle = getattr(card, "oracle_text", "").lower()
+        x_val = getattr(card, "x_value", 0)
+        cost = getattr(card, "mana_cost", "")
+        if oracle and "create" in oracle and "token" in oracle:
+            import re
+            # Pattern: "Create X Y/Z tokens" or "Create five 2/2 tokens"
+            m_token = re.search(
+                r"create (?P<num>x|\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten) (?P<stats>\d+/\d+)?[^.]*tokens?",
+                oracle,
+            )
+            if m_token:
+                num_map = {
+                    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+                    "four": 4, "five": 5, "six": 6, "seven": 7,
+                    "eight": 8, "nine": 9, "ten": 10, "x": x_val if "X" in cost else 1,
+                }
+                val = m_token.group("num")
+                if val == "x":
+                    token_count = x_val if x_val > 0 else 1
+                else:
+                    token_count = num_map.get(val, int(val) if val.isdigit() else 1)
+
+                stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+                # Extract keywords (haste, trample, flying, etc.)
+                keywords = []
+                if "haste" in oracle:
+                    keywords.append("haste")
+                if "trample" in oracle:
+                    keywords.append("trample")
+                if "flying" in oracle:
+                    keywords.append("flying")
+                if "vigilance" in oracle:
+                    keywords.append("vigilance")
+                if "lifelink" in oracle:
+                    keywords.append("lifelink")
+
+                # Create the tokens
+                self.create_tokens(token_count, stats, keywords=keywords, verbose=verbose)
+                if verbose:
+                    kw_text = f" with {', '.join(keywords)}" if keywords else ""
+                    print(f"  → {card.name} created {token_count} {stats} token(s){kw_text}")
 
         if verbose:
             print(f"Played instant: {card.name}")
@@ -2278,6 +2385,74 @@ class BoardState:
             return True
         return False
 
+    # ─────────────────────── Token Creation ──────────────────────────
+    def create_tokens(self, count: int, stats: str = "1/1", creature_type: str = "Token", colors: str = "",
+                     keywords: list = None, verbose: bool = False):
+        """Create token creatures and add them to the battlefield.
+
+        Args:
+            count: Number of tokens to create
+            stats: Power/Toughness as string (e.g. "1/1", "2/2")
+            creature_type: Creature type (e.g. "Soldier", "Goblin")
+            colors: Color identity (e.g. "W", "RG")
+            keywords: List of keywords (e.g. ["haste", "flying"])
+            verbose: Whether to print debug output
+        """
+        from simulate_game import Card  # Import here to avoid circular imports
+
+        if keywords is None:
+            keywords = []
+
+        # Parse power/toughness
+        if "/" in stats:
+            power, toughness = stats.split("/")
+            power = int(power)
+            toughness = int(toughness)
+        else:
+            power = 1
+            toughness = 1
+
+        # Apply token multipliers (Anointed Procession, Doubling Season, etc.)
+        actual_count = count * self.token_multiplier
+
+        for i in range(actual_count):
+            # Check for haste keyword
+            has_haste = "haste" in [k.lower() for k in keywords]
+
+            # Create token creature with all required arguments
+            token = Card(
+                name=f"{creature_type} Token",
+                type=f"Creature — {creature_type}",
+                mana_cost="",
+                power=power,
+                toughness=toughness,
+                produces_colors=[],  # Tokens don't produce mana
+                mana_production=0,  # Tokens don't produce mana
+                etb_tapped=not has_haste,  # Tokens enter tapped unless they have haste
+                etb_tapped_conditions={},  # No conditional ETB tapped
+                has_haste=has_haste,
+                oracle_text=f"Token creature with {', '.join(keywords) if keywords else 'no abilities'}",
+            )
+
+            # Add other keywords
+            token.has_flying = "flying" in [k.lower() for k in keywords]
+            token.has_vigilance = "vigilance" in [k.lower() for k in keywords]
+            token.has_trample = "trample" in [k.lower() for k in keywords]
+            token.has_lifelink = "lifelink" in [k.lower() for k in keywords]
+            token.tapped = not has_haste  # Tokens enter tapped unless they have haste
+
+            # Add to battlefield
+            self.creatures.append(token)
+
+            if verbose:
+                print(f"Created {power}/{toughness} {creature_type} token" +
+                     (f" with {', '.join(keywords)}" if keywords else ""))
+
+        # Track token creation
+        self.tokens_created_this_turn += actual_count
+
+        return actual_count
+
     # ─────────────────────── Sacrifice Mechanics ──────────────────────────
     def sacrifice_creature(self, creature, verbose: bool = False):
         """Sacrifice a creature for value."""
@@ -2736,21 +2911,33 @@ class BoardState:
                     print(f"  → {permanent.name} doubles death triggers!")
                 break
 
-        # Count all permanents with death triggers
+        # Execute death triggers from all permanents
         for permanent in self.creatures + self.enchantments + self.artifacts:
+            # NEW: Execute death triggers from triggered_abilities
+            triggered_abilities = getattr(permanent, 'triggered_abilities', [])
+            for ability in triggered_abilities:
+                if ability.event == 'death':
+                    # Execute death trigger (multiplied by Teysa!)
+                    for _ in range(death_trigger_multiplier):
+                        if verbose:
+                            desc = ability.description
+                            if death_trigger_multiplier > 1:
+                                print(f"  → {permanent.name}: {desc} (doubled by Teysa!)")
+                            else:
+                                print(f"  → {permanent.name}: {desc}")
+
+                        # Execute the trigger effect
+                        try:
+                            ability.effect(self)
+                        except Exception as e:
+                            if verbose:
+                                print(f"    ⚠ Error executing death trigger: {e}")
+
+            # LEGACY: Also support old death_trigger_value attribute for compatibility
             death_value = getattr(permanent, 'death_trigger_value', 0)
             oracle = getattr(permanent, 'oracle_text', '').lower()
 
-            # DEBUG: Always print if death_value > 0 to see what's happening
-            if death_value > 0:
-                has_opponent = 'opponent' in oracle
-                has_loses = 'loses' in oracle
-                if verbose or not (has_opponent and has_loses):
-                    print(f"  [DEBUG] {permanent.name}: death_value={death_value}, has_opponent={has_opponent}, has_loses={has_loses}")
-                    if not has_opponent or not has_loses:
-                        print(f"    oracle_text: {oracle[:150]}")
-
-            # Zulaport Cutthroat / Cruel Celebrant type effects
+            # Zulaport Cutthroat / Cruel Celebrant type effects (legacy support)
             if death_value > 0 and 'opponent' in oracle and 'loses' in oracle:
                 # Each opponent loses X life (multiplied by death trigger doubler!)
                 drain_per_opp = death_value * death_trigger_multiplier
@@ -2764,7 +2951,11 @@ class BoardState:
                         print(f"  → {permanent.name} drains {drain_per_opp} × {num_alive_opps} opponents = {drain_per_opp * num_alive_opps}")
 
             # Pitiless Plunderer - create treasure (also doubled by Teysa!)
-            if 'treasure' in oracle and 'dies' in oracle:
+            # Skip if already handled by triggered_abilities
+            if 'treasure' in oracle and 'dies' in oracle and not any(
+                a.event == 'death' and 'Treasure' in a.description
+                for a in getattr(permanent, 'triggered_abilities', [])
+            ):
                 treasures_to_create = 1 * death_trigger_multiplier
                 for _ in range(treasures_to_create):
                     self.create_treasure(verbose=verbose)
