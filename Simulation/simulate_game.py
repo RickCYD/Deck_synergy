@@ -1,4 +1,5 @@
 import random
+import copy
 from math import isnan
 from convert_dataframe_deck import parse_mana_cost
 from boardstate import Mana_utils, BoardState
@@ -127,6 +128,23 @@ class Card:
         self.sacrifice_outlet = sacrifice_outlet
         self.death_trigger_value = death_trigger_value
 
+    def reset_game_state(self) -> None:
+        """Reset card state to initial values for a new game.
+
+        This resets:
+        - Power/toughness to base values
+        - Counters
+        - Saga chapters
+        - Any temporary game-specific attributes
+        """
+        self.power = self.base_power
+        self.toughness = self.base_toughness
+        self.counters = {}
+        self.saga_current_chapter = 0
+        # Remove any temporary attributes added during gameplay
+        if hasattr(self, '_turns_on_board'):
+            delattr(self, '_turns_on_board')
+
     def add_counter(self, counter_type: str, amount: int = 1) -> None:
         """Add *amount* of *counter_type* counters to the card.
 
@@ -210,6 +228,13 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         When ``verbose`` is ``True`` the function also prints a turn by turn
         summary of all actions taken.
     """
+
+    # CRITICAL FIX: Reset card state to prevent pollution between games
+    # Equipment buffs and counters must be cleared before each game
+    for card in deck_cards:
+        card.reset_game_state()
+    if commander_card:
+        commander_card.reset_game_state()
 
     # Initialize board state
     board = BoardState(deck_cards, commander_card)
