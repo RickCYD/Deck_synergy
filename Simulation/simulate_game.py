@@ -450,7 +450,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
                 for c in board.hand[:]:  # iterate over copy
                     if (
-                        c.type == "Artifact"
+                        "Artifact" in c.type
                         and c.mana_production > 0
                         and Mana_utils.can_pay(c.mana_cost, board.mana_pool)
                     ):
@@ -496,7 +496,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                     for eq in [
                         e
                         for e in board.artifacts
-                        if e.type == "Equipment" and e not in board.equipment_attached
+                        if "Equipment" in e.type and e not in board.equipment_attached
                     ]:
                         if Mana_utils.can_pay(eq.equip_cost, board.mana_pool):
                             if board.equip_equipment(
@@ -514,7 +514,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                 (
                     c
                     for c in board.hand
-                    if c.type == "Sorcery"
+                    if "Sorcery" in c.type
                     and getattr(c, "puts_land", False)
                     and Mana_utils.can_pay(c.mana_cost, board.mana_pool)
                 ),
@@ -534,7 +534,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                 (
                     c
                     for c in board.hand
-                    if c.type == "Creature"
+                    if "Creature" in c.type
                     and Mana_utils.can_pay(c.mana_cost, board.mana_pool)
                 ),
                 None,
@@ -557,7 +557,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                     for eq in [
                         e
                         for e in board.artifacts
-                        if e.type == "Equipment" and e not in board.equipment_attached
+                        if "Equipment" in e.type and e not in board.equipment_attached
                     ]:
                         if Mana_utils.can_pay(eq.equip_cost, board.mana_pool):
                             if board.equip_equipment(eq, creature, verbose=verbose):
@@ -585,7 +585,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                 (
                     c
                     for c in board.hand
-                    if c.type == "Equipment"
+                    if "Equipment" in c.type
                     and Mana_utils.can_pay(c.mana_cost, board.mana_pool)
                     and board.creatures
                 ),
@@ -616,7 +616,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         for eq in [
             e
             for e in board.artifacts
-            if e.type == "Equipment" and e not in board.equipment_attached
+            if "Equipment" in e.type and e not in board.equipment_attached
         ]:
             if board.creatures and Mana_utils.can_pay(eq.equip_cost, board.mana_pool):
                 if board.equip_equipment(eq, board.creatures[0], verbose=verbose):

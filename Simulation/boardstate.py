@@ -2448,7 +2448,7 @@ class BoardState:
                     return True
 
         # Try to cast instant-speed spells
-        for instant in [c for c in self.hand if c.type == 'Instant']:
+        for instant in [c for c in self.hand if 'Instant' in c.type]:
             if Mana_utils.can_pay(instant.mana_cost, self.mana_pool):
                 if random.random() < 0.5:  # 50% chance to cast
                     self.play_instant(instant, verbose=verbose)
