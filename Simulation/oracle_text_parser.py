@@ -128,6 +128,50 @@ def parse_etb_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
             TriggeredAbility(event="etb", effect=effect, description="proliferate")
         )
 
+    # NEW: Pattern for token creation on ETB
+    # Matches: "When [card] enters the battlefield, create X Y tokens"
+    # or: "When [card] enters the battlefield or attacks, create X Y tokens"
+    m_token = re.search(
+        r"when [^,]* enters the battlefield(?:[^,]*)?, (?:.*?create|create) (?P<num>a|an|one|two|three|four|five|six|seven|eight|nine|ten|x|\d+) (?P<stats>\d+/\d+)?[^.]*token",
+        lower,
+    )
+    if m_token:
+        num_map = {
+            "a": 1,
+            "an": 1,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+        }
+        val = m_token.group("num")
+        if val == "x":
+            amount = 1  # X tokens - default to 1 for simulation
+        else:
+            amount = num_map.get(val, int(val) if val.isdigit() else 1)
+
+        stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+        def effect(board_state, n=amount, token_stats=stats):
+            # Create tokens on the battlefield
+            if hasattr(board_state, 'create_tokens'):
+                board_state.create_tokens(n, token_stats)
+            elif hasattr(board_state, 'tokens_created'):
+                # Track token creation
+                if not hasattr(board_state, 'tokens_created_this_turn'):
+                    board_state.tokens_created_this_turn = 0
+                board_state.tokens_created_this_turn += n
+
+        triggers.append(
+            TriggeredAbility(event="etb", effect=effect, description=f"create {amount} {stats} token(s)")
+        )
+
     return triggers
 
 
@@ -217,6 +261,50 @@ def parse_attack_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
 
         triggers.append(
             TriggeredAbility(event="attack", effect=effect, description="proliferate")
+        )
+
+    # NEW: Pattern for token creation on attack
+    # Matches: "Whenever [something] attacks, create X Y tokens"
+    # Matches: "Whenever you attack, create X Y tokens"
+    m_token = re.search(
+        r"whenever (?:you attack|[^,]+ attacks?)(?:[^,]*)?, (?:.*?create|create) (?P<num>a|an|one|two|three|four|five|six|seven|eight|nine|ten|x|\d+) (?P<stats>\d+/\d+)?[^.]*token",
+        lower,
+    )
+    if m_token:
+        num_map = {
+            "a": 1,
+            "an": 1,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+        }
+        val = m_token.group("num")
+        if val == "x":
+            amount = 2  # X tokens on attack - default to 2 for simulation
+        else:
+            amount = num_map.get(val, int(val) if val.isdigit() else 1)
+
+        stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+        def effect(board_state, n=amount, token_stats=stats):
+            # Create tokens on the battlefield
+            if hasattr(board_state, 'create_tokens'):
+                board_state.create_tokens(n, token_stats)
+            elif hasattr(board_state, 'tokens_created'):
+                # Track token creation
+                if not hasattr(board_state, 'tokens_created_this_turn'):
+                    board_state.tokens_created_this_turn = 0
+                board_state.tokens_created_this_turn += n
+
+        triggers.append(
+            TriggeredAbility(event="attack", effect=effect, description=f"create {amount} {stats} token(s)")
         )
 
     return triggers

@@ -449,3 +449,57 @@ def load_deck_from_archidekt(deck_id: int):
     names, commander_name = load_card_names_from_archidekt(deck_id)
     return load_deck_from_scryfall(names, commander_name)
 
+
+def parse_decklist_file(filepath: str):
+    """
+    Parse a decklist file and extract card names and commander.
+
+    Supports various formats:
+    - Commander: Card Name
+    - 1 Card Name
+    - 1x Card Name
+    - Card Name
+    - Lines starting with # are ignored
+
+    Returns:
+        tuple: (list of card names, commander name)
+    """
+    cards = []
+    commander = None
+
+    with open(filepath, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+
+            # Skip empty lines and comments
+            if not line or line.startswith('#'):
+                continue
+
+            # Check if this is commander line
+            if 'commander' in line.lower() and ':' in line:
+                # Extract card name after colon
+                name = line.split(':', 1)[1].strip()
+                # Remove quantity prefix if present
+                match = re.match(r'^\d+x?\s+(.+)$', name)
+                if match:
+                    name = match.group(1).strip()
+                commander = name
+                continue
+
+            # Parse quantity and card name
+            match = re.match(r'^(\d+)x?\s+(.+)$', line)
+            if match:
+                qty = int(match.group(1))
+                name = match.group(2).strip()
+            else:
+                qty = 1
+                name = line.strip()
+
+            # Add cards (expanding quantities)
+            cards.extend([name] * qty)
+
+    if not commander:
+        raise ValueError("No commander found in decklist. Expected line like 'Commander: Card Name'")
+
+    return cards, commander
+
