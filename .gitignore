@@ -34,6 +34,9 @@ wheels/
 .env
 .env.local
 
+# Cache files
+scryfall_cache.json
+
 # Data files
 data/decks/*.json
 !data/decks/.gitkeep
