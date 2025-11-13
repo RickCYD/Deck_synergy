@@ -83,7 +83,7 @@ Clever Concealment,Instant,2WW,0,0,0,,False,False,,0,0,0,False,False
 Bronze Guardian,Creature,4W,4,4,0,,False,False,,0,0,0,False,False
 Darksteel Plate,Artifact,3,0,0,0,,False,False,,0,0,0,False,False
 Swiftfoot Boots,Equipment,2,0,0,0,,False,False,,0,0,0,False,False
-Helm of the Host,Equipment,4,0,0,0,,False,False,,5,0,0,False,False
+Helm of the Host,Equipment,4,0,0,0,,False,False,,5,2,0,False,False
 Hammer of Nazahn,Equipment,4,0,0,0,,False,False,,4,2,0,False,False
 Blackblade Reforged,Equipment,2,0,0,0,,False,False,,3,0,0,False,False
 Colossus Hammer,Equipment,1,0,0,0,,False,False,,8,10,0,False,False

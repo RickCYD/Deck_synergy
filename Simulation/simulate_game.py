@@ -554,16 +554,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                     did_action = True
                     continue
 
-            # 4) play first castable creature (with AI decision-making)
-            creature = next(
-                (
-                    c
-                    for c in board.hand
-                    if "Creature" in c.type
-                    and Mana_utils.can_pay(c.mana_cost, board.mana_pool)
-                ),
-                None,
-            )
+            # 4) play best castable creature (with strategic AI decision-making)
+            creature = board.get_best_creature_to_cast(verbose=verbose)
+
             if creature:
                 # AI: Check if we should hold back this creature
                 if board.should_hold_back_creature(creature, verbose=verbose):
@@ -579,13 +572,15 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                         print(f"Spent {spent} mana on {creature.name}")
                     crits.append(creature)
                     # attempt to equip available equipments to this creature
+                    # STRATEGIC: Equip to best target, not just the creature we just cast
                     for eq in [
                         e
                         for e in board.artifacts
                         if "Equipment" in e.type and e not in board.equipment_attached
                     ]:
                         if Mana_utils.can_pay(eq.equip_cost, board.mana_pool):
-                            if board.equip_equipment(eq, creature, verbose=verbose):
+                            best_target = board.get_best_equipment_target(eq, verbose=verbose)
+                            if best_target and board.equip_equipment(eq, best_target, verbose=verbose):
                                 mana_spent_this_turn += parse_mana_cost(eq.equip_cost)
                     metrics["creature_power"][creature.name] = int(creature.power or 0)
                     did_action = True
@@ -605,7 +600,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                 did_action = True
                 continue
 
-            # 4) play a piece of equipment and attach to first creature
+            # 4) play a piece of equipment and attach to best creature
             equipment = next(
                 (
                     c
@@ -622,13 +617,14 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                     if verbose:
                         spent = parse_mana_cost(equipment.mana_cost)
                         print(f"Spent {spent} mana on {equipment.name}")
-                    target = board.creatures[0]
-                    if board.equip_equipment(equipment, target, verbose=verbose):
+                    # STRATEGIC: Equip to best target, not first creature
+                    target = board.get_best_equipment_target(equipment, verbose=verbose)
+                    if target and board.equip_equipment(equipment, target, verbose=verbose):
                         mana_spent_this_turn += parse_mana_cost(equipment.equip_cost)
                         if verbose:
                             cost = parse_mana_cost(equipment.equip_cost)
                             print(f"Equip cost {cost} for {equipment.name}")
-                    metrics["creature_power"][target.name] = int(target.power or 0)
+                        metrics["creature_power"][target.name] = int(target.power or 0)
                     did_action = True
                     continue
 
@@ -644,7 +640,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             if "Equipment" in e.type and e not in board.equipment_attached
         ]:
             if board.creatures and Mana_utils.can_pay(eq.equip_cost, board.mana_pool):
-                if board.equip_equipment(eq, board.creatures[0], verbose=verbose):
+                # STRATEGIC: Equip to best target, not first creature
+                best_target = board.get_best_equipment_target(eq, verbose=verbose)
+                if best_target and board.equip_equipment(eq, best_target, verbose=verbose):
                     mana_spent_this_turn += parse_mana_cost(eq.equip_cost)
                     if verbose:
                         cost = parse_mana_cost(eq.equip_cost)
