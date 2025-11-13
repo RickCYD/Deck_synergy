@@ -2825,21 +2825,33 @@ class BoardState:
                     print(f"  → {permanent.name} doubles death triggers!")
                 break
 
-        # Count all permanents with death triggers
+        # Execute death triggers from all permanents
         for permanent in self.creatures + self.enchantments + self.artifacts:
+            # NEW: Execute death triggers from triggered_abilities
+            triggered_abilities = getattr(permanent, 'triggered_abilities', [])
+            for ability in triggered_abilities:
+                if ability.event == 'death':
+                    # Execute death trigger (multiplied by Teysa!)
+                    for _ in range(death_trigger_multiplier):
+                        if verbose:
+                            desc = ability.description
+                            if death_trigger_multiplier > 1:
+                                print(f"  → {permanent.name}: {desc} (doubled by Teysa!)")
+                            else:
+                                print(f"  → {permanent.name}: {desc}")
+
+                        # Execute the trigger effect
+                        try:
+                            ability.effect(self)
+                        except Exception as e:
+                            if verbose:
+                                print(f"    ⚠ Error executing death trigger: {e}")
+
+            # LEGACY: Also support old death_trigger_value attribute for compatibility
             death_value = getattr(permanent, 'death_trigger_value', 0)
             oracle = getattr(permanent, 'oracle_text', '').lower()
 
-            # DEBUG: Always print if death_value > 0 to see what's happening
-            if death_value > 0:
-                has_opponent = 'opponent' in oracle
-                has_loses = 'loses' in oracle
-                if verbose or not (has_opponent and has_loses):
-                    print(f"  [DEBUG] {permanent.name}: death_value={death_value}, has_opponent={has_opponent}, has_loses={has_loses}")
-                    if not has_opponent or not has_loses:
-                        print(f"    oracle_text: {oracle[:150]}")
-
-            # Zulaport Cutthroat / Cruel Celebrant type effects
+            # Zulaport Cutthroat / Cruel Celebrant type effects (legacy support)
             if death_value > 0 and 'opponent' in oracle and 'loses' in oracle:
                 # Each opponent loses X life (multiplied by death trigger doubler!)
                 drain_per_opp = death_value * death_trigger_multiplier
@@ -2853,7 +2865,11 @@ class BoardState:
                         print(f"  → {permanent.name} drains {drain_per_opp} × {num_alive_opps} opponents = {drain_per_opp * num_alive_opps}")
 
             # Pitiless Plunderer - create treasure (also doubled by Teysa!)
-            if 'treasure' in oracle and 'dies' in oracle:
+            # Skip if already handled by triggered_abilities
+            if 'treasure' in oracle and 'dies' in oracle and not any(
+                a.event == 'death' and 'Treasure' in a.description
+                for a in getattr(permanent, 'triggered_abilities', [])
+            ):
                 treasures_to_create = 1 * death_trigger_multiplier
                 for _ in range(treasures_to_create):
                     self.create_treasure(verbose=verbose)
