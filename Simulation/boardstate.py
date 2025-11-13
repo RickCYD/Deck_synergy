@@ -2642,6 +2642,197 @@ class BoardState:
                     print(f"{saga.name} completed and sacrificed")
 
     # ─────────────────────── AI Decision Making ──────────────────────────
+    def prioritize_creature_for_casting(self, creature, verbose: bool = False):
+        """
+        Calculate a priority score for casting this creature.
+        Higher score = higher priority to cast.
+
+        Priority order:
+        1. Commander (highest priority)
+        2. High-power legendary creatures (voltron targets)
+        3. Creatures with attack triggers (draw, tokens)
+        4. Creatures with ETB value (ramp, draw, tokens)
+        5. Mana dorks
+        6. Utility creatures
+        7. Low-power creatures (weenies)
+        """
+        score = 100  # Base score
+
+        # Priority 1: Commander
+        if getattr(creature, 'is_commander', False):
+            score += 1000
+            if verbose:
+                print(f"    Creature {creature.name}: Commander (+1000) = {score}")
+            return score
+
+        # Priority 2: Legendary creatures with good stats (potential voltron targets)
+        if getattr(creature, 'is_legendary', False):
+            base_power = int(getattr(creature, 'power', 0) or 0)
+            if base_power >= 3:
+                score += 500 + (base_power * 10)
+                if verbose:
+                    print(f"    Creature {creature.name}: Legendary with {base_power} power (+{500 + base_power * 10}) = {score}")
+
+        # Priority 3: Attack triggers (card draw, tokens, treasures)
+        oracle = getattr(creature, 'oracle_text', '').lower()
+        if 'whenever' in oracle and 'attack' in oracle:
+            if 'draw' in oracle:
+                score += 300
+                if verbose:
+                    print(f"    Creature {creature.name}: Attack draw trigger (+300) = {score}")
+            elif 'create' in oracle and 'token' in oracle:
+                score += 250
+                if verbose:
+                    print(f"    Creature {creature.name}: Attack token trigger (+250) = {score}")
+            elif 'treasure' in oracle:
+                score += 200
+                if verbose:
+                    print(f"    Creature {creature.name}: Attack treasure trigger (+200) = {score}")
+            else:
+                score += 150
+                if verbose:
+                    print(f"    Creature {creature.name}: Attack trigger (+150) = {score}")
+
+        # Priority 4: ETB value
+        triggered_abilities = getattr(creature, 'triggered_abilities', [])
+        for trigger in triggered_abilities:
+            trigger_type = getattr(trigger, 'trigger_type', '')
+            if trigger_type == 'etb':
+                effect = getattr(trigger, 'effect', '')
+                if 'draw' in effect:
+                    score += 200
+                    if verbose:
+                        print(f"    Creature {creature.name}: ETB draw (+200) = {score}")
+                elif 'create' in effect:
+                    score += 150
+                    if verbose:
+                        print(f"    Creature {creature.name}: ETB token (+150) = {score}")
+                elif 'search' in effect or 'tutor' in effect:
+                    score += 180
+                    if verbose:
+                        print(f"    Creature {creature.name}: ETB tutor (+180) = {score}")
+                else:
+                    score += 100
+                    if verbose:
+                        print(f"    Creature {creature.name}: ETB trigger (+100) = {score}")
+
+        # Priority 5: Mana dorks
+        mana_production = int(getattr(creature, 'mana_production', 0) or 0)
+        if mana_production > 0:
+            score += 400  # Ramp is very valuable
+            if verbose:
+                print(f"    Creature {creature.name}: Mana dork (+400) = {score}")
+
+        # Priority 6: Power matters (bigger creatures generally better)
+        base_power = int(getattr(creature, 'power', 0) or 0)
+        score += base_power * 5
+
+        # Priority 7: Penalty for low power/toughness (weenies)
+        base_toughness = int(getattr(creature, 'toughness', 0) or 0)
+        if base_power <= 1 and base_toughness <= 1:
+            score -= 50
+            if verbose:
+                print(f"    Creature {creature.name}: Weenie penalty (-50) = {score}")
+
+        if verbose:
+            print(f"    Creature {creature.name}: Final score = {score}")
+
+        return score
+
+    def get_best_creature_to_cast(self, verbose: bool = False):
+        """
+        Get the best creature from hand to cast, based on strategic priorities.
+        Returns the creature with the highest priority score.
+        """
+
+        castable_creatures = [
+            c for c in self.hand
+            if "Creature" in c.type and Mana_utils.can_pay(c.mana_cost, self.mana_pool)
+        ]
+
+        if not castable_creatures:
+            return None
+
+        # Score each creature
+        scored_creatures = [
+            (c, self.prioritize_creature_for_casting(c, verbose=verbose))
+            for c in castable_creatures
+        ]
+
+        # Sort by score (highest first)
+        scored_creatures.sort(key=lambda x: x[1], reverse=True)
+
+        best_creature, best_score = scored_creatures[0]
+
+        if verbose:
+            print(f"  AI: Best creature to cast: {best_creature.name} (score: {best_score})")
+            if len(scored_creatures) > 1:
+                print(f"      Other options:")
+                for c, s in scored_creatures[1:]:
+                    print(f"        - {c.name} (score: {s})")
+
+        return best_creature
+
+    def get_best_equipment_target(self, equipment, verbose: bool = False):
+        """
+        Get the best creature to attach equipment to.
+        Prioritizes:
+        1. Commander
+        2. Legendary creatures with high power
+        3. Creatures with attack triggers
+        4. Creatures with keywords
+        5. Highest power creature
+        """
+        if not self.creatures:
+            return None
+
+        scores = []
+        for creature in self.creatures:
+            score = 100  # Base score
+
+            # Priority 1: Commander
+            if getattr(creature, 'is_commander', False):
+                score += 1000
+
+            # Priority 2: Legendary creatures
+            elif getattr(creature, 'is_legendary', False):
+                score += 500
+
+            # Priority 3: Creatures with attack triggers
+            oracle = getattr(creature, 'oracle_text', '').lower()
+            if 'whenever' in oracle and 'attack' in oracle:
+                if 'draw' in oracle:
+                    score += 300
+                elif 'create' in oracle:
+                    score += 200
+                else:
+                    score += 150
+
+            # Priority 4: Keywords benefit from equipment
+            if getattr(creature, 'has_first_strike', False):
+                score += 50
+            if getattr(creature, 'has_double_strike', False):
+                score += 100
+            if getattr(creature, 'has_trample', False):
+                score += 30
+            if getattr(creature, 'has_vigilance', False):
+                score += 20
+
+            # Priority 5: Current power (higher is better)
+            current_power = int(getattr(creature, 'power', 0) or 0)
+            score += current_power * 5
+
+            scores.append((creature, score))
+
+        # Sort by score (highest first)
+        scores.sort(key=lambda x: x[1], reverse=True)
+        best_creature, best_score = scores[0]
+
+        if verbose:
+            print(f"  AI: Best equipment target for {equipment.name}: {best_creature.name} (score: {best_score})")
+
+        return best_creature
+
     def should_hold_back_creature(self, creature, verbose: bool = False):
         """Decide if we should hold back a creature to avoid overextending."""
         import random
@@ -3976,11 +4167,80 @@ class BoardState:
 
         return tokens_created
 
+    def copy_creature_as_token(self, creature, make_nonlegendary=True, grant_haste=False, verbose=False):
+        """
+        Create a token copy of a creature with all its abilities and stats.
+        Used for Helm of the Host, Miirym, token doublers with copy effects, etc.
+
+        Args:
+            creature: The creature to copy
+            make_nonlegendary: Remove legendary status from the copy (default True)
+            grant_haste: Grant haste to the token copy (default False)
+            verbose: Print debug output
+
+        Returns:
+            The created token creature
+        """
+        from simulate_game import Card
+        import copy as copy_module
+
+        # Create a copy of the creature
+        token = Card(
+            name=f"{creature.name} Token",
+            type=creature.type if not make_nonlegendary else creature.type.replace("Legendary ", ""),
+            mana_cost="",  # Tokens have no mana cost
+            power=creature.power,
+            toughness=creature.toughness,
+            produces_colors=getattr(creature, 'produces_colors', []),
+            mana_production=getattr(creature, 'mana_production', 0),
+            etb_tapped=False,  # Token copies enter untapped
+            etb_tapped_conditions={},
+            has_haste=grant_haste or getattr(creature, 'has_haste', False),
+            has_flash=getattr(creature, 'has_flash', False),
+            has_trample=getattr(creature, 'has_trample', False),
+            has_first_strike=getattr(creature, 'has_first_strike', False),
+            has_lifelink=getattr(creature, 'has_lifelink', False),
+            has_deathtouch=getattr(creature, 'has_deathtouch', False),
+            has_vigilance=getattr(creature, 'has_vigilance', False),
+            has_flying=getattr(creature, 'has_flying', False),
+            has_menace=getattr(creature, 'has_menace', False),
+            is_unblockable=getattr(creature, 'is_unblockable', False),
+            is_legendary=False if make_nonlegendary else getattr(creature, 'is_legendary', False),
+            oracle_text=getattr(creature, 'oracle_text', ''),
+        )
+
+        # Copy triggered abilities (CRITICAL for Helm of the Host!)
+        if hasattr(creature, 'triggered_abilities') and creature.triggered_abilities:
+            token.triggered_abilities = copy_module.deepcopy(creature.triggered_abilities)
+
+        # Copy +1/+1 counters
+        if hasattr(creature, 'counters'):
+            token.counters = copy_module.deepcopy(creature.counters)
+
+        # Copy double strike
+        if hasattr(creature, 'has_double_strike'):
+            token.has_double_strike = creature.has_double_strike
+
+        # Mark as token
+        token.is_token = True
+        token._turns_on_board = 0 if not grant_haste else 1  # Can attack if has haste
+
+        # Add to battlefield
+        self.creatures.append(token)
+
+        if verbose:
+            print(f"  → Created token copy of {creature.name} ({token.power}/{token.toughness})")
+            if grant_haste:
+                print(f"     Token has haste and can attack immediately")
+
+        return token
+
     def process_beginning_of_combat_triggers(self, verbose: bool = False):
         """
         Process all "at the beginning of combat" triggers.
 
         This handles cards like:
+        - Helm of the Host (create token copy of equipped creature)
         - Outlaws' Merriment (create random token)
         - Other combat-start triggers
 
@@ -3994,6 +4254,29 @@ class BoardState:
 
             # Skip if no beginning of combat trigger
             if 'beginning of' not in oracle or 'combat' not in oracle:
+                continue
+
+            # === Helm of the Host ===
+            # "At the beginning of combat on your turn, create a token that's a copy of equipped creature,
+            # except the token isn't legendary. That token gains haste. Exile it at the beginning of the next end step."
+            if 'helm of the host' in name:
+                # Find what creature it's attached to
+                equipped_creature = self.equipment_attached.get(permanent)
+                if equipped_creature and equipped_creature in self.creatures:
+                    # Create a non-legendary token copy with haste
+                    token = self.copy_creature_as_token(
+                        equipped_creature,
+                        make_nonlegendary=True,
+                        grant_haste=True,
+                        verbose=verbose
+                    )
+                    tokens_created += 1
+
+                    # Note: We don't implement the "exile at end step" part for simplicity
+                    # This actually makes Helm of the Host STRONGER in simulation
+
+                    if verbose:
+                        print(f"  → Helm of the Host created token copy of {equipped_creature.name} (beginning of combat)")
                 continue
 
             # === Ardenn, Intrepid Archaeologist ===
