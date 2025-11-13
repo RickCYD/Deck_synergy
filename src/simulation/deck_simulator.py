@@ -71,25 +71,9 @@ def convert_card_to_simulation_format(card_data: Dict):
     mana_cost = card_data.get('mana_cost', '')
     oracle_text = card_data.get('oracle_text', '')
 
-    # Determine card type
-    card_type = 'Unknown'
-    if 'Land' in type_line and ' — ' not in type_line:
-        card_type = 'Basic Land' if 'Basic' in type_line else 'Land'
-    elif 'Creature' in type_line:
-        card_type = 'Creature'
-    elif 'Artifact' in type_line:
-        if 'Equipment' in type_line:
-            card_type = 'Equipment'
-        else:
-            card_type = 'Artifact'
-    elif 'Enchantment' in type_line:
-        card_type = 'Enchantment'
-    elif 'Instant' in type_line:
-        card_type = 'Instant'
-    elif 'Sorcery' in type_line:
-        card_type = 'Sorcery'
-    elif 'Planeswalker' in type_line:
-        card_type = 'Planeswalker'
+    # Use the full type line - the simulation uses 'in' checks like "if 'Creature' in card.type"
+    # This allows proper handling of multi-type cards like "Artifact Creature" or "Legendary Land"
+    card_type = type_line if type_line else 'Unknown'
 
     # Extract power/toughness
     power = None
@@ -109,7 +93,7 @@ def convert_card_to_simulation_format(card_data: Dict):
     mana_production = 0
     produces_colors = []
 
-    if card_type in ('Land', 'Basic Land'):
+    if 'Land' in card_type:
         mana_production = 1
         # Try to get produced mana from card data
         if 'produced_mana' in card_data:
@@ -129,7 +113,9 @@ def convert_card_to_simulation_format(card_data: Dict):
             elif 'add' in oracle_text.lower():
                 # Try to extract from oracle text
                 produces_colors = ['Any']  # Default for now
-    elif 'Artifact' in type_line:
+
+    # Check for mana rocks (artifacts that produce mana)
+    if 'Artifact' in card_type:
         # Check if it's a mana rock
         if 'add' in oracle_text.lower() and any(x in oracle_text.lower() for x in ['{t}', 'tap']):
             # Count how many mana it produces
@@ -139,7 +125,9 @@ def convert_card_to_simulation_format(card_data: Dict):
             elif any(x in oracle_text for x in ['{T}: Add', 'Tap: Add']):
                 mana_production = 1
                 produces_colors = ['Any']
-    elif 'Creature' in type_line:
+
+    # Check for mana dorks (creatures that produce mana)
+    if 'Creature' in card_type:
         # Check for mana dorks
         if 'add' in oracle_text.lower() and any(x in oracle_text.lower() for x in ['{t}', 'tap']):
             mana_production = 1
