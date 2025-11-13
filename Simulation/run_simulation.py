@@ -5,6 +5,7 @@ from pathlib import Path
 import contextlib
 import random
 import hashlib
+import time
 from typing import Iterable, List, Tuple, Dict
 
 import pandas as pd
@@ -128,6 +129,10 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
     per_game_tokens_created: List[float] = []
     per_game_cards_drawn: List[float] = []
 
+    # Track card diversity - which cards appear in opening hands
+    opening_hand_card_counts: dict[str, int] = {}
+    all_opening_hands: List[List[str]] = []
+
     for metrics in results:
         for turn in range(1, max_turns + 1):
             total_lands_played[turn] += metrics["lands_played"][turn]
@@ -187,6 +192,13 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
         per_game_drain_damage.append(game_drain_damage)
         per_game_tokens_created.append(game_tokens_created)
         per_game_cards_drawn.append(game_cards_drawn)
+
+        # Track opening hand diversity
+        opening_hand = metrics.get("opening_hand_cards", [])
+        if opening_hand:
+            all_opening_hands.append(opening_hand)
+            for card_name in opening_hand:
+                opening_hand_card_counts[card_name] = opening_hand_card_counts.get(card_name, 0) + 1
 
     avg_lands = [round(total_lands_played[t] / num_games, 2) for t in range(max_turns + 1)]
     avg_mana = [round(total_mana[t] / num_games, 2) for t in range(max_turns + 1)]
@@ -267,12 +279,29 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
         "Avg Graveyard Size": avg_graveyard_size[1:],
     }
 
+    # Calculate opening hand diversity statistics
+    unique_cards_in_opening_hands = len(opening_hand_card_counts)
+    total_card_appearances = sum(opening_hand_card_counts.values())
+    avg_appearances_per_card = total_card_appearances / unique_cards_in_opening_hands if unique_cards_in_opening_hands > 0 else 0
+
+    # Sort cards by appearance frequency
+    most_common_opening_cards = sorted(
+        opening_hand_card_counts.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )[:10]  # Top 10 most common
+
     # Add interaction summary
     interaction_summary = {
         "Games Won": games_won,
         "Win Rate %": round((games_won / num_games) * 100, 2),
         "Avg Creatures Removed": round(total_creatures_removed / num_games, 2),
         "Avg Board Wipes Survived": round(total_wipes_survived / num_games, 2),
+        # Card diversity metrics
+        "Unique Cards in Opening Hands": unique_cards_in_opening_hands,
+        "Total Games Simulated": num_games,
+        "Avg Card Appearances": round(avg_appearances_per_card, 2),
+        "Most Common Opening Cards": most_common_opening_cards,
     }
     for c in COLOURS:
         data[f"Board Mana {c}"] = avg_board_mana[c][1:]
@@ -320,6 +349,7 @@ def run_simulations(
     log_dir: str | Path | None = "logs",
     num_workers: int = 1,
     calculate_statistics: bool = True,
+    use_random_seed: bool = True,
 ):
     """Run multiple game simulations and aggregate the results.
 
@@ -345,6 +375,11 @@ def run_simulations(
     calculate_statistics
         If ``True``, calculate statistical validity metrics (CV, confidence intervals, etc.).
         Adds a statistical report as the 5th return value.
+    use_random_seed
+        If ``True`` (default), use time-based random seeds for each simulation run.
+        This ensures different opening hands and tests all card combinations.
+        If ``False``, use deterministic seeds based on deck composition for
+        reproducible results (useful for testing).
 
     Returns
     -------
@@ -355,11 +390,17 @@ def run_simulations(
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate deterministic seed from deck composition
-    # This ensures the same deck always produces the same statistical results
-    deck_seed = _generate_deck_seed(cards, commander_card)
-
-    print(f"[SIMULATION] Using deterministic seed: {deck_seed} (ensures consistent results for this deck)")
+    # Generate seed based on mode
+    if use_random_seed:
+        # Use time-based random seed for true randomization
+        # This ensures different results each time you run the simulation
+        deck_seed = int(time.time() * 1000000) % (2**31)  # Use microseconds for uniqueness
+        print(f"[SIMULATION] Using RANDOM seed: {deck_seed} (tests all card combinations)")
+    else:
+        # Use deterministic seed from deck composition
+        # This ensures the same deck always produces the same statistical results
+        deck_seed = _generate_deck_seed(cards, commander_card)
+        print(f"[SIMULATION] Using DETERMINISTIC seed: {deck_seed} (ensures consistent results for this deck)")
 
     args = [(cards, commander_card, max_turns, verbose, log_dir, i, deck_seed) for i in range(num_games)]
 

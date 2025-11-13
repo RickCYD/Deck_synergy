@@ -291,6 +291,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         )
     }
 
+    # Track opening hand for card diversity analysis
+    metrics["opening_hand_cards"] = [card.name for card in board.hand]
+
     # Track new interaction metrics
     metrics["creatures_removed_by_opponents"] = 0  # type: ignore
     metrics["board_wipes_survived"] = 0  # type: ignore
