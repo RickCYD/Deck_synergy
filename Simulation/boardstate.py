@@ -166,9 +166,28 @@ class BoardState:
 
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
+
+        # Check equipment oracle text for keywords granted
+        if equipped:
+            for equipment, attached_creature in self.equipment_attached.items():
+                if attached_creature is creature:
+                    oracle = getattr(equipment, 'oracle_text', '').lower()
+                    # Grant keywords from equipment
+                    if 'double strike' in oracle:
+                        creature.has_double_strike = True
+                    if 'first strike' in oracle and 'double strike' not in oracle:
+                        creature.has_first_strike = True
+                    if 'vigilance' in oracle:
+                        creature.has_vigilance = True
+                    if 'trample' in oracle:
+                        creature.has_trample = True
+
+        # Apply keywords_when_equipped (legacy support)
         for kw in getattr(creature, "keywords_when_equipped", []):
             if kw.lower() == "first strike":
                 creature.has_first_strike = bool(equipped)
+            elif kw.lower() == "double strike":
+                creature.has_double_strike = bool(equipped)
 
     def _analyze_deck_strategy(self, deck):
         """
@@ -439,6 +458,23 @@ class BoardState:
             # ETB: Put +1/+1 counter on target Elemental, that Elemental deals damage
             self.handle_omnath_roil_landfall(verbose=verbose)
 
+        # === CLOUD, EX-SOLDIER ===
+        # "When Cloud enters, attach up to one target Equipment you control to it."
+        elif 'cloud' in name and 'ex-soldier' in name:
+            # Find unattached equipment
+            unattached_equipment = [eq for eq in self.artifacts if 'equipment' in getattr(eq, 'type', '').lower() and eq not in self.equipment_attached]
+            if unattached_equipment:
+                # Choose the best equipment (highest power buff)
+                best_equipment = max(unattached_equipment, key=lambda eq: int(getattr(eq, 'power_buff', 0) or 0))
+                # Attach without paying cost
+                buff = int(getattr(best_equipment, "power_buff", 0) or 0)
+                card.power = int(getattr(card, 'power', 0) or 0) + buff
+                card.toughness = int(getattr(card, 'toughness', 0) or 0) + buff
+                self.equipment_attached[best_equipment] = card
+                self._apply_equipped_keywords(card)
+                if verbose:
+                    print(f"  → Cloud's ETB: Attached {best_equipment.name} to Cloud")
+
         # PRIORITY FIX (P1): ETB MILL TRIGGERS (Stitcher's Supplier, Eccentric Farmer, etc.)
         mill_value = getattr(card, 'mill_value', 0)
         if mill_value > 0 and 'enters' in oracle:
@@ -559,6 +595,40 @@ class BoardState:
 
         return total_counters_added
 
+    def _apply_global_effects(self, creature):
+        """Apply global effects from artifacts and enchantments to a creature."""
+        # Check for Akroma's Memorial - grants flying, first strike, vigilance, trample, haste, protection
+        for permanent in self.artifacts + self.enchantments:
+            name = getattr(permanent, 'name', '').lower()
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+
+            # Akroma's Memorial
+            if 'akroma' in name and 'memorial' in name:
+                creature.has_flying = True
+                creature.has_first_strike = True
+                creature.has_vigilance = True
+                creature.has_trample = True
+                creature.has_haste = True
+                creature.has_protection_black = True
+                creature.has_protection_red = True
+
+            # Generic global effects: "creatures you control have [keyword]"
+            if 'creatures you control have' in oracle or 'creatures you control get' in oracle:
+                if 'flying' in oracle:
+                    creature.has_flying = True
+                if 'first strike' in oracle and 'double strike' not in oracle:
+                    creature.has_first_strike = True
+                if 'double strike' in oracle:
+                    creature.has_double_strike = True
+                if 'vigilance' in oracle:
+                    creature.has_vigilance = True
+                if 'trample' in oracle:
+                    creature.has_trample = True
+                if 'haste' in oracle:
+                    creature.has_haste = True
+                if 'lifelink' in oracle:
+                    creature.has_lifelink = True
+
     def attack(self, creature, verbose=False):
         """Declare *creature* as an attacker and handle attack triggers."""
         if creature not in self.creatures:
@@ -571,6 +641,7 @@ class BoardState:
             self._attack_triggers_fired.clear()
         self.current_attackers.append(creature)
         self._apply_equipped_keywords(creature)
+        self._apply_global_effects(creature)
         for atk in list(self.current_attackers):
             self._execute_triggers("attack", atk, verbose)
         return True
@@ -1012,10 +1083,41 @@ class BoardState:
             print(f"→ {card.name} enters the battlefield (artifact)")
         return True
 
-    # ------ Equipment is a type of Artifact in MTG, so we can use the same method.	
+    # ------ Equipment is a type of Artifact in MTG, so we can use the same method.
     # If you have equipments that are NOT mana rocks you can add:
     def play_equipment(self, card, verbose=False):
-        return self.play_artifact(card, verbose)
+        success = self.play_artifact(card, verbose)
+        if success:
+            # Handle Living Weapon: create 0/0 Germ token and auto-attach
+            oracle = getattr(card, 'oracle_text', '').lower()
+            if 'living weapon' in oracle:
+                # Create 0/0 Germ token
+                germ_token = self.create_token("Phyrexian Germ", 0, 0, has_haste=False, verbose=verbose)
+                if germ_token:
+                    # Auto-attach equipment to the token (no cost)
+                    buff = int(getattr(card, "power_buff", 0) or 0)
+                    germ_token.power = int(germ_token.power or 0) + buff
+                    germ_token.toughness = int(germ_token.toughness or 0) + buff
+                    self.equipment_attached[card] = germ_token
+                    self._apply_equipped_keywords(germ_token)
+                    if verbose:
+                        print(f"  → Living Weapon: Created 0/0 Germ token and attached {card.name} to it")
+
+            # Handle Sigarda's Aid: auto-attach equipment on ETB
+            # Check if Sigarda's Aid is on battlefield
+            has_sigardas_aid = any('sigarda' in getattr(perm, 'name', '').lower() and 'aid' in getattr(perm, 'name', '').lower()
+                                  for perm in self.enchantments)
+            if has_sigardas_aid and self.creatures and card not in self.equipment_attached:
+                # Attach to the best creature (highest power)
+                best_creature = max(self.creatures, key=lambda c: int(getattr(c, 'power', 0) or 0))
+                buff = int(getattr(card, "power_buff", 0) or 0)
+                best_creature.power = int(best_creature.power or 0) + buff
+                best_creature.toughness = int(best_creature.toughness or 0) + buff
+                self.equipment_attached[card] = best_creature
+                self._apply_equipped_keywords(best_creature)
+                if verbose:
+                    print(f"  → Sigarda's Aid: Auto-attached {card.name} to {best_creature.name}")
+        return success
 
     def equip_equipment(self, equipment, creature, verbose=False):
         """Attach an equipment to a creature after paying its equip cost."""
@@ -3528,6 +3630,31 @@ class BoardState:
                 if verbose:
                     print(f"  → Brimaz created 1 Cat token")
 
+            # Wyleth, Soul of Steel - Draw cards equal to equipment/auras attached
+            elif 'wyleth' in name and 'soul of steel' in name:
+                equipment_count = sum(1 for eq, attached_creature in self.equipment_attached.items() if attached_creature is creature)
+                if equipment_count > 0:
+                    drawn = self.draw_card(equipment_count, verbose=verbose)
+                    if verbose:
+                        print(f"  → Wyleth drew {equipment_count} card(s) for equipment attached")
+
+            # Cloud, Ex-SOLDIER - Draw for each equipped attacking creature, create treasures if 7+ power
+            elif 'cloud' in name and 'ex-soldier' in name:
+                # Count equipped attacking creatures (all attackers that have equipment)
+                equipped_attackers = sum(1 for c in self.current_attackers if any(c is attached_creature for attached_creature in self.equipment_attached.values()))
+                if equipped_attackers > 0:
+                    drawn = self.draw_card(equipped_attackers, verbose=verbose)
+                    if verbose:
+                        print(f"  → Cloud drew {equipped_attackers} card(s) for equipped attacking creatures")
+
+                # If Cloud has 7+ power, create 2 Treasures
+                cloud_power = int(getattr(creature, 'power', 0) or 0)
+                if cloud_power >= 7:
+                    for _ in range(2):
+                        self.create_treasure(verbose=verbose)
+                    if verbose:
+                        print(f"  → Cloud created 2 Treasure tokens (power {cloud_power} >= 7)")
+
             # Hero of Bladehold - Create 2 Soldier tokens
             elif 'hero of bladehold' in name:
                 for _ in range(2):
@@ -3761,6 +3888,17 @@ class BoardState:
                 if verbose:
                     print(f"  → {permanent.name} created 5/1 Elemental token (upkeep)")
 
+            # === Kemba, Kha Regent ===
+            # "At the beginning of your upkeep, create a 2/2 white Cat creature token for each Equipment attached to Kemba, Kha Regent."
+            elif 'kemba' in name and 'kha regent' in name:
+                # Count equipment attached to this creature
+                equipment_count = sum(1 for eq, creature in self.equipment_attached.items() if creature is permanent)
+                for _ in range(equipment_count):
+                    token = self.create_token("Cat", 2, 2, has_haste=False, verbose=verbose)
+                    tokens_created += 1
+                if verbose and equipment_count > 0:
+                    print(f"  → {permanent.name} created {equipment_count}x 2/2 Cat token(s) (upkeep, one per equipment)")
+
             # === Generic Upkeep Token Creation ===
             # Parse oracle text for patterns like "create a X/X token" or "create X tokens"
             elif 'create' in oracle and 'token' in oracle:
@@ -3854,10 +3992,33 @@ class BoardState:
             if 'beginning of' not in oracle or 'combat' not in oracle:
                 continue
 
+            # === Ardenn, Intrepid Archaeologist ===
+            # "At the beginning of combat on your turn, you may attach any number of Auras and Equipment you control to target permanent or player."
+            if 'ardenn' in name and 'intrepid archaeologist' in name:
+                # For simulation: attach all unattached equipment to the best creatures
+                unattached_equipment = [eq for eq in self.artifacts if 'equipment' in getattr(eq, 'type', '').lower() and eq not in self.equipment_attached]
+
+                if unattached_equipment and self.creatures:
+                    # Prioritize creatures by power (highest first)
+                    sorted_creatures = sorted(self.creatures, key=lambda c: int(getattr(c, 'power', 0) or 0), reverse=True)
+
+                    for equipment in unattached_equipment:
+                        if sorted_creatures:
+                            target_creature = sorted_creatures[0]
+                            # Move equipment without paying cost
+                            buff = int(getattr(equipment, "power_buff", 0) or 0)
+                            target_creature.power = int(target_creature.power or 0) + buff
+                            target_creature.toughness = int(target_creature.toughness or 0) + buff
+                            self.equipment_attached[equipment] = target_creature
+                            self._apply_equipped_keywords(target_creature)
+
+                            if verbose:
+                                print(f"  → Ardenn moved {equipment.name} to {target_creature.name} (beginning of combat)")
+
             # === Outlaws' Merriment ===
             # "At the beginning of your combat on your turn, choose one at random:
             # - Create a 1/1 white Human, 1/1 red Mercenary with first strike, or 2/2 green Elf Druid"
-            if 'outlaws\' merriment' in name or 'outlaws merriment' in name:
+            elif 'outlaws\' merriment' in name or 'outlaws merriment' in name:
                 import random
                 choice = random.choice([
                     ("Human Soldier", 1, 1, False),
