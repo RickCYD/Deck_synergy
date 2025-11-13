@@ -729,6 +729,8 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             if can_attack:
                 power = getattr(creature, 'power', 0) or 0
                 total_combat_damage += power
+                if verbose:
+                    print(f"    → {creature.name} attacks for {power} damage (turns_on_board={creature._turns_on_board})")
 
             # Increment turns on board for all creatures (not just attackers)
             creature._turns_on_board += 1
