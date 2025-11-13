@@ -4,7 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 import contextlib
 import random
-import time
+import hashlib
 from typing import Iterable, List, Tuple, Dict
 
 import pandas as pd
@@ -21,12 +21,41 @@ from statistical_analysis import (
 # Helper functions
 # ---------------------------------------------------------------------------
 
-def _simulate_single_game(args: Tuple[List[Card], Card, int, bool, Path | None, int, float]):
+def _generate_deck_seed(cards: List[Card], commander_card: Card) -> int:
+    """
+    Generate a deterministic seed based on deck composition.
+
+    This ensures the same deck always produces the same simulation results,
+    providing consistent and reproducible statistics for deck power analysis.
+
+    Args:
+        cards: List of cards in the deck
+        commander_card: Commander card
+
+    Returns:
+        Integer seed value (0-2^31)
+    """
+    # Create a deterministic string from deck composition
+    card_names = sorted([card.name for card in cards])
+    if commander_card:
+        card_names.append(f"COMMANDER:{commander_card.name}")
+
+    deck_string = "|".join(card_names)
+
+    # Hash to get deterministic seed
+    hash_obj = hashlib.md5(deck_string.encode('utf-8'))
+    seed = int(hash_obj.hexdigest()[:8], 16)  # Use first 8 hex digits
+
+    return seed
+
+
+def _simulate_single_game(args: Tuple[List[Card], Card, int, bool, Path | None, int, int]):
     """Wrapper around :func:`simulate_game` to support multiprocessing."""
-    cards, commander_card, max_turns, verbose, log_dir, game_index, base_seed = args
-    # Use base_seed (from time) combined with game_index to ensure different results each run
-    # while maintaining reproducibility within a single batch of simulations
-    random.seed(int(base_seed * 1000000) + game_index)
+    cards, commander_card, max_turns, verbose, log_dir, game_index, deck_seed = args
+    # Use deterministic seed based on deck composition + game index
+    # This ensures the same deck always produces statistically consistent results
+    # while each game within a run is different
+    random.seed(deck_seed + game_index)
     if log_dir is not None and verbose:
         log_path = log_dir / f"game_{game_index + 1}.log"
         with open(log_path, "w") as fh, contextlib.redirect_stdout(fh):
@@ -326,9 +355,13 @@ def run_simulations(
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate base seed from current time to ensure different results on each run
-    base_seed = time.time()
-    args = [(cards, commander_card, max_turns, verbose, log_dir, i, base_seed) for i in range(num_games)]
+    # Generate deterministic seed from deck composition
+    # This ensures the same deck always produces the same statistical results
+    deck_seed = _generate_deck_seed(cards, commander_card)
+
+    print(f"[SIMULATION] Using deterministic seed: {deck_seed} (ensures consistent results for this deck)")
+
+    args = [(cards, commander_card, max_turns, verbose, log_dir, i, deck_seed) for i in range(num_games)]
 
     if num_workers and num_workers > 1:
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
