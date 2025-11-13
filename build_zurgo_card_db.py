@@ -6,6 +6,14 @@ Since APIs are blocked, we'll manually create card data with proper oracle texts
 
 import json
 import pandas as pd
+import sys
+sys.path.insert(0, 'Simulation')
+
+# Import oracle text parsers
+from oracle_text_parser import (
+    parse_death_triggers_from_oracle,
+    parse_sacrifice_outlet_from_oracle
+)
 
 # Complete card database with oracle texts for Zurgo deck
 ZURGO_CARDS = {
@@ -677,6 +685,20 @@ def build_card_database():
     rows = []
 
     for name, data in ZURGO_CARDS.items():
+        oracle_text = data.get("OracleText", "")
+
+        # Parse death triggers and sacrifice outlets from oracle text
+        death_triggers = parse_death_triggers_from_oracle(oracle_text)
+        sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
+
+        # Convert death triggers list to integer count for CSV
+        if isinstance(death_triggers, list):
+            death_trigger_value = len(death_triggers)
+        elif isinstance(death_triggers, (int, float)):
+            death_trigger_value = int(death_triggers)
+        else:
+            death_trigger_value = 0
+
         row = {
             "Name": name,
             "Type": data.get("Type", ""),
@@ -693,9 +715,9 @@ def build_card_database():
             "PowerBuff": data.get("PowerBuff", 0),
             "DrawCards": 0,
             "PutsLand": False,
-            "OracleText": data.get("OracleText", ""),
-            "DeathTriggerValue": None,
-            "SacrificeOutlet": None,
+            "OracleText": oracle_text,
+            "DeathTriggerValue": death_trigger_value,
+            "SacrificeOutlet": sacrifice_outlet,
             "Commander": data.get("Commander", False),
         }
         rows.append(row)

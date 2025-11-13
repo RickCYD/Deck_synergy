@@ -16,8 +16,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Flying, haste. Whenever one or more creatures you control deal combat damage to a player, create a 2/1 white and black Human Warrior creature token.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": true
   },
   "Adeline, Resplendent Cathar": {
@@ -37,8 +37,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Adeline, Resplendent Cathar's power is equal to the number of creatures you control. Whenever you attack, for each opponent, create a 1/1 white Human creature token that's tapped and attacking that player or a planeswalker they control.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Anim Pakal, Thousandth Moon": {
@@ -58,8 +58,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever you attack with one or more non-Gnome creatures, put a +1/+1 counter on Anim Pakal, then create X 1/1 colorless Gnome artifact creature tokens that are tapped and attacking, where X is the number of +1/+1 counters on Anim Pakal.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Caesar, Legion's Emperor": {
@@ -79,8 +79,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever Caesar, Legion's Emperor enters the battlefield or attacks, create two 1/1 red and white Soldier creature tokens that are tapped. Other creatures you control get +1/+0.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Delina, Wild Mage": {
@@ -100,8 +100,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever Delina, Wild Mage attacks, choose target creature you control, then roll a d20. 1-14 | Create a tapped and attacking token that's a copy of that creature, except it's not legendary and it has 'At end of combat, exile this creature.' 15-20 | Create one of those tokens. You may roll again.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Elspeth, Sun's Champion": {
@@ -121,8 +121,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "+1: Create three 1/1 white Soldier creature tokens. \u22123: Destroy all creatures with power 4 or greater. \u22127: You get an emblem with 'Creatures you control get +2/+2 and have flying.'",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Wurmcoil Engine": {
@@ -142,8 +142,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Deathtouch, lifelink. When Wurmcoil Engine dies, create a 3/3 colorless Phyrexian Wurm artifact creature token with deathtouch and a 3/3 colorless Phyrexian Wurm artifact creature token with lifelink.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 1,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Mardu Siegebreaker": {
@@ -163,8 +163,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "When Mardu Siegebreaker enters the battlefield, if you attacked this turn, create a 1/1 colorless Warrior creature token for each permanent you control that entered the battlefield this turn.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Bone-Cairn Butcher": {
@@ -184,8 +184,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "When Bone-Cairn Butcher enters the battlefield, create two 1/1 colorless Skeleton creature tokens.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Dollmaker's Shop // Porcelain Gallery": {
@@ -205,8 +205,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever one or more creatures you control attack, create a 1/1 colorless Toy artifact creature token. // At the beginning of your end step, if you control three or more tokens, create a 2/2 colorless Toy artifact creature token.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Retrofitter Foundry": {
@@ -226,8 +226,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{3}: Untap Retrofitter Foundry. {2}, {T}: Create a 1/1 colorless Servo artifact creature token. {1}, {T}, Sacrifice a Servo: Create a 1/1 colorless Thopter artifact creature token with flying. {T}, Sacrifice a Thopter: Create a 4/4 colorless Construct artifact creature token.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Ainok Strike Leader": {
@@ -247,8 +247,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever Ainok Strike Leader attacks, you may put a +1/+1 counter on it. When you do, create a 1/1 red Goblin creature token that's tapped and attacking.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Redoubled Stormsinger": {
@@ -268,8 +268,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Haste. When Redoubled Stormsinger enters the battlefield, create a token that's a copy of it.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Forth Eorlingas!": {
@@ -289,8 +289,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Create X 2/2 red Human Knight creature tokens with trample and haste. Whenever one or more creatures you control deal combat damage to one or more players this turn, you become the monarch.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Grand Crescendo": {
@@ -310,8 +310,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Create X 1/1 green and white Citizen creature tokens. Creatures you control gain indestructible until end of turn.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Riders of Rohan": {
@@ -331,8 +331,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Create five 2/2 red Human Knight creature tokens with trample and haste. Exile them at the beginning of the next end step.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Rite of the Raging Storm": {
@@ -352,8 +352,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Creatures named Lightning Rager can't attack you or planeswalkers you control. At the beginning of each player's upkeep, that player creates a 5/1 red Elemental creature token named Lightning Rager. It has trample, haste, and 'At the beginning of the end step, sacrifice this creature.'",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Tempt with Vengeance": {
@@ -373,8 +373,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Tempting offer \u2014 Create X 1/1 red Elemental creature tokens with haste. Each opponent may create X 1/1 red Elemental creature tokens with haste. For each opponent who does, create X 1/1 red Elemental creature tokens with haste.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Will of the Mardu": {
@@ -394,8 +394,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Create three 2/1 white and black Warrior creature tokens. Return target creature card from your graveyard to the battlefield.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Voice of Victory": {
@@ -415,8 +415,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Flying. Whenever Voice of Victory enters the battlefield or attacks, create a 1/1 red and white Soldier creature token with haste.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Outlaws' Merriment": {
@@ -436,8 +436,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "At the beginning of your upkeep, choose one at random. Create a red and white creature token with those characteristics. \u2022 3/1 Human Warrior with trample \u2022 2/1 Human Cleric with lifelink \u2022 1/2 Human Rogue with haste",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Cathars' Crusade": {
@@ -457,8 +457,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever a creature enters the battlefield under your control, put a +1/+1 counter on each creature you control.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Elesh Norn, Grand Cenobite": {
@@ -478,8 +478,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Vigilance. Creatures you control get +2/+2. Creatures your opponents control get -2/-2.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Exalted Sunborn": {
@@ -499,8 +499,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Flying, vigilance. Whenever you attack with three or more creatures, creatures you control get +1/+0 until end of turn.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Mondrak, Glory Dominus": {
@@ -520,8 +520,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "If one or more tokens would be created under your control, twice that many of those tokens are created instead. {1}{W/P}{W/P}, Sacrifice two other creatures: Put an indestructible counter on Mondrak, Glory Dominus.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": true,
     "Commander": false
   },
   "Warleader's Call": {
@@ -541,8 +541,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Creatures you control have haste. Whenever a creature enters the battlefield under your control, it deals 1 damage to each opponent.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Bastion of Remembrance": {
@@ -562,8 +562,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "When Bastion of Remembrance enters the battlefield, create a 1/1 white Human Soldier creature token. Whenever a creature you control dies, each opponent loses 1 life and you gain 1 life.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 1,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Cruel Celebrant": {
@@ -583,8 +583,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever Cruel Celebrant or another creature or planeswalker you control dies, each opponent loses 1 life and you gain 1 life.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 1,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Elas il-Kor, Sadistic Pilgrim": {
@@ -604,8 +604,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Deathtouch. Whenever another creature enters the battlefield under your control, you gain 1 life. Whenever another creature you control dies, each opponent loses 1 life.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 1,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Zulaport Cutthroat": {
@@ -625,8 +625,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever Zulaport Cutthroat or another creature you control dies, each opponent loses 1 life and you gain 1 life.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 1,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Impact Tremors": {
@@ -646,8 +646,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever a creature enters the battlefield under your control, Impact Tremors deals 1 damage to each opponent.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Kambal, Profiteering Mayor": {
@@ -667,8 +667,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "At the beginning of your upkeep, each player draws a card and loses 1 life. Other creatures you control get +1/+1.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Goblin Bombardment": {
@@ -688,8 +688,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Sacrifice a creature: Goblin Bombardment deals 1 damage to any target.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": true,
     "Commander": false
   },
   "Viscera Seer": {
@@ -709,8 +709,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Sacrifice a creature: Scry 1.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": true,
     "Commander": false
   },
   "Warren Soultrader": {
@@ -730,8 +730,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever Warren Soultrader or another creature you control dies, create a Treasure token. {2}, Sacrifice three Treasures: Draw three cards.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 2,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Sol Ring": {
@@ -751,8 +751,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add {C}{C}.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Arcane Signet": {
@@ -772,8 +772,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of any color in your commander's color identity.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Fellwar Stone": {
@@ -793,8 +793,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of any color that a land an opponent controls could produce.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Talisman of Hierarchy": {
@@ -814,8 +814,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add {C}. {T}: Add {W} or {B}. Talisman of Hierarchy deals 1 damage to you.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Talisman of Indulgence": {
@@ -835,8 +835,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add {C}. {T}: Add {B} or {R}. Talisman of Indulgence deals 1 damage to you.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Pitiless Plunderer": {
@@ -856,8 +856,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever another creature you control dies, create a Treasure token.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 1,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Grim Hireling": {
@@ -877,8 +877,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever one or more creatures you control deal combat damage to a player, create two Treasure tokens.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Goldlust Triad": {
@@ -898,8 +898,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of any color. {T}: Add {C}{C}. Activate only if you control three or more artifacts.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Queen Marchesa": {
@@ -919,8 +919,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Deathtouch, haste. When Queen Marchesa enters the battlefield, you become the monarch. At the beginning of your upkeep, if an opponent is the monarch, create a 1/1 black Assassin creature token with deathtouch and haste.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Garna, Bloodfist of Keld": {
@@ -940,8 +940,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever another creature enters the battlefield under your control or dies, if that creature's power was 4 or greater, draw a card. Whenever Garna, Bloodfist of Keld attacks, attacking creatures get +1/+0 until end of turn.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 1,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Gix, Yawgmoth Praetor": {
@@ -961,8 +961,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever a creature deals combat damage to one of your opponents, its controller may draw a card. {B}, Pay 2 life: Target creature gets -1/-1 until end of turn.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Morbid Opportunist": {
@@ -982,8 +982,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever one or more other creatures die, draw a card. This ability triggers only once each turn.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 1,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Idol of Oblivion": {
@@ -1003,8 +1003,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Draw a card if you created a token this turn. {8}, {T}, Sacrifice Idol of Oblivion: Create a 10/10 colorless Eldrazi creature token.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Deadly Dispute": {
@@ -1024,8 +1024,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "As an additional cost to cast this spell, sacrifice an artifact or creature. Draw two cards and create a Treasure token.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Braids, Arisen Nightmare": {
@@ -1045,8 +1045,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "At the beginning of your end step, you may sacrifice a nonland permanent. If you do, each opponent may sacrifice a permanent or discard a card. Then if you sacrificed a nontoken permanent, create a 2/2 black Nightmare creature token.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Priest of Forgotten Gods": {
@@ -1066,8 +1066,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}, Sacrifice two creatures: Any number of target players each lose 2 life and sacrifice a creature. You add {B}{B} and draw a card.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": true,
     "Commander": false
   },
   "Caretaker's Talent": {
@@ -1087,8 +1087,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever one or more tokens enter the battlefield under your control, draw a card. This ability triggers only once each turn. {6}{W}{W}: Level 2 // Creature tokens you control have vigilance and lifelink. {10}{W}{W}: Level 3 // When this Class becomes level three, return all creature cards from your graveyard to the battlefield.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Heirloom Blade": {
@@ -1108,8 +1108,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Equipped creature gets +3/+0. Whenever equipped creature dies, you may reveal cards from the top of your library until you reveal a creature card that shares a creature type with it. Put that card into your hand and the rest on the bottom of your library in a random order. Equip {1}",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Horn of the Mark": {
@@ -1129,8 +1129,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Whenever a creature you control attacks, it gets +1/+0 until end of turn. If that creature is a Human or an artifact, draw a card.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Swords to Plowshares": {
@@ -1150,8 +1150,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Exile target creature. Its controller gains life equal to its power.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Path to Exile": {
@@ -1171,8 +1171,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Exile target creature. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Anguished Unmaking": {
@@ -1192,8 +1192,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Exile target nonland permanent. You lose 3 life.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Bitter Triumph": {
@@ -1213,8 +1213,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "As an additional cost to cast this spell, discard a card or pay 3 life. Destroy target creature or planeswalker.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Damn": {
@@ -1234,8 +1234,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Destroy target creature. A player whose creature died this way loses 2 life. Overload {2}{W}{W}{B}{B}",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Farewell": {
@@ -1255,8 +1255,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Choose one or more \u2014 \u2022 Exile all artifacts. \u2022 Exile all creatures. \u2022 Exile all enchantments. \u2022 Exile all graveyards.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Ruinous Ultimatum": {
@@ -1276,8 +1276,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Destroy all nonland permanents your opponents control.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Final Vengeance": {
@@ -1297,8 +1297,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "As an additional cost to cast this spell, sacrifice a creature or enchantment. Destroy target creature.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Inevitable Defeat": {
@@ -1318,8 +1318,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Destroy target creature. Its controller loses 2 life.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Lightning Greaves": {
@@ -1339,8 +1339,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Equipped creature has haste and shroud. Equip {0}",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Diabolic Intent": {
@@ -1360,8 +1360,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "As an additional cost to cast this spell, sacrifice a creature. Search your library for a card, put that card into your hand, then shuffle.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Command Tower": {
@@ -1381,8 +1381,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of any color in your commander's color identity.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Path of Ancestry": {
@@ -1402,8 +1402,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Path of Ancestry enters the battlefield tapped. {T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Exotic Orchard": {
@@ -1423,8 +1423,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of any color that a land an opponent controls could produce.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Nomad Outpost": {
@@ -1444,8 +1444,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Nomad Outpost enters the battlefield tapped. {T}: Add {R}, {W}, or {B}.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Canyon Slough": {
@@ -1465,8 +1465,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "({T}: Add {B} or {R}.) Canyon Slough enters the battlefield tapped. Cycling {2}",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Plains": {
@@ -1486,8 +1486,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add {W}.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Mountain": {
@@ -1507,8 +1507,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add {R}.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Swamp": {
@@ -1528,8 +1528,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add {B}.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "High Market": {
@@ -1549,8 +1549,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add {C}. {T}, Sacrifice a creature: You gain 1 life.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": true,
     "Commander": false
   },
   "Kher Keep": {
@@ -1570,8 +1570,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add {C}. {1}{R}, {T}: Create a 0/1 red Kobold creature token named Kobolds of Kher Keep.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Bojuka Bog": {
@@ -1591,8 +1591,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "Bojuka Bog enters the battlefield tapped. When Bojuka Bog enters the battlefield, exile target player's graveyard. {T}: Add {B}.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Battlefield Forge": {
@@ -1612,8 +1612,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Temple of Triumph": {
@@ -1633,8 +1633,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Rugged Prairie": {
@@ -1654,8 +1654,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Caves of Koilos": {
@@ -1675,8 +1675,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Godless Shrine": {
@@ -1696,8 +1696,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Isolated Chapel": {
@@ -1717,8 +1717,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Fetid Heath": {
@@ -1738,8 +1738,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Dragonskull Summit": {
@@ -1759,8 +1759,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Smoldering Marsh": {
@@ -1780,8 +1780,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Sulfurous Springs": {
@@ -1801,8 +1801,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Dalkovan Encampment": {
@@ -1822,8 +1822,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Fountainport": {
@@ -1843,8 +1843,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Shattered Landscape": {
@@ -1864,8 +1864,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   },
   "Windbrisk Heights": {
@@ -1885,8 +1885,8 @@
     "DrawCards": 0,
     "PutsLand": false,
     "OracleText": "{T}: Add one mana of the specified colors.",
-    "DeathTriggerValue": null,
-    "SacrificeOutlet": null,
+    "DeathTriggerValue": 0,
+    "SacrificeOutlet": false,
     "Commander": false
   }
 }
