@@ -129,9 +129,9 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
     per_game_tokens_created: List[float] = []
     per_game_cards_drawn: List[float] = []
 
-    # Track card diversity - which cards appear in opening hands
-    opening_hand_card_counts: dict[str, int] = {}
-    all_opening_hands: List[List[str]] = []
+    # Track card impact analysis - which cards lead to best outcomes
+    card_impact_data: dict[str, list] = {}  # card_name -> list of game outcomes
+    opening_hand_outcomes: list[tuple[list[str], dict]] = []  # (hand, outcome) pairs
 
     for metrics in results:
         for turn in range(1, max_turns + 1):
@@ -193,12 +193,26 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
         per_game_tokens_created.append(game_tokens_created)
         per_game_cards_drawn.append(game_cards_drawn)
 
-        # Track opening hand diversity
+        # Track card impact - correlate opening hand cards with game outcomes
         opening_hand = metrics.get("opening_hand_cards", [])
         if opening_hand:
-            all_opening_hands.append(opening_hand)
+            # Create outcome summary for this game
+            game_outcome = {
+                'total_damage': game_total_damage + game_drain_damage,
+                'peak_power': game_total_power,
+                'commander_turn': metrics.get("commander_cast_turn"),
+                'total_mana': game_total_mana,
+                'cards_drawn': game_cards_drawn,
+            }
+
+            # Store opening hand with its outcome
+            opening_hand_outcomes.append((opening_hand, game_outcome))
+
+            # Track each card's impact
             for card_name in opening_hand:
-                opening_hand_card_counts[card_name] = opening_hand_card_counts.get(card_name, 0) + 1
+                if card_name not in card_impact_data:
+                    card_impact_data[card_name] = []
+                card_impact_data[card_name].append(game_outcome)
 
     avg_lands = [round(total_lands_played[t] / num_games, 2) for t in range(max_turns + 1)]
     avg_mana = [round(total_mana[t] / num_games, 2) for t in range(max_turns + 1)]
@@ -279,17 +293,92 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
         "Avg Graveyard Size": avg_graveyard_size[1:],
     }
 
-    # Calculate opening hand diversity statistics
-    unique_cards_in_opening_hands = len(opening_hand_card_counts)
-    total_card_appearances = sum(opening_hand_card_counts.values())
-    avg_appearances_per_card = total_card_appearances / unique_cards_in_opening_hands if unique_cards_in_opening_hands > 0 else 0
+    # ==================================================================================
+    # CARD IMPACT ANALYSIS - Which cards contribute most to wins
+    # ==================================================================================
 
-    # Sort cards by appearance frequency
-    most_common_opening_cards = sorted(
-        opening_hand_card_counts.items(),
-        key=lambda x: x[1],
+    # Calculate average performance across all games (baseline)
+    baseline_damage = sum(per_game_total_damage) / len(per_game_total_damage) if per_game_total_damage else 0
+    baseline_power = sum(per_game_total_power) / len(per_game_total_power) if per_game_total_power else 0
+    baseline_mana = sum(per_game_total_mana) / len(per_game_total_mana) if per_game_total_mana else 0
+
+    # Analyze impact of each card
+    card_impact_analysis = []
+    for card_name, outcomes in card_impact_data.items():
+        if len(outcomes) < 3:  # Need at least 3 games for meaningful data
+            continue
+
+        avg_damage = sum(o['total_damage'] for o in outcomes) / len(outcomes)
+        avg_power = sum(o['peak_power'] for o in outcomes) / len(outcomes)
+        avg_mana = sum(o['total_mana'] for o in outcomes) / len(outcomes)
+
+        # Commander cast turn (handle None values)
+        cmd_turns = [o['commander_turn'] for o in outcomes if o['commander_turn'] is not None]
+        avg_cmd_turn = sum(cmd_turns) / len(cmd_turns) if cmd_turns else None
+
+        # Calculate impact score (how much better than baseline)
+        damage_impact = ((avg_damage - baseline_damage) / baseline_damage * 100) if baseline_damage > 0 else 0
+        power_impact = ((avg_power - baseline_power) / baseline_power * 100) if baseline_power > 0 else 0
+
+        # Overall impact score (weighted: 60% damage, 40% power)
+        overall_impact = (damage_impact * 0.6) + (power_impact * 0.4)
+
+        card_impact_analysis.append({
+            'card_name': card_name,
+            'appearances': len(outcomes),
+            'avg_damage': round(avg_damage, 2),
+            'avg_peak_power': round(avg_power, 2),
+            'avg_commander_turn': round(avg_cmd_turn, 2) if avg_cmd_turn else None,
+            'damage_impact_%': round(damage_impact, 1),
+            'power_impact_%': round(power_impact, 1),
+            'overall_impact': round(overall_impact, 1),
+        })
+
+    # Sort by overall impact (best cards first)
+    card_impact_analysis.sort(key=lambda x: x['overall_impact'], reverse=True)
+
+    # Get top performers and worst performers (exclude basic lands)
+    non_land_impacts = [c for c in card_impact_analysis if c['card_name'].lower() not in ['plains', 'island', 'swamp', 'mountain', 'forest']]
+    top_impact_cards = non_land_impacts[:10] if len(non_land_impacts) >= 10 else non_land_impacts
+    worst_impact_cards = non_land_impacts[-10:] if len(non_land_impacts) >= 10 else []
+
+    # ==================================================================================
+    # BEST & WORST OPENING HANDS
+    # ==================================================================================
+
+    # Sort all opening hands by their outcome
+    sorted_hands = sorted(
+        opening_hand_outcomes,
+        key=lambda x: x[1]['total_damage'],
         reverse=True
-    )[:10]  # Top 10 most common
+    )
+
+    best_opening_hands = sorted_hands[:5]  # Top 5 best
+    worst_opening_hands = sorted_hands[-5:]  # Bottom 5 worst
+
+    # ==================================================================================
+    # DECK POWER SUMMARY
+    # ==================================================================================
+
+    import statistics
+
+    deck_power_summary = {
+        # Overall performance
+        "Avg Total Damage": round(baseline_damage, 2),
+        "Avg Peak Power": round(baseline_power, 2),
+        "Avg Commander Cast Turn": round(sum(c for c in commander_cast_turns if c is not None) / len([c for c in commander_cast_turns if c is not None]), 2) if any(c is not None for c in commander_cast_turns) else None,
+
+        # Consistency metrics
+        "Damage Std Dev": round(statistics.stdev(per_game_total_damage), 2) if len(per_game_total_damage) > 1 else 0,
+        "Power Std Dev": round(statistics.stdev(per_game_total_power), 2) if len(per_game_total_power) > 1 else 0,
+        "Best Game Damage": round(max(per_game_total_damage), 2) if per_game_total_damage else 0,
+        "Worst Game Damage": round(min(per_game_total_damage), 2) if per_game_total_damage else 0,
+        "Best Game Power": round(max(per_game_total_power), 2) if per_game_total_power else 0,
+        "Worst Game Power": round(min(per_game_total_power), 2) if per_game_total_power else 0,
+
+        # Consistency score (lower is more consistent)
+        "Consistency Score": round((statistics.stdev(per_game_total_damage) / baseline_damage * 100), 1) if baseline_damage > 0 and len(per_game_total_damage) > 1 else 0,
+    }
 
     # Add interaction summary
     interaction_summary = {
@@ -297,11 +386,29 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
         "Win Rate %": round((games_won / num_games) * 100, 2),
         "Avg Creatures Removed": round(total_creatures_removed / num_games, 2),
         "Avg Board Wipes Survived": round(total_wipes_survived / num_games, 2),
-        # Card diversity metrics
-        "Unique Cards in Opening Hands": unique_cards_in_opening_hands,
-        "Total Games Simulated": num_games,
-        "Avg Card Appearances": round(avg_appearances_per_card, 2),
-        "Most Common Opening Cards": most_common_opening_cards,
+
+        # NEW: Meaningful metrics
+        "Deck Power Summary": deck_power_summary,
+        "Top Impact Cards": top_impact_cards,
+        "Worst Impact Cards": worst_impact_cards,
+        "Best Opening Hands": [
+            {
+                'hand': hand,
+                'damage': outcome['total_damage'],
+                'peak_power': outcome['peak_power'],
+                'commander_turn': outcome['commander_turn']
+            }
+            for hand, outcome in best_opening_hands
+        ],
+        "Worst Opening Hands": [
+            {
+                'hand': hand,
+                'damage': outcome['total_damage'],
+                'peak_power': outcome['peak_power'],
+                'commander_turn': outcome['commander_turn']
+            }
+            for hand, outcome in worst_opening_hands
+        ],
     }
     for c in COLOURS:
         data[f"Board Mana {c}"] = avg_board_mana[c][1:]
