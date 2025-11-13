@@ -158,18 +158,21 @@ def parse_etb_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
 
         stats = m_token.group("stats") if m_token.group("stats") else "1/1"
 
-        def effect(board_state, n=amount, token_stats=stats):
-            # Create tokens on the battlefield
-            if hasattr(board_state, 'create_tokens'):
-                board_state.create_tokens(n, token_stats)
-            elif hasattr(board_state, 'tokens_created'):
-                # Track token creation
-                if not hasattr(board_state, 'tokens_created_this_turn'):
-                    board_state.tokens_created_this_turn = 0
-                board_state.tokens_created_this_turn += n
+        # Create effect with closure to capture amount and stats
+        def make_token_effect(num_tokens, token_stats):
+            def effect(board_state):
+                # Create tokens on the battlefield
+                if hasattr(board_state, 'create_tokens'):
+                    board_state.create_tokens(num_tokens, token_stats)
+                else:
+                    # Fallback: just track the count
+                    if not hasattr(board_state, 'tokens_created_this_turn'):
+                        board_state.tokens_created_this_turn = 0
+                    board_state.tokens_created_this_turn += num_tokens
+            return effect
 
         triggers.append(
-            TriggeredAbility(event="etb", effect=effect, description=f"create {amount} {stats} token(s)")
+            TriggeredAbility(event="etb", effect=make_token_effect(amount, stats), description=f"create {amount} {stats} token(s)")
         )
 
     return triggers
@@ -293,18 +296,21 @@ def parse_attack_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
 
         stats = m_token.group("stats") if m_token.group("stats") else "1/1"
 
-        def effect(board_state, n=amount, token_stats=stats):
-            # Create tokens on the battlefield
-            if hasattr(board_state, 'create_tokens'):
-                board_state.create_tokens(n, token_stats)
-            elif hasattr(board_state, 'tokens_created'):
-                # Track token creation
-                if not hasattr(board_state, 'tokens_created_this_turn'):
-                    board_state.tokens_created_this_turn = 0
-                board_state.tokens_created_this_turn += n
+        # Create effect with closure to capture amount and stats
+        def make_token_effect(num_tokens, token_stats):
+            def effect(board_state):
+                # Create tokens on the battlefield
+                if hasattr(board_state, 'create_tokens'):
+                    board_state.create_tokens(num_tokens, token_stats)
+                else:
+                    # Fallback: just track the count
+                    if not hasattr(board_state, 'tokens_created_this_turn'):
+                        board_state.tokens_created_this_turn = 0
+                    board_state.tokens_created_this_turn += num_tokens
+            return effect
 
         triggers.append(
-            TriggeredAbility(event="attack", effect=effect, description=f"create {amount} {stats} token(s)")
+            TriggeredAbility(event="attack", effect=make_token_effect(amount, stats), description=f"create {amount} {stats} token(s)")
         )
 
     return triggers

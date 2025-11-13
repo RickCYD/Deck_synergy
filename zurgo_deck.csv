@@ -64,28 +64,28 @@ Final Vengeance,Instant,{1}{B},0,0,0,,False,False,False,{},,0,0,False,"As an add
 Inevitable Defeat,Sorcery,{2}{B},0,0,0,,False,False,False,{},,0,0,False,Destroy target creature. Its controller loses 2 life.,,,False
 Lightning Greaves,Artifact,{2},0,0,0,,False,False,False,{},{0},0,0,False,Equipped creature has haste and shroud. Equip {0},,,False
 Diabolic Intent,Sorcery,{1}{B},0,0,0,,False,False,False,{},,0,0,False,"As an additional cost to cast this spell, sacrifice a creature. Search your library for a card, put that card into your hand, then shuffle.",,,False
-Command Tower,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana of any color in your commander's color identity.,,,False
-Path of Ancestry,Land,,0,0,1,,False,False,True,{},,0,0,False,"Path of Ancestry enters the battlefield tapped. {T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1.",,,False
-Exotic Orchard,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana of any color that a land an opponent controls could produce.,,,False
-Plains,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add {W}.,,,False
-Mountain,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add {R}.,,,False
-Swamp,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add {B}.,,,False
+Command Tower,Land,,0,0,1,Any,False,False,False,{},,0,0,False,{T}: Add one mana of any color in your commander's color identity.,,,False
+Path of Ancestry,Land,,0,0,1,Any,False,False,True,{},,0,0,False,"Path of Ancestry enters the battlefield tapped. {T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1.",,,False
+Exotic Orchard,Land,,0,0,1,Any,False,False,False,{},,0,0,False,{T}: Add one mana of any color that a land an opponent controls could produce.,,,False
+Nomad Outpost,Land,,0,0,1,RWB,False,False,True,{},,0,0,False,"Nomad Outpost enters the battlefield tapped. {T}: Add {R}, {W}, or {B}.",,,False
+Canyon Slough,Land,,0,0,1,BR,False,False,False,{},,0,0,False,({T}: Add {B} or {R}.) Canyon Slough enters the battlefield tapped. Cycling {2},,,False
+Plains,Basic Land,,0,0,1,W,False,False,False,{},,0,0,False,{T}: Add {W}.,,,False
+Mountain,Basic Land,,0,0,1,R,False,False,False,{},,0,0,False,{T}: Add {R}.,,,False
+Swamp,Basic Land,,0,0,1,B,False,False,False,{},,0,0,False,{T}: Add {B}.,,,False
 High Market,Land,,0,0,1,,False,False,False,{},,0,0,False,"{T}: Add {C}. {T}, Sacrifice a creature: You gain 1 life.",,,False
 Kher Keep,Land,,0,0,1,,False,False,False,{},,0,0,False,"{T}: Add {C}. {1}{R}, {T}: Create a 0/1 red Kobold creature token named Kobolds of Kher Keep.",,,False
-Bojuka Bog,Land,,0,0,1,,False,False,True,{},,0,0,False,"Bojuka Bog enters the battlefield tapped. When Bojuka Bog enters the battlefield, exile target player's graveyard. {T}: Add {B}.",,,False
-Battlefield Forge,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Canyon Slough,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Caves of Koilos,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Dalkovan Encampment,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Dragonskull Summit,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Fetid Heath,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Fountainport,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Godless Shrine,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Isolated Chapel,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Nomad Outpost,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Rugged Prairie,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Shattered Landscape,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Smoldering Marsh,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Sulfurous Springs,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Temple of Triumph,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
-Windbrisk Heights,Land,,0,0,1,,False,False,False,{},,0,0,False,{T}: Add one mana.,,,False
+Bojuka Bog,Land,,0,0,1,B,False,False,True,{},,0,0,False,"Bojuka Bog enters the battlefield tapped. When Bojuka Bog enters the battlefield, exile target player's graveyard. {T}: Add {B}.",,,False
+Battlefield Forge,Land,,0,0,1,RW,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Temple of Triumph,Land,,0,0,1,RW,False,False,True,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Rugged Prairie,Land,,0,0,1,RW,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Caves of Koilos,Land,,0,0,1,WB,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Godless Shrine,Land,,0,0,1,WB,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Isolated Chapel,Land,,0,0,1,WB,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Fetid Heath,Land,,0,0,1,WB,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Dragonskull Summit,Land,,0,0,1,BR,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Smoldering Marsh,Land,,0,0,1,BR,False,False,True,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Sulfurous Springs,Land,,0,0,1,BR,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Dalkovan Encampment,Land,,0,0,1,Any,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Fountainport,Land,,0,0,1,Any,False,False,True,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Shattered Landscape,Land,,0,0,1,Any,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False
+Windbrisk Heights,Land,,0,0,1,Any,False,False,False,{},,0,0,False,{T}: Add one mana of the specified colors.,,,False

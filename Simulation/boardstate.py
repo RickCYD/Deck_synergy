@@ -645,7 +645,28 @@ class BoardState:
         else:
             # Extract main type before "—" (e.g., "Basic Land — Swamp" -> "Basic Land")
             main_type = card.type.split('—')[0].strip()
-            method = getattr(self, f"play_{main_type.replace(' ', '_').lower()}", None)
+
+            # Normalize card types: strip supertypes to get base type
+            # "Legendary Creature" -> "Creature"
+            # "Artifact Creature" -> "Creature"
+            # "Enchantment Creature" -> "Creature"
+            # "Basic Land" -> "Land"
+            if "Creature" in main_type:
+                main_type = "Creature"
+            elif "Land" in main_type:
+                main_type = "Land"
+            elif "Artifact" in main_type:
+                main_type = "Artifact"
+            elif "Enchantment" in main_type:
+                main_type = "Enchantment"
+            elif "Planeswalker" in main_type:
+                main_type = "Planeswalker"
+            elif "Instant" in main_type:
+                main_type = "Instant"
+            elif "Sorcery" in main_type:
+                main_type = "Sorcery"
+
+            method = getattr(self, f"play_{main_type.lower()}", None)
         if not callable(method):
             if verbose:
                 print(f"Card type {card.type} not supported for play.")
@@ -2277,6 +2298,74 @@ class BoardState:
                 print(f"Sacrificed Clue token, drew a card")
             return True
         return False
+
+    # ─────────────────────── Token Creation ──────────────────────────
+    def create_tokens(self, count: int, stats: str = "1/1", creature_type: str = "Token", colors: str = "",
+                     keywords: list = None, verbose: bool = False):
+        """Create token creatures and add them to the battlefield.
+
+        Args:
+            count: Number of tokens to create
+            stats: Power/Toughness as string (e.g. "1/1", "2/2")
+            creature_type: Creature type (e.g. "Soldier", "Goblin")
+            colors: Color identity (e.g. "W", "RG")
+            keywords: List of keywords (e.g. ["haste", "flying"])
+            verbose: Whether to print debug output
+        """
+        from simulate_game import Card  # Import here to avoid circular imports
+
+        if keywords is None:
+            keywords = []
+
+        # Parse power/toughness
+        if "/" in stats:
+            power, toughness = stats.split("/")
+            power = int(power)
+            toughness = int(toughness)
+        else:
+            power = 1
+            toughness = 1
+
+        # Apply token multipliers (Anointed Procession, Doubling Season, etc.)
+        actual_count = count * self.token_multiplier
+
+        for i in range(actual_count):
+            # Check for haste keyword
+            has_haste = "haste" in [k.lower() for k in keywords]
+
+            # Create token creature with all required arguments
+            token = Card(
+                name=f"{creature_type} Token",
+                type=f"Creature — {creature_type}",
+                mana_cost="",
+                power=power,
+                toughness=toughness,
+                produces_colors=[],  # Tokens don't produce mana
+                mana_production=0,  # Tokens don't produce mana
+                etb_tapped=not has_haste,  # Tokens enter tapped unless they have haste
+                etb_tapped_conditions={},  # No conditional ETB tapped
+                has_haste=has_haste,
+                oracle_text=f"Token creature with {', '.join(keywords) if keywords else 'no abilities'}",
+            )
+
+            # Add other keywords
+            token.has_flying = "flying" in [k.lower() for k in keywords]
+            token.has_vigilance = "vigilance" in [k.lower() for k in keywords]
+            token.has_trample = "trample" in [k.lower() for k in keywords]
+            token.has_lifelink = "lifelink" in [k.lower() for k in keywords]
+            token.tapped = not has_haste  # Tokens enter tapped unless they have haste
+
+            # Add to battlefield
+            self.creatures.append(token)
+
+            if verbose:
+                print(f"Created {power}/{toughness} {creature_type} token" +
+                     (f" with {', '.join(keywords)}" if keywords else ""))
+
+        # Track token creation
+        self.tokens_created_this_turn += actual_count
+
+        return actual_count
 
     # ─────────────────────── Sacrifice Mechanics ──────────────────────────
     def sacrifice_creature(self, creature, verbose: bool = False):

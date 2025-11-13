@@ -32,8 +32,8 @@ for card in token_gens[:15]:
     print(f"  Triggered abilities parsed: {len(card.triggered_abilities)}")
     if card.triggered_abilities:
         for i, ability in enumerate(card.triggered_abilities):
-            print(f"    [{i+1}] Trigger: {ability.trigger_condition}")
-            print(f"        Effect: {ability.effect_description}")
+            print(f"    [{i+1}] Event: {ability.event}")
+            print(f"        Description: {ability.description}")
     else:
         print(f"    ⚠ NO TRIGGERED ABILITIES PARSED!")
 

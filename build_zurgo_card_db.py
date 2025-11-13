@@ -549,6 +549,7 @@ ZURGO_CARDS = {
         "Name": "Command Tower",
         "Type": "Land",
         "ManaProduction": 1,
+        "ProducesColors": "Any",  # Commander colors: RWB
         "OracleText": "{T}: Add one mana of any color in your commander's color identity.",
     },
 
@@ -556,6 +557,7 @@ ZURGO_CARDS = {
         "Name": "Path of Ancestry",
         "Type": "Land",
         "ManaProduction": 1,
+        "ProducesColors": "Any",
         "ETBTapped": True,
         "OracleText": "Path of Ancestry enters the battlefield tapped. {T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1.",
     },
@@ -564,19 +566,50 @@ ZURGO_CARDS = {
         "Name": "Exotic Orchard",
         "Type": "Land",
         "ManaProduction": 1,
+        "ProducesColors": "Any",
         "OracleText": "{T}: Add one mana of any color that a land an opponent controls could produce.",
     },
 
-    # Add basic lands and other lands with simple production
-    **{land_name: {
-        "Name": land_name,
+    "Nomad Outpost": {
+        "Name": "Nomad Outpost",
         "Type": "Land",
         "ManaProduction": 1,
-        "OracleText": f"{{T}}: Add {{W}}." if "Plains" in land_name else
-                      f"{{T}}: Add {{R}}." if "Mountain" in land_name else
-                      f"{{T}}: Add {{B}}." if "Swamp" in land_name else
-                      f"{{T}}: Add one mana."
-    } for land_name in ["Plains", "Mountain", "Swamp"]},
+        "ProducesColors": "RWB",
+        "ETBTapped": True,
+        "OracleText": "Nomad Outpost enters the battlefield tapped. {T}: Add {R}, {W}, or {B}.",
+    },
+
+    "Canyon Slough": {
+        "Name": "Canyon Slough",
+        "Type": "Land",
+        "ManaProduction": 1,
+        "ProducesColors": "BR",
+        "ETBTapped": False,  # Cycling land
+        "OracleText": "({T}: Add {B} or {R}.) Canyon Slough enters the battlefield tapped. Cycling {2}",
+    },
+
+    # Add basic lands and other lands with simple production
+    "Plains": {
+        "Name": "Plains",
+        "Type": "Basic Land",
+        "ManaProduction": 1,
+        "ProducesColors": "W",
+        "OracleText": "{T}: Add {W}.",
+    },
+    "Mountain": {
+        "Name": "Mountain",
+        "Type": "Basic Land",
+        "ManaProduction": 1,
+        "ProducesColors": "R",
+        "OracleText": "{T}: Add {R}.",
+    },
+    "Swamp": {
+        "Name": "Swamp",
+        "Type": "Basic Land",
+        "ManaProduction": 1,
+        "ProducesColors": "B",
+        "OracleText": "{T}: Add {B}.",
+    },
 
     # Other utility lands
     "High Market": {
@@ -597,27 +630,46 @@ ZURGO_CARDS = {
         "Name": "Bojuka Bog",
         "Type": "Land",
         "ManaProduction": 1,
+        "ProducesColors": "B",
         "ETBTapped": True,
         "OracleText": "Bojuka Bog enters the battlefield tapped. When Bojuka Bog enters the battlefield, exile target player's graveyard. {T}: Add {B}.",
     },
 }
 
-# Add remaining lands with generic data
-GENERIC_LANDS = [
-    "Battlefield Forge", "Canyon Slough", "Caves of Koilos", "Dalkovan Encampment",
-    "Dragonskull Summit", "Fetid Heath", "Fountainport", "Godless Shrine",
-    "Isolated Chapel", "Nomad Outpost", "Rugged Prairie", "Shattered Landscape",
-    "Smoldering Marsh", "Sulfurous Springs", "Temple of Triumph", "Windbrisk Heights"
-]
+# Add remaining lands with proper colors
+GENERIC_LANDS = {
+    # Red-White lands
+    "Battlefield Forge": ("RW", False),
+    "Temple of Triumph": ("RW", True),
+    "Rugged Prairie": ("RW", False),
+    # Black-White lands
+    "Caves of Koilos": ("WB", False),
+    "Godless Shrine": ("WB", False),
+    "Isolated Chapel": ("WB", False),
+    "Fetid Heath": ("WB", False),
+    # Black-Red lands
+    "Dragonskull Summit": ("BR", False),
+    "Smoldering Marsh": ("BR", True),
+    "Sulfurous Springs": ("BR", False),
+    # Multi-color lands
+    "Dalkovan Encampment": ("Any", False),
+    "Fountainport": ("Any", True),
+    "Shattered Landscape": ("Any", False),
+    "Windbrisk Heights": ("Any", False),
+    # Already defined above
+    # "Canyon Slough": ("BR", False),
+    # "Nomad Outpost": ("RWB", True),
+}
 
-for land in GENERIC_LANDS:
+for land, (colors, etb_tapped) in GENERIC_LANDS.items():
     if land not in ZURGO_CARDS:
         ZURGO_CARDS[land] = {
             "Name": land,
             "Type": "Land",
             "ManaProduction": 1,
-            "ETBTapped": False,
-            "OracleText": "{T}: Add one mana.",
+            "ProducesColors": colors,
+            "ETBTapped": etb_tapped,
+            "OracleText": f"{{T}}: Add one mana of the specified colors.",
         }
 
 def build_card_database():
