@@ -1124,6 +1124,48 @@ class BoardState:
                 if verbose:
                     print(f"  → {card.name} deals {damage} damage to {target_opp['name']}")
 
+        # TOKEN CREATION: Parse oracle text for token creation
+        oracle = getattr(card, "oracle_text", "").lower()
+        if oracle and "create" in oracle and "token" in oracle:
+            import re
+            # Pattern: "Create X Y/Z tokens" or "Create five 2/2 tokens"
+            m_token = re.search(
+                r"create (?P<num>x|\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten) (?P<stats>\d+/\d+)?[^.]*tokens?",
+                oracle,
+            )
+            if m_token:
+                num_map = {
+                    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+                    "four": 4, "five": 5, "six": 6, "seven": 7,
+                    "eight": 8, "nine": 9, "ten": 10, "x": x_val if "X" in cost else 1,
+                }
+                val = m_token.group("num")
+                if val == "x":
+                    token_count = x_val if x_val > 0 else 1
+                else:
+                    token_count = num_map.get(val, int(val) if val.isdigit() else 1)
+
+                stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+                # Extract keywords (haste, trample, flying, etc.)
+                keywords = []
+                if "haste" in oracle:
+                    keywords.append("haste")
+                if "trample" in oracle:
+                    keywords.append("trample")
+                if "flying" in oracle:
+                    keywords.append("flying")
+                if "vigilance" in oracle:
+                    keywords.append("vigilance")
+                if "lifelink" in oracle:
+                    keywords.append("lifelink")
+
+                # Create the tokens
+                self.create_tokens(token_count, stats, keywords=keywords, verbose=verbose)
+                if verbose:
+                    kw_text = f" with {', '.join(keywords)}" if keywords else ""
+                    print(f"  → {card.name} created {token_count} {stats} token(s){kw_text}")
+
         if getattr(card, "puts_land", False):
             self.search_basic_land(verbose)
         oracle = getattr(card, "oracle_text", "").lower()
@@ -1309,6 +1351,50 @@ class BoardState:
                         print(f"  → {target_opp['name']} eliminated by {card.name} (dealt {damage} damage)!")
                 if verbose:
                     print(f"  → {card.name} deals {damage} damage to {target_opp['name']}")
+
+        # TOKEN CREATION: Parse oracle text for token creation
+        oracle = getattr(card, "oracle_text", "").lower()
+        x_val = getattr(card, "x_value", 0)
+        cost = getattr(card, "mana_cost", "")
+        if oracle and "create" in oracle and "token" in oracle:
+            import re
+            # Pattern: "Create X Y/Z tokens" or "Create five 2/2 tokens"
+            m_token = re.search(
+                r"create (?P<num>x|\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten) (?P<stats>\d+/\d+)?[^.]*tokens?",
+                oracle,
+            )
+            if m_token:
+                num_map = {
+                    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+                    "four": 4, "five": 5, "six": 6, "seven": 7,
+                    "eight": 8, "nine": 9, "ten": 10, "x": x_val if "X" in cost else 1,
+                }
+                val = m_token.group("num")
+                if val == "x":
+                    token_count = x_val if x_val > 0 else 1
+                else:
+                    token_count = num_map.get(val, int(val) if val.isdigit() else 1)
+
+                stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+                # Extract keywords (haste, trample, flying, etc.)
+                keywords = []
+                if "haste" in oracle:
+                    keywords.append("haste")
+                if "trample" in oracle:
+                    keywords.append("trample")
+                if "flying" in oracle:
+                    keywords.append("flying")
+                if "vigilance" in oracle:
+                    keywords.append("vigilance")
+                if "lifelink" in oracle:
+                    keywords.append("lifelink")
+
+                # Create the tokens
+                self.create_tokens(token_count, stats, keywords=keywords, verbose=verbose)
+                if verbose:
+                    kw_text = f" with {', '.join(keywords)}" if keywords else ""
+                    print(f"  → {card.name} created {token_count} {stats} token(s){kw_text}")
 
         if verbose:
             print(f"Played instant: {card.name}")
