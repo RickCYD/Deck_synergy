@@ -21,11 +21,11 @@ ZURGO_CARDS = {
     "Zurgo Stormrender": {
         "Name": "Zurgo Stormrender",
         "Type": "Legendary Creature",
-        "ManaCost": "{2}{R}{W}{B}",
+        "ManaCost": "{R}{W}{B}",
         "Power": 3,
         "Toughness": 3,
-        "OracleText": "Flying, haste. Whenever one or more creatures you control deal combat damage to a player, create a 2/1 white and black Human Warrior creature token.",
-        "HasHaste": True,
+        "OracleText": "Mobilize 1 (Whenever this creature attacks, create a tapped and attacking 1/1 red Warrior creature token. Sacrifice it at the beginning of the next end step.) Whenever a creature token you control leaves the battlefield, draw a card if it was attacking. Otherwise, each opponent loses 1 life.",
+        "HasHaste": False,
         "Commander": True,
     },
 

@@ -757,6 +757,10 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
         board.check_end_of_turn_treasures(board.creatures_died_this_turn, verbose=verbose)
 
+        # MOBILIZE: Sacrifice mobilize warrior tokens at end of turn
+        mobilize_sacs = board.sacrifice_mobilize_tokens(verbose=verbose)
+        metrics["creatures_sacrificed"][turn] += mobilize_sacs
+
         # COUNTER MANIPULATION: Check for proliferate triggers
         board.check_for_proliferate_triggers(verbose=verbose)
 
