@@ -71,8 +71,10 @@ def convert_card_to_simulation_format(card_data: Dict):
     mana_cost = card_data.get('mana_cost', '')
     oracle_text = card_data.get('oracle_text', '')
 
-    # Use the full type line - the simulation uses 'in' checks like "if 'Creature' in card.type"
-    # This allows proper handling of multi-type cards like "Artifact Creature" or "Legendary Land"
+    # Use the FULL type line as card_type
+    # The simulation code uses 'in' checks like: if "Creature" in card.type
+    # This allows proper handling of multi-type cards like "Artifact Creature — Golem"
+    # or lands with subtypes like "Land — Forest Island"
     card_type = type_line if type_line else 'Unknown'
 
     # Extract power/toughness
