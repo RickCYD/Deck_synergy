@@ -162,8 +162,16 @@ def convert_card_to_simulation_format(card_data: Dict):
     is_legendary = 'legendary' in type_line.lower()
 
     # ARISTOCRATS: Parse death triggers and sacrifice outlets
-    death_trigger_value = parse_death_triggers_from_oracle(oracle_text)
+    death_triggers_result = parse_death_triggers_from_oracle(oracle_text)
     sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
+
+    # Handle both old (int) and new (list) formats for death triggers
+    if isinstance(death_triggers_result, list):
+        death_trigger_value = len(death_triggers_result)  # Count of triggers
+    elif isinstance(death_triggers_result, (int, float)):
+        death_trigger_value = int(death_triggers_result)
+    else:
+        death_trigger_value = 0
 
     # DEBUG: Print aristocrats cards
     if death_trigger_value > 0 or sacrifice_outlet:

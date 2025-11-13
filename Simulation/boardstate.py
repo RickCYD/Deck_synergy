@@ -59,6 +59,9 @@ class BoardState:
         self.current_combat_turn = 0
         self._attack_triggers_fired: set[tuple[int, int]] = set()
 
+        # Mobilize tracking - warriors to sacrifice at end of turn
+        self.mobilize_tokens: list[Any] = []
+
         # Opponent modeling (for multiplayer Commander)
         self.num_opponents = num_opponents
         self.opponents = []
@@ -3468,7 +3471,11 @@ class BoardState:
             name = getattr(creature, 'name', '').lower()
 
             # Skip if no attack trigger (but Teval uses different trigger text)
-            if 'whenever you attack' not in oracle and 'whenever ~ attacks' not in oracle and 'whenever teval attacks' not in oracle:
+            # Mobilize triggers when the creature attacks, so check for "mobilize" keyword
+            if ('whenever you attack' not in oracle and
+                'whenever ~ attacks' not in oracle and
+                'whenever teval attacks' not in oracle and
+                'mobilize' not in oracle):
                 continue
 
             # === Specific Named Cards ===
@@ -3529,9 +3536,28 @@ class BoardState:
                 if verbose:
                     print(f"  → Hero of Bladehold created 2 Soldier tokens")
 
+            # MOBILIZE - Parse "Mobilize N" keyword
+            elif 'mobilize' in oracle:
+                import re
+                # Parse "Mobilize N" - creates N 1/1 red Warrior tokens that are sacrificed at end step
+                match = re.search(r'mobilize (\d+)', oracle)
+                if match:
+                    mobilize_count = int(match.group(1))
+
+                    # Create mobilize warriors (tapped and attacking)
+                    for _ in range(mobilize_count):
+                        warrior = self.create_token("Warrior", 1, 1, has_haste=True, verbose=verbose)
+                        # Track this token to be sacrificed at end of turn
+                        self.mobilize_tokens.append(warrior)
+                        tokens_created += 1
+
+                    if verbose and mobilize_count > 0:
+                        print(f"  → {creature.name} mobilized {mobilize_count} Warrior token(s) (will sacrifice at end step)")
+
             # === Generic Token Creation ===
             # Parse oracle text for generic "create X token" triggers
-            elif 'create' in oracle and 'token' in oracle:
+            # Skip if mobilize (already handled above)
+            elif 'create' in oracle and 'token' in oracle and 'mobilize' not in oracle:
                 # Try to parse how many tokens
                 num_tokens = 1  # Default
 
@@ -3637,6 +3663,69 @@ class BoardState:
                     print(f"  → {permanent.name} created {num_treasures} Treasures (end of turn)")
 
         return treasures_created
+
+    def sacrifice_mobilize_tokens(self, verbose: bool = False):
+        """
+        Sacrifice all mobilize warrior tokens at end of turn.
+
+        Mobilize tokens are created tapped and attacking, then sacrificed at the beginning of the next end step.
+        This triggers:
+        - Death triggers (Zulaport Cutthroat, Cruel Celebrant, etc.)
+        - Zurgo's "whenever a token leaves" drain trigger
+
+        Returns number of tokens sacrificed.
+        """
+        sacs = 0
+
+        # Sacrifice all tracked mobilize tokens
+        for warrior in list(self.mobilize_tokens):
+            if warrior in self.creatures:
+                # Trigger Zurgo's "whenever a token leaves" BEFORE removing
+                self.trigger_zurgo_token_leaves(warrior, was_attacking=True, verbose=verbose)
+
+                # Sacrifice the warrior (triggers death effects)
+                self.sacrifice_creature(warrior, "mobilize end-of-turn sacrifice", verbose=verbose)
+                sacs += 1
+
+        # Clear the list for next turn
+        self.mobilize_tokens.clear()
+
+        return sacs
+
+    def trigger_zurgo_token_leaves(self, token, was_attacking: bool = True, verbose: bool = False):
+        """
+        Trigger Zurgo Stormrender's ability:
+        "Whenever a creature token you control leaves the battlefield,
+        draw a card if it was attacking. Otherwise, each opponent loses 1 life."
+
+        Args:
+            token: The token leaving the battlefield
+            was_attacking: True if the token was attacking
+        """
+        # Check if Zurgo is on the battlefield
+        zurgo = None
+        for creature in self.creatures:
+            if 'zurgo' in getattr(creature, 'name', '').lower() and 'stormrender' in getattr(creature, 'name', '').lower():
+                zurgo = creature
+                break
+
+        if not zurgo:
+            return
+
+        # Zurgo's trigger: draw a card if attacking, otherwise drain 1 life per opponent
+        if was_attacking:
+            # Draw a card
+            if self.library:
+                drawn = self.library.pop(0)
+                self.hand.append(drawn)
+                if verbose:
+                    print(f"  → Zurgo token-leave trigger: drew a card ({drawn.name})")
+        else:
+            # Each opponent loses 1 life
+            num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+            if num_alive_opps > 0:
+                if verbose:
+                    print(f"  → Zurgo token-leave trigger: each opponent loses 1 life ({num_alive_opps} opponents)")
 
     # ═══════════════════════════════════════════════════════════════════════
     # UPKEEP TRIGGER SYSTEM (Priority 1 Implementation)

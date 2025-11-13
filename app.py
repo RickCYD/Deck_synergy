@@ -948,8 +948,13 @@ def load_deck(n_clicks, url, current_data):
             deck.three_way_synergies = synergy_result.get('three_way', {})
             deck.simulation_results = synergy_result.get('simulation', {})
             print(f"[DECK LOAD] Synergy analysis complete! Found {len(deck.synergies)} two-way synergies and {len(deck.three_way_synergies)} three-way synergies")
+            print(f"[DECK LOAD DEBUG] simulation_results type: {type(deck.simulation_results)}, has data: {bool(deck.simulation_results)}")
+            if deck.simulation_results:
+                print(f"[DECK LOAD DEBUG] simulation_results keys: {list(deck.simulation_results.keys())}")
             if deck.simulation_results and 'summary' in deck.simulation_results:
                 print(f"[DECK LOAD] Simulation complete! Total damage over 10 turns: {deck.simulation_results['summary'].get('total_damage_10_turns', 'N/A')}")
+            else:
+                print(f"[DECK LOAD WARNING] Simulation results missing or incomplete!")
         else:
             # Old format (backward compatibility)
             deck.synergies = synergy_result
@@ -1032,6 +1037,9 @@ def update_graph(deck_file):
         synergies = deck_data.get('synergies', {})
         simulation_results = deck_data.get('simulation_results', {})
         print(f"[UPDATE GRAPH] Loaded {len(cards)} cards and {len(synergies)} synergies")
+        print(f"[UPDATE GRAPH DEBUG] simulation_results type: {type(simulation_results)}, has data: {bool(simulation_results)}")
+        if simulation_results:
+            print(f"[UPDATE GRAPH DEBUG] simulation_results keys: {list(simulation_results.keys())}")
 
         if cards:
             assign_roles_to_cards(cards)

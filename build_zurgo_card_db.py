@@ -6,6 +6,14 @@ Since APIs are blocked, we'll manually create card data with proper oracle texts
 
 import json
 import pandas as pd
+import sys
+sys.path.insert(0, 'Simulation')
+
+# Import oracle text parsers
+from oracle_text_parser import (
+    parse_death_triggers_from_oracle,
+    parse_sacrifice_outlet_from_oracle
+)
 
 # Complete card database with oracle texts for Zurgo deck
 ZURGO_CARDS = {
@@ -13,11 +21,11 @@ ZURGO_CARDS = {
     "Zurgo Stormrender": {
         "Name": "Zurgo Stormrender",
         "Type": "Legendary Creature",
-        "ManaCost": "{2}{R}{W}{B}",
+        "ManaCost": "{R}{W}{B}",
         "Power": 3,
         "Toughness": 3,
-        "OracleText": "Flying, haste. Whenever one or more creatures you control deal combat damage to a player, create a 2/1 white and black Human Warrior creature token.",
-        "HasHaste": True,
+        "OracleText": "Mobilize 1 (Whenever this creature attacks, create a tapped and attacking 1/1 red Warrior creature token. Sacrifice it at the beginning of the next end step.) Whenever a creature token you control leaves the battlefield, draw a card if it was attacking. Otherwise, each opponent loses 1 life.",
+        "HasHaste": False,
         "Commander": True,
     },
 
@@ -677,6 +685,20 @@ def build_card_database():
     rows = []
 
     for name, data in ZURGO_CARDS.items():
+        oracle_text = data.get("OracleText", "")
+
+        # Parse death triggers and sacrifice outlets from oracle text
+        death_triggers = parse_death_triggers_from_oracle(oracle_text)
+        sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
+
+        # Convert death triggers list to integer count for CSV
+        if isinstance(death_triggers, list):
+            death_trigger_value = len(death_triggers)
+        elif isinstance(death_triggers, (int, float)):
+            death_trigger_value = int(death_triggers)
+        else:
+            death_trigger_value = 0
+
         row = {
             "Name": name,
             "Type": data.get("Type", ""),
@@ -693,9 +715,9 @@ def build_card_database():
             "PowerBuff": data.get("PowerBuff", 0),
             "DrawCards": 0,
             "PutsLand": False,
-            "OracleText": data.get("OracleText", ""),
-            "DeathTriggerValue": None,
-            "SacrificeOutlet": None,
+            "OracleText": oracle_text,
+            "DeathTriggerValue": death_trigger_value,
+            "SacrificeOutlet": sacrifice_outlet,
             "Commander": data.get("Commander", False),
         }
         rows.append(row)
