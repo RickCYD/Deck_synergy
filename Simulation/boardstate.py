@@ -673,7 +673,12 @@ class BoardState:
                     "Enchantment": self.enchantments,
                     "Planeswalker": self.planeswalkers,
                 }
-                lst = zone_lists.get(card.type)
+                # Find the right zone for this card type (supports full type lines)
+                lst = None
+                for card_type_key, zone in zone_lists.items():
+                    if card_type_key in card.type:
+                        lst = zone
+                        break
                 if not lst:
                     success = False
                 else:
