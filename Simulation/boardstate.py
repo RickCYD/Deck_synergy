@@ -3040,6 +3040,10 @@ class BoardState:
 
             # LEGACY: Also support old death_trigger_value attribute for compatibility
             death_value = getattr(permanent, 'death_trigger_value', 0)
+            # Handle case where death_value might be a list
+            if isinstance(death_value, list):
+                death_value = death_value[0] if death_value else 0
+            death_value = int(death_value) if death_value else 0
             oracle = getattr(permanent, 'oracle_text', '').lower()
 
             # Zulaport Cutthroat / Cruel Celebrant type effects (legacy support)
