@@ -270,7 +270,16 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
                 commander = next((c for c in cards if c.get('is_commander')), None)
                 non_commander_cards = [c for c in cards if not c.get('is_commander')]
 
-                print(f"  Deck has {len(non_commander_cards)} cards (excluding commander)")
+                # CRITICAL FIX: Expand cards based on quantity for simulation
+                # The simulation needs the full 100-card deck, not just unique cards
+                expanded_cards = []
+                for card in non_commander_cards:
+                    quantity = card.get('quantity', 1)
+                    for _ in range(quantity):
+                        expanded_cards.append(card)
+
+                print(f"  Deck has {len(non_commander_cards)} unique cards (excluding commander)")
+                print(f"  Expanded to {len(expanded_cards)} total cards for simulation")
                 if commander:
                     print(f"  Commander: {commander.get('name')}")
                 else:
@@ -278,9 +287,9 @@ def analyze_deck_synergies(cards: List[Dict], min_synergy_threshold: float = 0.5
 
                 print(f"  Running {num_simulation_games} games, {10} turns each...")
 
-                # Run simulation
+                # Run simulation with EXPANDED deck (full 100 cards with duplicates)
                 simulation_results = simulate_deck_effectiveness(
-                    cards=non_commander_cards,
+                    cards=expanded_cards,  # Use expanded deck, not unique cards
                     commander=commander,
                     num_games=num_simulation_games,
                     max_turns=10,
