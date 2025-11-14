@@ -39,9 +39,16 @@ def create_dashboard_app(archidekt_id: int | None = None) -> dash.Dash:
             "Sonic the Hedgehog",
         )
 
-    summary, commander_turn_dist, creature_power_avg, interaction_summary = run_simulations(
-        cards, commander, num_games=1000, max_turns=10, log_dir="logs", verbose=True
+    summary, commander_turn_dist, creature_power_avg, interaction_summary, _ = run_simulations(
+        cards, commander, num_games=1000, max_turns=10, log_dir=None, verbose=False
     )
+
+    # Extract new meaningful metrics
+    deck_power = interaction_summary.get('Deck Power Summary', {})
+    top_impact_cards = interaction_summary.get('Top Impact Cards', [])
+    worst_impact_cards = interaction_summary.get('Worst Impact Cards', [])
+    best_hands = interaction_summary.get('Best Opening Hands', [])
+    worst_hands = interaction_summary.get('Worst Opening Hands', [])
 
     app = dash.Dash(__name__)
     colours = ["W", "U", "B", "R", "G", "C", "Any"]
@@ -195,6 +202,117 @@ def create_dashboard_app(archidekt_id: int | None = None) -> dash.Dash:
         style_cell={"padding": "5px", "textAlign": "center"},
     )
 
+    # ==================================================================================
+    # NEW: MEANINGFUL METRICS TABLES
+    # ==================================================================================
+
+    # Card Impact Analysis Table
+    impact_df = pd.DataFrame(top_impact_cards[:15] if top_impact_cards else [])
+    if not impact_df.empty:
+        impact_df = impact_df[['card_name', 'appearances', 'avg_damage', 'overall_impact']]
+        impact_df.columns = ['Card Name', 'Games', 'Avg Damage', 'Impact %']
+        impact_df['Status'] = impact_df['Impact %'].apply(
+            lambda x: '🔥 KEEP' if x > 10 else '✓ Good' if x > 0 else '⚠ Avg'
+        )
+
+    impact_table = dash_table.DataTable(
+        columns=[{"name": i, "id": i} for i in impact_df.columns] if not impact_df.empty else [],
+        data=impact_df.to_dict("records") if not impact_df.empty else [],
+        style_table={"overflowX": "auto"},
+        style_cell={"padding": "8px", "textAlign": "left"},
+        style_data_conditional=[
+            {
+                'if': {'filter_query': '{Impact %} > 10'},
+                'backgroundColor': '#d4edda',
+                'color': '#155724',
+                'fontWeight': 'bold'
+            },
+            {
+                'if': {'filter_query': '{Impact %} < 0'},
+                'backgroundColor': '#f8d7da',
+                'color': '#721c24'
+            }
+        ]
+    )
+
+    # Worst Cards Table
+    worst_df = pd.DataFrame(worst_impact_cards[-10:] if worst_impact_cards else [])
+    if not worst_df.empty:
+        worst_df = worst_df[['card_name', 'appearances', 'avg_damage', 'overall_impact']]
+        worst_df.columns = ['Card Name', 'Games', 'Avg Damage', 'Impact %']
+        worst_df['Status'] = worst_df['Impact %'].apply(
+            lambda x: '❌ CUT' if x < -10 else '⚠ Weak' if x < 0 else '○ Meh'
+        )
+
+    worst_table = dash_table.DataTable(
+        columns=[{"name": i, "id": i} for i in worst_df.columns] if not worst_df.empty else [],
+        data=worst_df.to_dict("records") if not worst_df.empty else [],
+        style_table={"overflowX": "auto"},
+        style_cell={"padding": "8px", "textAlign": "left"},
+        style_data_conditional=[
+            {
+                'if': {'filter_query': '{Impact %} < -10'},
+                'backgroundColor': '#f8d7da',
+                'color': '#721c24',
+                'fontWeight': 'bold'
+            }
+        ]
+    )
+
+    # Best Opening Hands Table
+    best_hands_data = []
+    for i, hand_data in enumerate(best_hands[:5], 1):
+        best_hands_data.append({
+            'Rank': f"#{i}",
+            'Damage': f"{hand_data['damage']:.1f}",
+            'Power': f"{hand_data['peak_power']:.1f}",
+            'Cards': ', '.join(hand_data['hand'][:4]) + ('...' if len(hand_data['hand']) > 4 else '')
+        })
+
+    best_hands_table = dash_table.DataTable(
+        columns=[{"name": i, "id": i} for i in ['Rank', 'Damage', 'Power', 'Cards']],
+        data=best_hands_data,
+        style_table={"overflowX": "auto"},
+        style_cell={"padding": "8px", "textAlign": "left"},
+        style_cell_conditional=[
+            {'if': {'column_id': 'Cards'}, 'width': '60%'},
+        ],
+        style_data_conditional=[
+            {
+                'if': {'column_id': 'Rank'},
+                'backgroundColor': '#d4edda',
+                'fontWeight': 'bold'
+            }
+        ]
+    )
+
+    # Worst Opening Hands Table
+    worst_hands_data = []
+    for i, hand_data in enumerate(worst_hands[:5], 1):
+        worst_hands_data.append({
+            'Rank': f"#{i}",
+            'Damage': f"{hand_data['damage']:.1f}",
+            'Power': f"{hand_data['peak_power']:.1f}",
+            'Cards': ', '.join(hand_data['hand'][:4]) + ('...' if len(hand_data['hand']) > 4 else '')
+        })
+
+    worst_hands_table = dash_table.DataTable(
+        columns=[{"name": i, "id": i} for i in ['Rank', 'Damage', 'Power', 'Cards']],
+        data=worst_hands_data,
+        style_table={"overflowX": "auto"},
+        style_cell={"padding": "8px", "textAlign": "left"},
+        style_cell_conditional=[
+            {'if': {'column_id': 'Cards'}, 'width': '60%'},
+        ],
+        style_data_conditional=[
+            {
+                'if': {'column_id': 'Rank'},
+                'backgroundColor': '#f8d7da',
+                'fontWeight': 'bold'
+            }
+        ]
+    )
+
     # Layout of the app
     app.layout = html.Div(
         children=[
@@ -213,6 +331,113 @@ def create_dashboard_app(archidekt_id: int | None = None) -> dash.Dash:
                     ),
                 ],
                 style={"width": "300px", "margin-bottom": "20px"},
+            ),
+
+            # ==================================================================================
+            # DECK POWER SUMMARY - KPI CARDS
+            # ==================================================================================
+            html.H2("📊 Deck Power Summary", style={"margin-top": "30px"}),
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.H4("Avg Damage", style={"color": "#666"}),
+                            html.H2(f"{deck_power.get('Avg Total Damage', 0):.1f}", style={"color": "#007bff"}),
+                            html.P("(10 turns)", style={"color": "#999"}),
+                        ],
+                        style={
+                            "width": "18%",
+                            "display": "inline-block",
+                            "padding": "20px",
+                            "margin": "10px",
+                            "border": "2px solid #007bff",
+                            "border-radius": "10px",
+                            "text-align": "center",
+                            "background": "#f8f9fa"
+                        }
+                    ),
+                    html.Div(
+                        [
+                            html.H4("Avg Power", style={"color": "#666"}),
+                            html.H2(f"{deck_power.get('Avg Peak Power', 0):.1f}", style={"color": "#28a745"}),
+                            html.P("(peak board)", style={"color": "#999"}),
+                        ],
+                        style={
+                            "width": "18%",
+                            "display": "inline-block",
+                            "padding": "20px",
+                            "margin": "10px",
+                            "border": "2px solid #28a745",
+                            "border-radius": "10px",
+                            "text-align": "center",
+                            "background": "#f8f9fa"
+                        }
+                    ),
+                    html.Div(
+                        [
+                            html.H4("Commander Turn", style={"color": "#666"}),
+                            html.H2(f"{deck_power.get('Avg Commander Cast Turn', 0):.1f}" if deck_power.get('Avg Commander Cast Turn') else "N/A", style={"color": "#ffc107"}),
+                            html.P("(average)", style={"color": "#999"}),
+                        ],
+                        style={
+                            "width": "18%",
+                            "display": "inline-block",
+                            "padding": "20px",
+                            "margin": "10px",
+                            "border": "2px solid #ffc107",
+                            "border-radius": "10px",
+                            "text-align": "center",
+                            "background": "#f8f9fa"
+                        }
+                    ),
+                    html.Div(
+                        [
+                            html.H4("Best Game", style={"color": "#666"}),
+                            html.H2(f"{deck_power.get('Best Game Damage', 0):.0f}", style={"color": "#28a745"}),
+                            html.P("damage", style={"color": "#999"}),
+                        ],
+                        style={
+                            "width": "18%",
+                            "display": "inline-block",
+                            "padding": "20px",
+                            "margin": "10px",
+                            "border": "2px solid #28a745",
+                            "border-radius": "10px",
+                            "text-align": "center",
+                            "background": "#f8f9fa"
+                        }
+                    ),
+                    html.Div(
+                        [
+                            html.H4("Consistency", style={"color": "#666"}),
+                            html.H2(
+                                f"{deck_power.get('Consistency Score', 0):.1f}%",
+                                style={
+                                    "color": "#28a745" if deck_power.get('Consistency Score', 100) < 30
+                                    else "#ffc107" if deck_power.get('Consistency Score', 100) < 50
+                                    else "#dc3545"
+                                }
+                            ),
+                            html.P(
+                                "excellent" if deck_power.get('Consistency Score', 100) < 30
+                                else "moderate" if deck_power.get('Consistency Score', 100) < 50
+                                else "poor",
+                                style={"color": "#999"}
+                            ),
+                        ],
+                        style={
+                            "width": "18%",
+                            "display": "inline-block",
+                            "padding": "20px",
+                            "margin": "10px",
+                            "border": f"2px solid {'#28a745' if deck_power.get('Consistency Score', 100) < 30 else '#ffc107' if deck_power.get('Consistency Score', 100) < 50 else '#dc3545'}",
+                            "border-radius": "10px",
+                            "text-align": "center",
+                            "background": "#f8f9fa"
+                        }
+                    ),
+                ],
+                style={"margin-bottom": "30px"}
             ),
             html.Div(
                 [
@@ -256,11 +481,34 @@ def create_dashboard_app(archidekt_id: int | None = None) -> dash.Dash:
                     ),
                 ]
             ),
-            html.H3("Turn-by-Turn Averages:"),
+            # ==================================================================================
+            # CARD IMPACT ANALYSIS
+            # ==================================================================================
+            html.H2("🔥 Top Impact Cards - Which Cards Win Games", style={"margin-top": "40px"}),
+            html.P("Cards with positive impact score correlate with better performance when in opening hand."),
+            impact_table,
+
+            html.H2("❌ Worst Impact Cards - Consider Cutting These", style={"margin-top": "40px"}),
+            html.P("Cards with negative impact score correlate with worse performance."),
+            worst_table,
+
+            # ==================================================================================
+            # BEST & WORST OPENING HANDS
+            # ==================================================================================
+            html.H2("🏆 Best Opening Hands - What Winning Looks Like", style={"margin-top": "40px"}),
+            best_hands_table,
+
+            html.H2("💀 Worst Opening Hands - Hands That Struggle", style={"margin-top": "40px"}),
+            worst_hands_table,
+
+            # ==================================================================================
+            # TURN-BY-TURN METRICS
+            # ==================================================================================
+            html.H2("📈 Turn-by-Turn Metrics", style={"margin-top": "40px"}),
             table,
-            html.H3("Average Creature Power"),
+            html.H3("Average Creature Power", style={"margin-top": "30px"}),
             power_table,
-            html.H3("Deck Card Names"),
+            html.H3("Deck Card Names", style={"margin-top": "30px"}),
             deck_cards_table,
             # html.Div([html.Span(name, style={"margin-right": "10px"}) for name in deck_names],
             #  style={"margin-top": "20px", "display": "flex", "flex-wrap": "wrap"}),
