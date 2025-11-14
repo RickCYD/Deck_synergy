@@ -1,7 +1,7 @@
 # Unified Architecture Implementation Progress
 
 **Started:** 2025-11-14
-**Status:** Part 1 Complete - In Progress
+**Status:** Parts 1-2 Complete - In Progress
 
 ---
 
@@ -79,20 +79,108 @@ Overall: 9/10 cards parsed successfully (90%)
 
 ---
 
-## 🚧 In Progress: Parts 2-7
+## ✅ Completed: Part 2 - Trigger Registry
 
-### Part 2: Trigger Registry (Next)
-**Goal:** Central system to register and execute triggers
+### Files Created:
+1. **`src/core/trigger_registry.py`** (400+ lines) - Central trigger management system
+2. **`src/core/trigger_effects.py`** (450+ lines) - Standard effect creation functions
+3. **`src/core/__init__.py`** - Updated with Part 2 exports
+4. **`test_trigger_registry.py`** - Comprehensive test suite
 
-**Files to create:**
-- `src/core/trigger_registry.py` - Central trigger management
-- `src/core/trigger_effects.py` - Standard effect functions
+### What Works:
 
-**Key features:**
-- Register triggers from parsed cards
-- Execute triggers in simulation
-- Priority-based execution order
-- Condition checking
+#### Trigger Registry System:
+- **`TriggerRegistry`** class - Central registry for all game triggers
+  - Registers triggers from `CardAbilities` instances
+  - Organizes triggers by event type for fast lookup
+  - Executes triggers in priority order
+  - Handles card removal (unregistration)
+  - Applies static abilities
+
+- **`RegisteredTrigger`** dataclass - Registered trigger representation
+  - Tracks source card, event, condition, effect function
+  - Priority-based execution ordering
+  - Condition checking before execution
+  - Metadata for advanced handling
+
+#### Effect Creators:
+- ✅ **Rally effects** - All rally triggers supported
+  - `create_rally_haste_effect()` - Grant haste until EOT
+  - `create_rally_vigilance_effect()` - Grant vigilance until EOT
+  - `create_rally_lifelink_effect()` - Grant lifelink until EOT
+  - `create_rally_double_strike_effect()` - Grant double strike until EOT
+  - `create_rally_counter_effect()` - Add +1/+1 counters
+
+- ✅ **Prowess effects**
+  - `create_prowess_effect()` - Buff creature +1/+1 until EOT
+
+- ✅ **Token effects**
+  - `create_token_effect()` - Create token creatures
+
+- ✅ **Damage effects**
+  - `create_damage_effect()` - Deal damage to targets
+
+- ✅ **Card advantage effects**
+  - `create_draw_effect()` - Draw cards
+  - `create_scry_effect()` - Scry N
+
+- ✅ **Static effects**
+  - `create_anthem_effect()` - Continuous buff effects
+
+- ✅ **Effect factory functions**
+  - `create_effect_from_trigger()` - Converts TriggerAbility to executable function
+  - `create_effect_from_static()` - Converts StaticAbility to executable function
+
+### Test Results:
+```
+Cards Registered: 11
+Total Triggers: 13
+Total Static Abilities: 5
+
+Events Registered:
+  - cast_noncreature_spell: 7 triggers
+  - rally: 4 triggers
+  - attack: 1 trigger
+  - cast_or_copy_instant_sorcery: 1 trigger
+
+Rally Event Test:
+✅ 4 rally triggers executed
+✅ 4 effects created (haste, vigilance, lifelink, double strike)
+
+Prowess Event Test:
+✅ 7 prowess/spellslinger triggers executed
+✅ 7 effects created (buffs, tokens, card draw)
+
+Static Abilities Test:
+✅ 5 static abilities applied (anthems, keyword grants)
+
+Card Removal Test:
+✅ Card successfully unregistered
+✅ Trigger count decreased correctly
+
+Overall: All tests passed! (100% success rate)
+```
+
+### Benefits Achieved:
+1. **Centralized trigger management** - Single place to register/execute all triggers
+2. **Priority-based execution** - Triggers execute in correct order
+3. **Reusable effect functions** - Standard effects for common patterns
+4. **Condition checking** - Triggers only execute when conditions are met
+5. **Easy integration** - Clean API for BoardState integration (Part 3)
+6. **Comprehensive testing** - Validated with real deck cards
+
+### Integration Points for Part 3:
+The trigger registry creates "pending_effects" data structures that Part 3 (BoardState enhancement) will execute:
+- `grant_keyword` - Requires `BoardState.grant_keyword_until_eot()`
+- `buff_creature` - Requires `BoardState.buff_creature_until_eot()`
+- `add_counters` - Requires `BoardState.put_counter_on_creatures()`
+- `create_tokens` - Requires `BoardState.create_token()`
+- `deal_damage` - Requires `BoardState.deal_damage()`
+- `draw_cards` - Requires `BoardState.draw_cards()`
+
+---
+
+## 🚧 In Progress: Parts 3-7
 
 ### Part 3: Enhanced BoardState
 **Goal:** Add missing execution methods
@@ -155,18 +243,23 @@ Overall: 9/10 cards parsed successfully (90%)
 ## 📊 Overall Progress
 
 ### Completed:
-- [x] Part 1.1: Create unified card parser foundation (100%)
-- [x] Part 1.4: Test unified parser (100%)
+- [x] Part 1: Unified Card Parser (100%)
+  - [x] Data structures (TriggerAbility, StaticAbility, etc.)
+  - [x] Parser implementation (750+ lines)
+  - [x] Test suite (90% accuracy)
+- [x] Part 2: Trigger Registry (100%)
+  - [x] TriggerRegistry class (400+ lines)
+  - [x] Effect creators (450+ lines)
+  - [x] Test suite (100% pass rate)
 
 ### In Progress:
-- [ ] Part 2: Trigger Registry (0%)
 - [ ] Part 3: Enhanced BoardState (0%)
 - [ ] Part 4: Synergy→Simulation Bridge (0%)
 - [ ] Part 5: Testing Framework (0%)
 - [ ] Part 6: Documentation (0%)
 - [ ] Part 7: Migration (0%)
 
-**Overall Completion: 15% (Part 1 of 7)**
+**Overall Completion: 29% (Parts 1-2 of 7)**
 
 ---
 
@@ -252,4 +345,4 @@ Overall: 9/10 cards parsed successfully (90%)
 ---
 
 **Last Updated:** 2025-11-14
-**Next Milestone:** Part 2 - Trigger Registry
+**Next Milestone:** Part 3 - Enhanced BoardState
