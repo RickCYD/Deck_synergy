@@ -1,0 +1,120 @@
+Commander
+1 Sokka, Tenacious Tactician
+
+Anthem
+1 Banner of Kinship
+1 Chasm Guide
+1 Makindi Patrol
+1 Obelisk of Urd
+1 Resolute Blademaster
+1 Warleader's Call
+
+Artifact
+1 Bender's Waterskin
+1 White Lotus Tile
+
+Burn
+1 Impact Tremors
+
+Copy
+1 Jwari Shapeshifter
+1 Veyran, Voice of Duality
+
+Creature
+1 Aang, Swift Savior // Aang and La, Ocean's Fury
+1 Hakoda, Selfless Commander
+1 South Pole Voyager
+1 Ty Lee, Chi Blocker
+
+Draw
+1 Brainstorm
+1 Expressive Iteration
+1 Faithless Looting
+1 Frantic Search
+1 Frostcliff Siege
+1 Jeskai Ascendancy
+1 Kindred Discovery
+1 Opt
+1 Ponder
+1 Preordain
+1 Skullclamp
+1 Whirlwind of Thought
+
+Evasion
+1 Bria, Riptide Rogue
+
+Finisher
+1 Nexus of Fate
+
+Instant
+1 Redirect Lightning
+
+Land
+1 Adarkar Wastes
+1 Ally Encampment
+1 Battlefield Forge
+1 Clifftop Retreat
+1 Command Tower
+1 Evolving Wilds
+1 Exotic Orchard
+1 Glacial Fortress
+12 Island
+6 Mountain
+1 Mystic Monastery
+1 Path of Ancestry
+5 Plains
+1 Reliquary Tower
+1 Secluded Courtyard
+1 Shivan Reef
+1 Unclaimed Territory
+
+Lifegain
+1 Lantern Scout
+
+Protection
+1 Boros Charm
+1 Swiftfoot Boots
+
+Pump
+1 Balmor, Battlemage Captain
+
+Ramp
+1 Arcane Signet
+1 Azorius Signet
+1 Boros Signet
+1 Fellwar Stone
+1 Izzet Signet
+1 Patchwork Banner
+1 Sol Ring
+1 Storm-Kiln Artist
+1 Talisman of Conviction
+1 Talisman of Creativity
+1 Talisman of Progress
+1 Thought Vessel
+
+Recursion
+1 Narset, Enlightened Exile
+
+Removal
+1 Abrade
+1 An Offer You Can't Refuse
+1 Arcane Denial
+1 Blasphemous Act
+1 Counterspell
+1 Cyclonic Rift
+1 Dovin's Veto
+1 Farewell
+1 Lightning Bolt
+1 Narset's Reversal
+1 Negate
+1 Path to Exile
+1 Swords to Plowshares
+1 Tuktuk Scrapper
+
+Sorcery
+1 United Front
+
+Tokens
+1 Gideon, Ally of Zendikar
+1 Kykar, Wind's Fury
+1 Renewed Solidarity

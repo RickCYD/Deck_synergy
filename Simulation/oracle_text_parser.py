@@ -175,6 +175,49 @@ def parse_etb_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
             TriggeredAbility(event="etb", effect=make_token_effect(amount, stats), description=f"create {amount} {stats} token(s)")
         )
 
+    # Rally triggers (Ally-specific)
+    # Pattern: "Rally — Whenever this creature or another Ally enters"
+    # or: "Whenever this creature or another Ally enters the battlefield under your control"
+    rally_match = re.search(
+        r"(?:rally.*?whenever|whenever) (?:this creature or another ally|.*ally.*) enters",
+        lower
+    )
+    if rally_match:
+        # Rally grants a bonus to all creatures you control
+        # Common rally effects: gain haste, vigilance, lifelink, double strike, +1/+1
+
+        # Check for keyword grants
+        if 'gain haste' in lower or 'have haste' in lower:
+            def rally_haste(board_state):
+                if hasattr(board_state, 'grant_keyword_until_eot'):
+                    board_state.grant_keyword_until_eot('haste')
+            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_haste, description="rally: grant haste"))
+
+        elif 'gain vigilance' in lower or 'have vigilance' in lower:
+            def rally_vigilance(board_state):
+                if hasattr(board_state, 'grant_keyword_until_eot'):
+                    board_state.grant_keyword_until_eot('vigilance')
+            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_vigilance, description="rally: grant vigilance"))
+
+        elif 'gain lifelink' in lower or 'have lifelink' in lower:
+            def rally_lifelink(board_state):
+                if hasattr(board_state, 'grant_keyword_until_eot'):
+                    board_state.grant_keyword_until_eot('lifelink')
+            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_lifelink, description="rally: grant lifelink"))
+
+        elif 'gain double strike' in lower or 'have double strike' in lower:
+            def rally_double_strike(board_state):
+                if hasattr(board_state, 'grant_keyword_until_eot'):
+                    board_state.grant_keyword_until_eot('double strike')
+            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_double_strike, description="rally: grant double strike"))
+
+        # Check for +1/+1 counters
+        elif re.search(r'put.*\+1/\+1 counter', lower):
+            def rally_counters(board_state):
+                if hasattr(board_state, 'put_counter_on_creatures'):
+                    board_state.put_counter_on_creatures(1, 'all')
+            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_counters, description="rally: +1/+1 counter"))
+
     return triggers
 
 
