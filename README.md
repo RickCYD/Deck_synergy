@@ -137,64 +137,109 @@ For more details, see [COMBO_DETECTION.md](docs/COMBO_DETECTION.md)
 
 ## 🏗️ Project Structure
 
+> 🤖 **For AI Models & Developers:** See [AI_GUIDE.md](AI_GUIDE.md) for comprehensive navigation guide, entry points, and quick reference
+
 ```
 Deck_synergy/
-├── app.py                          # Main Dash application
+├── app.py                          # Main Dash application (3,387 lines)
 ├── requirements.txt                # Python dependencies
 ├── Procfile                        # Heroku deployment config
 │
-├── src/
-│   ├── api/
-│   │   ├── archidekt.py           # Archidekt API integration
-│   │   ├── scryfall.py            # Scryfall API integration
-│   │   ├── local_cards.py         # Local card cache management
-│   │   ├── recommendations.py     # Card recommendation engine
+├── src/                           # Modern, organized source code
+│   ├── api/                       # External API integrations
+│   │   ├── archidekt.py          # Archidekt API integration
+│   │   ├── scryfall.py           # Scryfall API integration
+│   │   ├── local_cards.py        # Local card cache (34K+ cards)
+│   │   ├── recommendations.py    # Card suggestion engine
 │   │   └── commander_spellbook.py # ⚡ Commander Spellbook combo API
 │   │
-│   ├── models/
-│   │   ├── deck.py                # Deck data model
-│   │   └── combo.py               # ⚡ Combo data models
+│   ├── models/                    # Data models
+│   │   ├── card.py               # Card data structure
+│   │   ├── deck.py               # Deck data model
+│   │   └── synergy.py            # Synergy relationship model
 │   │
-│   ├── synergy_engine/
-│   │   ├── analyzer.py            # Main synergy analysis orchestrator
-│   │   ├── combo_detector.py      # ⚡ Verified combo detection
-│   │   ├── etb_synergies.py       # ETB/flicker synergies
-│   │   ├── token_synergies.py     # Token generation/sacrifice
-│   │   ├── equipment_synergies.py # Equipment/voltron synergies
-│   │   ├── graveyard_synergies.py # Graveyard/recursion synergies
-│   │   ├── card_advantage_synergies.py  # Card draw/tutors
-│   │   ├── ramp_synergies.py      # Mana ramp synergies
-│   │   ├── tribal_synergies.py    # Tribal synergies
-│   │   └── combat_synergies.py    # Combat/damage synergies
+│   ├── synergy_engine/            # Synergy detection system (12 files)
+│   │   ├── analyzer.py           # Main orchestrator - START HERE
+│   │   ├── rules.py              # 69+ synergy detection rules
+│   │   ├── combo_detector.py     # ⚡ Verified combo detection
+│   │   ├── card_advantage_synergies.py  # Draw/tutor synergies
+│   │   ├── recursion_synergies.py       # Graveyard recursion
+│   │   ├── three_way_synergies.py       # Multi-card combos
+│   │   ├── categories.py                # Synergy categorization
+│   │   ├── embedding_analyzer.py        # ML-based semantic analysis
+│   │   └── ... (4 more files)
 │   │
-│   ├── utils/
-│   │   ├── graph_builder.py       # Cytoscape graph element builder
-│   │   ├── card_roles.py          # Role classification system
-│   │   ├── card_rankings.py       # Centrality-based rankings
-│   │   ├── card_advantage_extractors.py  # Extract tutor/draw mechanics
-│   │   └── deck_builder.py        # Commander deck builder
+│   ├── utils/                     # Extractors & utilities (14 files)
+│   │   ├── *_extractor.py        # Extract mechanics from card text
+│   │   ├── graph_builder.py      # Build synergy graphs
+│   │   ├── card_roles.py         # Role classification
+│   │   ├── fuzzy_search.py       # Card name search
+│   │   └── ... (10 more utilities)
 │   │
-│   └── simulation/
-│       └── mana_simulator.py      # Monte Carlo mana simulation
+│   └── simulation/                # Simulation wrappers
+│       ├── runner.py             # High-level simulation runner
+│       ├── metrics.py            # Deck power metrics
+│       └── wrapper.py            # Interface to Simulation/
+│
+├── Simulation/                    # Game simulation engine (legacy)
+│   ├── boardstate.py             # CORE: Board state & mechanics (194KB)
+│   ├── simulate_game.py          # CORE: Game simulation loop
+│   ├── oracle_text_parser.py     # Parse card abilities
+│   ├── deck_loader.py            # Load cards from various formats
+│   ├── turn_phases.py            # MTG turn phases
+│   ├── mtg_abilities.py          # Ability data structures
+│   └── tests/                    # Simulation tests (18 files)
 │
 ├── data/
 │   ├── cards/
-│   │   ├── cards-minimal.json     # Local card cache (34K cards)
-│   │   ├── cards-preprocessed.json # Synergy tags + roles
-│   │   └── oracle-cards.json      # Full Scryfall data (optional)
-│   │
-│   └── decks/                     # Saved deck analyses
+│   │   ├── cards-minimal.json           # 34MB - All MTG cards
+│   │   └── cards-preprocessed.json      # 17MB - Preprocessed with tags
+│   └── decks/                           # Saved deck analyses
 │
-├── scripts/
-│   ├── create_minimal_cards.py    # Build local card cache
-│   └── create_preprocessed_cards.py  # Build synergy tag database
+├── tests/                         # Synergy engine tests (10 files)
 │
-└── docs/
-    ├── ARCHITECTURE.md            # System design documentation
-    ├── SYNERGY_RULES.md          # All synergy categories explained
-    ├── USER_GUIDE.md             # Detailed usage guide
-    └── FEATURES.md               # Feature list and roadmap
+├── scripts/                       # Utility scripts (8 files)
+│   ├── create_minimal_cards.py   # Build card database
+│   ├── generate_embeddings.py    # ML embeddings
+│   └── verify_and_filter_cards.py # Data validation
+│
+├── docs/                          # Comprehensive documentation (43 files)
+│   ├── ARCHITECTURE.md           # System architecture
+│   ├── DEVELOPER.md              # Developer setup
+│   ├── USER_GUIDE.md             # User documentation
+│   ├── SYNERGY_SYSTEM.md         # Synergy detection guide
+│   ├── COMBO_DETECTION.md        # Combo finder docs
+│   ├── archives/                 # Historical analyses
+│   └── fixes/                    # Bug fix documentation
+│
+├── assets/                        # CSS and static files
+│
+├── README.md                      # This file - PROJECT OVERVIEW
+├── AI_GUIDE.md                    # 🤖 AI navigation & development guide
+├── QUICK_REFERENCE.md            # Quick command reference
+├── RELEASE_NOTES.md              # Version history
+├── PROVIDE_DECKLIST.md           # How to load a deck
+└── READY_FOR_YOUR_DECK.md        # User instructions
 ```
+
+### Key Files for Different Tasks
+
+**Understanding the Project:**
+- Start: `README.md` → `AI_GUIDE.md` → `docs/ARCHITECTURE.md`
+
+**Synergy System:**
+- Entry: `src/synergy_engine/analyzer.py`
+- Rules: `src/synergy_engine/rules.py`
+- Docs: `docs/SYNERGY_SYSTEM.md`
+
+**Game Simulation:**
+- Entry: `Simulation/simulate_game.py`
+- Mechanics: `Simulation/boardstate.py`
+- Docs: `docs/SIMULATION_ACCURACY_COMPLETE.md`
+
+**Dashboard:**
+- Main: `app.py` (search for `@app.callback`)
+- Graph: `src/utils/graph_builder.py`
 
 ## 🔧 Configuration
 
@@ -264,10 +309,16 @@ black src/ app.py
 
 ## 📝 Documentation
 
+### For Developers & AI Models
+- **[How to Use with AI](HOW_TO_USE_WITH_AI.md)**: 🎯 **NEW!** Learn how to effectively use AI coding assistants (Claude, ChatGPT, etc.) to improve this project
+- **[AI Navigation Guide](AI_GUIDE.md)**: 🤖 **START HERE** - Comprehensive guide for AI models and developers to quickly understand and navigate the codebase
 - **[Architecture Guide](docs/ARCHITECTURE.md)**: System design and data flow
-- **[Synergy Rules](docs/SYNERGY_RULES.md)**: Complete synergy category reference
-- **[User Guide](docs/USER_GUIDE.md)**: Detailed usage instructions
 - **[Development Guide](docs/DEVELOPMENT.md)**: Contributing and extending the app
+
+### For Users
+- **[User Guide](docs/USER_GUIDE.md)**: Detailed usage instructions
+- **[Synergy Rules](docs/SYNERGY_RULES.md)**: Complete synergy category reference
+- **[Combo Detection](docs/COMBO_DETECTION.md)**: How combo detection works
 
 ## 🐛 Troubleshooting
 
