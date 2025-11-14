@@ -98,6 +98,11 @@ class BoardState:
         self.removal_spells = []  # Track removal spells in hand
         self.instant_spells = []  # Track instant-speed spells for reactive play
 
+        # Tribal effects tracking
+        self.chosen_creature_types = {}  # Map of card name -> chosen creature type
+        self.tribal_buffs = []  # List of active tribal buff effects
+        self.tribal_triggers = []  # List of tribal triggered abilities
+
         # Command Tax tracking
         self.commander_cast_count = 0  # Times commander has been cast
         self.command_tax = 0  # Additional mana cost ({2} per previous cast)
@@ -4673,6 +4678,263 @@ class BoardState:
 
                     if verbose:
                         print(f"  → Dealt {damage} damage (landfall)")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # TRIBAL EFFECTS MECHANICS
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def choose_creature_type(self, card_name: str, verbose: bool = False) -> str:
+        """
+        Choose a creature type for a card that requires it.
+
+        This method analyzes the deck to choose the most common creature type.
+
+        Args:
+            card_name: Name of the card choosing a type
+            verbose: Whether to print debug output
+
+        Returns:
+            The chosen creature type as a string
+        """
+        # Count creature types in deck
+        type_counts = {}
+
+        # Check all creatures on battlefield
+        for creature in self.creatures:
+            creature_types = self._get_creature_types(creature)
+            for ctype in creature_types:
+                type_counts[ctype] = type_counts.get(ctype, 0) + 1
+
+        # Check hand
+        for card in self.hand:
+            if 'creature' in card.get('type_line', '').lower():
+                creature_types = self._get_creature_types(card)
+                for ctype in creature_types:
+                    type_counts[ctype] = type_counts.get(ctype, 0) + 1
+
+        # Check library for creatures
+        for card in self.library:
+            if 'creature' in card.get('type_line', '').lower():
+                creature_types = self._get_creature_types(card)
+                for ctype in creature_types:
+                    type_counts[ctype] = type_counts.get(ctype, 0) + 1
+
+        # Choose the most common type, or default to "Human" if none found
+        if type_counts:
+            chosen_type = max(type_counts.items(), key=lambda x: x[1])[0]
+        else:
+            chosen_type = "Human"  # Default fallback
+
+        # Store the chosen type
+        self.chosen_creature_types[card_name] = chosen_type
+
+        if verbose:
+            print(f"  → {card_name} chose creature type: {chosen_type}")
+            print(f"     (Type distribution: {dict(list(sorted(type_counts.items(), key=lambda x: -x[1]))[:5])})")
+
+        return chosen_type
+
+    def _get_creature_types(self, card: dict) -> list:
+        """
+        Extract creature types from a card.
+
+        Args:
+            card: Card dictionary
+
+        Returns:
+            List of creature type strings
+        """
+        type_line = card.get('type_line', '')
+
+        # Check if it's a creature
+        if 'creature' not in type_line.lower():
+            return []
+
+        # Check for changeling (has all types)
+        oracle_text = card.get('oracle_text', '').lower()
+        if 'changeling' in oracle_text or 'all creature types' in oracle_text:
+            # For simulation purposes, treat changelings as matching any type
+            return ['Changeling']
+
+        # Parse subtypes from type line
+        if '—' in type_line:
+            try:
+                _, subtypes_str = type_line.split('—', 1)
+                subtypes = [s.strip() for s in subtypes_str.split() if s.strip()]
+                return subtypes
+            except ValueError:
+                return []
+
+        return []
+
+    def apply_tribal_buff(self, card: dict, verbose: bool = False):
+        """
+        Apply tribal buff effects to creatures.
+
+        This checks if a card grants buffs to specific creature types
+        (e.g., "Goblins you control get +1/+1").
+
+        Args:
+            card: The card providing the buff
+            verbose: Whether to print debug output
+        """
+        oracle_text = card.get('oracle_text', '').lower()
+        card_name = card.get('name', 'Unknown')
+
+        import re
+
+        # Pattern for tribal anthem effects
+        # Examples: "Goblins you control get +1/+1", "Elves you control have haste"
+        buff_pattern = r'(\w+)s you control (?:get \+(\d+)/\+(\d+)|have (\w+))'
+        matches = re.findall(buff_pattern, oracle_text)
+
+        for match in matches:
+            creature_type = match[0].capitalize()
+            power_boost = int(match[1]) if match[1] else 0
+            toughness_boost = int(match[2]) if match[2] else 0
+            keyword = match[3] if match[3] else None
+
+            buff_effect = {
+                'source': card_name,
+                'creature_type': creature_type,
+                'power_boost': power_boost,
+                'toughness_boost': toughness_boost,
+                'keyword': keyword
+            }
+
+            self.tribal_buffs.append(buff_effect)
+
+            if verbose:
+                if keyword:
+                    print(f"  → {card_name} grants {keyword} to {creature_type}s")
+                else:
+                    print(f"  → {card_name} grants +{power_boost}/+{toughness_boost} to {creature_type}s")
+
+        # Pattern for "chosen type" effects
+        chosen_pattern = r'creatures? of the chosen type (?:get \+(\d+)/\+(\d+)|have (\w+))'
+        chosen_matches = re.findall(chosen_pattern, oracle_text)
+
+        if chosen_matches:
+            # Choose a type if not already chosen
+            if card_name not in self.chosen_creature_types:
+                self.choose_creature_type(card_name, verbose)
+
+            chosen_type = self.chosen_creature_types.get(card_name, "Human")
+
+            for match in chosen_matches:
+                power_boost = int(match[0]) if match[0] else 0
+                toughness_boost = int(match[1]) if match[1] else 0
+                keyword = match[2] if match[2] else None
+
+                buff_effect = {
+                    'source': card_name,
+                    'creature_type': chosen_type,
+                    'power_boost': power_boost,
+                    'toughness_boost': toughness_boost,
+                    'keyword': keyword,
+                    'is_chosen_type': True
+                }
+
+                self.tribal_buffs.append(buff_effect)
+
+                if verbose:
+                    if keyword:
+                        print(f"  → {card_name} grants {keyword} to {chosen_type}s (chosen type)")
+                    else:
+                        print(f"  → {card_name} grants +{power_boost}/+{toughness_boost} to {chosen_type}s (chosen type)")
+
+    def get_tribal_buffs_for_creature(self, creature: dict) -> tuple:
+        """
+        Calculate total tribal buffs for a creature.
+
+        Args:
+            creature: The creature to check
+
+        Returns:
+            Tuple of (power_boost, toughness_boost, keywords)
+        """
+        total_power = 0
+        total_toughness = 0
+        keywords = []
+
+        creature_types = self._get_creature_types(creature)
+
+        # Check if creature is a changeling (matches all types)
+        is_changeling = 'Changeling' in creature_types
+
+        for buff in self.tribal_buffs:
+            buff_type = buff['creature_type']
+
+            # Check if buff applies to this creature
+            if is_changeling or buff_type in creature_types:
+                total_power += buff['power_boost']
+                total_toughness += buff['toughness_boost']
+                if buff.get('keyword'):
+                    keywords.append(buff['keyword'])
+
+        return total_power, total_toughness, keywords
+
+    def trigger_tribal_cast(self, card: dict, verbose: bool = False):
+        """
+        Trigger tribal cast abilities when a creature spell is cast.
+
+        Examples: "Whenever you cast an Elf spell, draw a card"
+
+        Args:
+            card: The card being cast
+            verbose: Whether to print debug output
+        """
+        if 'creature' not in card.get('type_line', '').lower():
+            return
+
+        creature_types = self._get_creature_types(card)
+        card_name = card.get('name', 'Unknown')
+
+        # Check all tribal triggers
+        for trigger in self.tribal_triggers:
+            if trigger.get('trigger_type') != 'cast':
+                continue
+
+            trigger_types = trigger.get('creature_types', [])
+            trigger_source = trigger.get('source', 'Unknown')
+
+            # Check if this creature matches the trigger
+            matches = False
+            if 'chosen' in trigger_types:
+                # Check if any of this creature's types match a chosen type
+                for chosen_type in self.chosen_creature_types.values():
+                    if chosen_type in creature_types:
+                        matches = True
+                        break
+            else:
+                # Check for specific types
+                for ctype in creature_types:
+                    if ctype in trigger_types:
+                        matches = True
+                        break
+
+            if matches:
+                effect = trigger.get('effect', 'unknown')
+
+                if verbose:
+                    print(f"  → {trigger_source} triggered by casting {card_name}")
+
+                # Apply the trigger effect
+                if 'draw' in effect.lower():
+                    self.draw_cards(1)
+                    if verbose:
+                        print(f"     Drew 1 card")
+                elif 'damage' in effect.lower():
+                    # Parse damage amount
+                    import re
+                    damage_match = re.search(r'(\d+) damage', effect)
+                    if damage_match:
+                        damage = int(damage_match.group(1))
+                        alive_opps = [o for o in self.opponents if o['is_alive']]
+                        if alive_opps:
+                            alive_opps[0]['life_total'] -= damage
+                            if verbose:
+                                print(f"     Dealt {damage} damage")
 
 
 class Mana_utils:
