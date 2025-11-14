@@ -135,9 +135,24 @@ Example combo display:
 
 For more details, see [COMBO_DETECTION.md](docs/COMBO_DETECTION.md)
 
-## 🏗️ Project Structure
+## 🤖 AI-Friendly Documentation
 
-> 🤖 **For AI Models & Developers:** See [AI_GUIDE.md](AI_GUIDE.md) for comprehensive navigation guide, entry points, and quick reference
+**This project is optimized for AI-assisted development!** We've created comprehensive guides to help AI models understand and contribute to the codebase:
+
+| Guide | Purpose | When to Use |
+|-------|---------|-------------|
+| **[AI_GUIDE_FOR_MODELS.md](AI_GUIDE_FOR_MODELS.md)** | 🎯 **START HERE** - Complete navigation guide with file responsibilities, MTG rules locations, architecture patterns, and common tasks | Understanding the project, finding specific code, adding features |
+| **[PROJECT_MAP.md](PROJECT_MAP.md)** | ⚡ Quick reference - File lookup table and decision trees | Fast lookups, "where do I change X?" questions |
+| **[CONTRIBUTING_FOR_AI.md](CONTRIBUTING_FOR_AI.md)** | 📚 Step-by-step feature addition tutorials with complete code examples | Adding synergies, mechanics, dashboard features, API integrations |
+
+### Quick Links for AI Models
+
+- **Add a new synergy?** → See [CONTRIBUTING_FOR_AI.md#1-adding-a-new-synergy-type](CONTRIBUTING_FOR_AI.md#1-adding-a-new-synergy-type)
+- **Add a game mechanic?** → See [CONTRIBUTING_FOR_AI.md#3-adding-a-new-game-mechanic-to-simulation](CONTRIBUTING_FOR_AI.md#3-adding-a-new-game-mechanic-to-simulation)
+- **Where are MTG rules?** → See [AI_GUIDE_FOR_MODELS.md#mtg-rules-location](AI_GUIDE_FOR_MODELS.md#mtg-rules-location)
+- **Which file handles X?** → See [PROJECT_MAP.md](PROJECT_MAP.md)
+
+## 🏗️ Project Structure
 
 ```
 Deck_synergy/
@@ -310,10 +325,11 @@ black src/ app.py
 ## 📝 Documentation
 
 ### For Developers & AI Models
-- **[How to Use with AI](HOW_TO_USE_WITH_AI.md)**: 🎯 **NEW!** Learn how to effectively use AI coding assistants (Claude, ChatGPT, etc.) to improve this project
-- **[AI Navigation Guide](AI_GUIDE.md)**: 🤖 **START HERE** - Comprehensive guide for AI models and developers to quickly understand and navigate the codebase
+- **[AI_GUIDE_FOR_MODELS.md](AI_GUIDE_FOR_MODELS.md)**: 🤖 **START HERE** - Complete guide for AI models to navigate and contribute
+- **[PROJECT_MAP.md](PROJECT_MAP.md)**: ⚡ Quick file lookup and decision trees
+- **[CONTRIBUTING_FOR_AI.md](CONTRIBUTING_FOR_AI.md)**: 📚 Step-by-step tutorials for adding features
 - **[Architecture Guide](docs/ARCHITECTURE.md)**: System design and data flow
-- **[Development Guide](docs/DEVELOPMENT.md)**: Contributing and extending the app
+- **[Development Guide](docs/DEVELOPER.md)**: Contributing and extending the app
 
 ### For Users
 - **[User Guide](docs/USER_GUIDE.md)**: Detailed usage instructions
