@@ -11,6 +11,13 @@ from src.utils.damage_extractors import classify_damage_effect
 from src.synergy_engine.card_advantage_synergies import CARD_ADVANTAGE_SYNERGY_RULES
 from src.utils.token_extractors import extract_token_creation, extract_token_type_preferences
 from src.utils.recursion_extractors import extract_treasure_tokens
+from src.utils.tribal_extractors import (
+    extract_cares_about_chosen_type,
+    extract_cares_about_same_type,
+    extract_tribal_payoffs,
+    get_creature_types,
+    extract_is_changeling
+)
 
 # Cache for damage classifications to avoid recomputing for same cards
 _damage_classification_cache = {}
@@ -335,6 +342,287 @@ def detect_tribal_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             'category': 'benefits',
             'subcategory': 'tribal'
         }
+
+    return None
+
+
+def detect_tribal_chosen_type_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect synergies involving "choose a creature type" effects.
+
+    Examples:
+    - Door of Destinies + any creatures
+    - Coat of Arms + tribal deck
+    - Radiant Destiny + creature deck
+    """
+    # Extract tribal payoffs for both cards
+    card1_payoffs = extract_tribal_payoffs(card1)
+    card2_payoffs = extract_tribal_payoffs(card2)
+
+    card1_is_creature = 'creature' in card1.get('type_line', '').lower()
+    card2_is_creature = 'creature' in card2.get('type_line', '').lower()
+
+    # Card1 cares about chosen type, card2 is a creature
+    if card1_payoffs['chosen_type']['cares_about_chosen_type'] and card2_is_creature:
+        effect_type = card1_payoffs['chosen_type']['effect_type']
+        value = 3.5  # Strong synergy because chosen type effects are powerful
+
+        description = f"{card1['name']} can choose {card2['name']}'s creature type"
+        if effect_type == 'anthem':
+            description += " for a stat boost"
+            value = 4.0
+        elif effect_type == 'cost_reduction':
+            description += " for cost reduction"
+            value = 3.5
+        elif effect_type in ['cast_trigger', 'etb_trigger']:
+            description += " to trigger its ability"
+            value = 4.0
+
+        return {
+            'name': 'Chosen Type Synergy',
+            'description': description,
+            'value': value,
+            'category': 'benefits',
+            'subcategory': 'tribal'
+        }
+
+    # Card2 cares about chosen type, card1 is a creature
+    if card2_payoffs['chosen_type']['cares_about_chosen_type'] and card1_is_creature:
+        effect_type = card2_payoffs['chosen_type']['effect_type']
+        value = 3.5
+
+        description = f"{card2['name']} can choose {card1['name']}'s creature type"
+        if effect_type == 'anthem':
+            description += " for a stat boost"
+            value = 4.0
+        elif effect_type == 'cost_reduction':
+            description += " for cost reduction"
+            value = 3.5
+        elif effect_type in ['cast_trigger', 'etb_trigger']:
+            description += " to trigger its ability"
+            value = 4.0
+
+        return {
+            'name': 'Chosen Type Synergy',
+            'description': description,
+            'value': value,
+            'category': 'benefits',
+            'subcategory': 'tribal'
+        }
+
+    return None
+
+
+def detect_tribal_same_type_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect synergies involving "same type" or "share a creature type" effects.
+
+    Examples:
+    - Adaptive Automaton + creatures of same type
+    - Metallic Mimic + creatures of same type
+    - Cavern of Souls + creature spells
+    """
+    # Extract tribal payoffs
+    card1_payoffs = extract_tribal_payoffs(card1)
+    card2_payoffs = extract_tribal_payoffs(card2)
+
+    # Get creature types
+    card1_types = get_creature_types(card1)
+    card2_types = get_creature_types(card2)
+
+    card1_is_creature = 'creature' in card1.get('type_line', '').lower()
+    card2_is_creature = 'creature' in card2.get('type_line', '').lower()
+
+    # Handle Changelings (have all creature types)
+    card1_is_changeling = extract_is_changeling(card1)
+    card2_is_changeling = extract_is_changeling(card2)
+
+    # Card1 cares about same type, card2 is a creature
+    if card1_payoffs['same_type']['cares_about_same_type'] and card2_is_creature:
+        effect_type = card1_payoffs['same_type']['effect_type']
+        value = 3.5
+
+        description = f"{card1['name']} benefits creatures that share types with {card2['name']}"
+        if effect_type == 'anthem':
+            description = f"{card1['name']} buffs creatures sharing types with {card2['name']}"
+            value = 4.0
+        elif effect_type == 'etb_trigger':
+            description = f"{card1['name']} triggers when creatures share types with {card2['name']}"
+            value = 3.5
+
+        return {
+            'name': 'Same Type Synergy',
+            'description': description,
+            'value': value,
+            'category': 'benefits',
+            'subcategory': 'tribal'
+        }
+
+    # Card2 cares about same type, card1 is a creature
+    if card2_payoffs['same_type']['cares_about_same_type'] and card1_is_creature:
+        effect_type = card2_payoffs['same_type']['effect_type']
+        value = 3.5
+
+        description = f"{card2['name']} benefits creatures that share types with {card1['name']}"
+        if effect_type == 'anthem':
+            description = f"{card2['name']} buffs creatures sharing types with {card1['name']}"
+            value = 4.0
+        elif effect_type == 'etb_trigger':
+            description = f"{card2['name']} triggers when creatures share types with {card1['name']}"
+            value = 3.5
+
+        return {
+            'name': 'Same Type Synergy',
+            'description': description,
+            'value': value,
+            'category': 'benefits',
+            'subcategory': 'tribal'
+        }
+
+    # Changeling synergies - changelings work with all tribal cards
+    if card1_is_changeling and (card2_payoffs['tribal_lord']['is_tribal_lord'] or
+                                 card2_payoffs['tribal_trigger']['has_tribal_trigger']):
+        return {
+            'name': 'Changeling Synergy',
+            'description': f"{card1['name']} is a Changeling and benefits from {card2['name']}'s tribal effects",
+            'value': 4.5,  # Changelings are very strong with tribal cards
+            'category': 'benefits',
+            'subcategory': 'tribal'
+        }
+
+    if card2_is_changeling and (card1_payoffs['tribal_lord']['is_tribal_lord'] or
+                                 card1_payoffs['tribal_trigger']['has_tribal_trigger']):
+        return {
+            'name': 'Changeling Synergy',
+            'description': f"{card2['name']} is a Changeling and benefits from {card1['name']}'s tribal effects",
+            'value': 4.5,
+            'category': 'benefits',
+            'subcategory': 'tribal'
+        }
+
+    return None
+
+
+def detect_tribal_trigger_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect synergies between tribal triggers and creatures.
+
+    Examples:
+    - "Whenever you cast an Elf spell" + Elf creatures
+    - "Whenever a Goblin enters" + Goblin token makers
+    """
+    card1_payoffs = extract_tribal_payoffs(card1)
+    card2_payoffs = extract_tribal_payoffs(card2)
+
+    card1_types = get_creature_types(card1)
+    card2_types = get_creature_types(card2)
+
+    card1_is_creature = 'creature' in card1.get('type_line', '').lower()
+    card2_is_creature = 'creature' in card2.get('type_line', '').lower()
+
+    # Card1 has tribal trigger, card2 is relevant creature
+    if card1_payoffs['tribal_trigger']['has_tribal_trigger']:
+        trigger_types = card1_payoffs['tribal_trigger']['creature_types']
+        trigger_type = card1_payoffs['tribal_trigger']['trigger_type']
+
+        # Check if trigger is for "chosen" type and card2 is a creature
+        if 'chosen' in trigger_types and card2_is_creature:
+            value = 3.5
+            if trigger_type == 'cast':
+                description = f"{card1['name']} triggers when you cast creatures like {card2['name']}"
+                value = 4.0
+            elif trigger_type == 'etb':
+                description = f"{card1['name']} triggers when creatures like {card2['name']} enter"
+                value = 4.0
+            else:
+                description = f"{card1['name']} triggers with creatures like {card2['name']}"
+
+            return {
+                'name': 'Tribal Trigger Synergy',
+                'description': description,
+                'value': value,
+                'category': 'combo',
+                'subcategory': 'tribal'
+            }
+
+        # Check if trigger is for specific type that card2 has
+        if card2_types and any(t in trigger_types for t in card2_types):
+            matching_type = next(t for t in card2_types if t in trigger_types)
+            value = 4.0
+
+            if trigger_type == 'cast':
+                description = f"{card1['name']} triggers when you cast {matching_type}s like {card2['name']}"
+                value = 4.5
+            elif trigger_type == 'etb':
+                description = f"{card1['name']} triggers when {matching_type}s like {card2['name']} enter"
+                value = 4.5
+            elif trigger_type == 'dies':
+                description = f"{card1['name']} triggers when {matching_type}s like {card2['name']} die"
+                value = 4.0
+            elif trigger_type == 'attacks':
+                description = f"{card1['name']} triggers when {matching_type}s like {card2['name']} attack"
+                value = 4.0
+            else:
+                description = f"{card1['name']} has tribal synergy with {card2['name']}"
+
+            return {
+                'name': 'Tribal Trigger Synergy',
+                'description': description,
+                'value': value,
+                'category': 'combo',
+                'subcategory': 'tribal'
+            }
+
+    # Card2 has tribal trigger, card1 is relevant creature (reverse check)
+    if card2_payoffs['tribal_trigger']['has_tribal_trigger']:
+        trigger_types = card2_payoffs['tribal_trigger']['creature_types']
+        trigger_type = card2_payoffs['tribal_trigger']['trigger_type']
+
+        if 'chosen' in trigger_types and card1_is_creature:
+            value = 3.5
+            if trigger_type == 'cast':
+                description = f"{card2['name']} triggers when you cast creatures like {card1['name']}"
+                value = 4.0
+            elif trigger_type == 'etb':
+                description = f"{card2['name']} triggers when creatures like {card1['name']} enter"
+                value = 4.0
+            else:
+                description = f"{card2['name']} triggers with creatures like {card1['name']}"
+
+            return {
+                'name': 'Tribal Trigger Synergy',
+                'description': description,
+                'value': value,
+                'category': 'combo',
+                'subcategory': 'tribal'
+            }
+
+        if card1_types and any(t in trigger_types for t in card1_types):
+            matching_type = next(t for t in card1_types if t in trigger_types)
+            value = 4.0
+
+            if trigger_type == 'cast':
+                description = f"{card2['name']} triggers when you cast {matching_type}s like {card1['name']}"
+                value = 4.5
+            elif trigger_type == 'etb':
+                description = f"{card2['name']} triggers when {matching_type}s like {card1['name']} enter"
+                value = 4.5
+            elif trigger_type == 'dies':
+                description = f"{card2['name']} triggers when {matching_type}s like {card1['name']} die"
+                value = 4.0
+            elif trigger_type == 'attacks':
+                description = f"{card2['name']} triggers when {matching_type}s like {card1['name']} attack"
+                value = 4.0
+            else:
+                description = f"{card2['name']} has tribal synergy with {card1['name']}"
+
+            return {
+                'name': 'Tribal Trigger Synergy',
+                'description': description,
+                'value': value,
+                'category': 'combo',
+                'subcategory': 'tribal'
+            }
 
     return None
 
@@ -5544,6 +5832,9 @@ ALL_RULES = [
     detect_sacrifice_synergy,
     detect_mana_color_synergy,
     detect_tribal_synergy,
+    detect_tribal_chosen_type_synergy,  # New: detects "choose a creature type" synergies
+    detect_tribal_same_type_synergy,     # New: detects "same type" and changeling synergies
+    detect_tribal_trigger_synergy,       # New: detects tribal triggered abilities
     detect_card_draw_synergy,
     detect_ramp_synergy,
     detect_type_matters_synergy,
