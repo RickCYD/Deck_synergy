@@ -154,7 +154,74 @@ What do you want to add?
    └─> Create in: src/api/ directory
 ```
 
-### 📝 Step-by-Step: Adding a New Synergy Type
+---
+
+## 🏗️ **IMPORTANT: Unified Architecture (NEW!)**
+
+**⚠️ READ THIS FIRST before adding mechanics or parsing oracle text!**
+
+As of Part 5 completion, this project has a **unified architecture** for card parsing, trigger execution, and synergy detection. This is the **RECOMMENDED** approach for all new development.
+
+### 🎯 What is the Unified Architecture?
+
+A comprehensive system that:
+1. **Parses cards once** - Single source of truth (`src/core/card_parser.py`)
+2. **Registers triggers** - Central trigger management (`src/core/trigger_registry.py`)
+3. **Executes effects** - Rally, prowess, tokens all work (`Simulation/boardstate_extensions.py`)
+4. **Detects synergies** - Using parsed abilities (`src/core/synergy_simulation_bridge.py`)
+
+### 📖 Complete Guides:
+
+| Document | Purpose | When to Use |
+|----------|---------|-------------|
+| **`UNIFIED_ARCHITECTURE_GUIDE.md`** | Complete architecture overview | Understanding the system |
+| **`ADDING_NEW_MECHANICS_CHECKLIST.md`** | Step-by-step guide | Adding new MTG mechanics |
+| **`IMPLEMENTATION_PROGRESS.md`** | Implementation details | Technical reference |
+| **`tests/test_end_to_end_unified_system.py`** | Working example | See it in action |
+
+### ✅ Use Unified Architecture For:
+
+- Adding NEW mechanics (Landfall, Cascade, Storm, etc.)
+- Parsing oracle text for triggers or abilities
+- Synergy detection that involves triggers
+- Making triggers execute in simulation
+- Anything that needs consistent card data
+
+### Example: Before vs After
+
+**Before (OLD way - DON'T do this):**
+```python
+# Creating new extractor file ❌
+src/utils/landfall_extractors.py
+
+def extract_landfall_triggers(card):
+    text = card.get('oracle_text', '')
+    if 'landfall' in text.lower():
+        return True
+    return False
+```
+
+**After (NEW way - DO this):**
+```python
+# Add to unified parser ✅
+src/core/card_parser.py
+
+class UnifiedCardParser:
+    def _parse_landfall_triggers(self, text, type_line):
+        """Parse landfall triggers."""
+        # Returns TriggerAbility objects
+        # Automatically works in synergies AND simulation
+```
+
+### 🚀 Quick Start:
+
+1. **Read** `UNIFIED_ARCHITECTURE_GUIDE.md` (5-10 min overview)
+2. **Follow** `ADDING_NEW_MECHANICS_CHECKLIST.md` (step-by-step)
+3. **Test** using patterns from `tests/test_end_to_end_unified_system.py`
+
+---
+
+### 📝 Step-by-Step: Adding a New Synergy Type (Legacy)
 
 **Example: Adding "Equipment Synergies"**
 

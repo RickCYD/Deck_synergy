@@ -6,10 +6,35 @@ Extracts token-related mechanics from MTG cards:
 - Token doublers (effects that double token creation)
 - Anthems (effects that buff all creatures/tokens)
 - Token synergies (effects that trigger on token creation)
+
+MIGRATION NOTICE:
+==================
+This module uses legacy regex-based extraction. For new code, consider using
+the unified parser instead:
+
+    from src.core.card_parser import UnifiedCardParser
+    parser = UnifiedCardParser()
+    abilities = parser.parse_card(card)
+
+    # Check token creation with simple flag:
+    if abilities.creates_tokens:
+        # Use token triggers from abilities.triggers
+
+See UNIFIED_ARCHITECTURE_GUIDE.md for details.
+
+The functions in this file are maintained for backward compatibility.
 """
 
 import re
+import warnings
 from typing import Dict, List, Optional, Tuple
+
+# Optional: Import unified parser for recommended path
+try:
+    from src.core.card_parser import UnifiedCardParser
+    _UNIFIED_PARSER_AVAILABLE = True
+except ImportError:
+    _UNIFIED_PARSER_AVAILABLE = False
 
 
 def extract_token_creation(card: Dict) -> Dict:
