@@ -1,13 +1,53 @@
+"""
+Oracle Text Parser (Legacy)
+
+MIGRATION NOTICE:
+==================
+This module contains legacy oracle text parsing functions.
+
+For new code, use the unified parser instead:
+
+    from src.core.card_parser import UnifiedCardParser
+    parser = UnifiedCardParser()
+    abilities = parser.parse_card(card)
+
+    # Access parsed data directly:
+    abilities.triggers       # All triggers
+    abilities.keywords       # All keywords
+    abilities.is_ramp        # Ramp detection
+    abilities.has_etb        # ETB triggers
+
+The unified parser provides:
+- Single source of truth
+- Consistent data format
+- Better performance (caching)
+- Easier to maintain and extend
+
+See UNIFIED_ARCHITECTURE_GUIDE.md for migration guide.
+
+The functions in this file are maintained for backward compatibility.
+"""
+
 import re
 import ast
 import json
 import os
+import warnings
 from mtg_abilities import ActivatedAbility, TriggeredAbility
 
 try:  # optional dependency for experimental GPT-based parsing
     from openai import OpenAI
 except Exception:  # pragma: no cover - library may be absent in tests
     OpenAI = None
+
+# Optional: Import unified parser for recommended path
+try:
+    import sys
+    sys.path.insert(0, '/home/user/Deck_synergy')
+    from src.core.card_parser import UnifiedCardParser
+    _UNIFIED_PARSER_AVAILABLE = True
+except ImportError:
+    _UNIFIED_PARSER_AVAILABLE = False
 
 
 _WORD_NUM = {

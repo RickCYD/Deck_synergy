@@ -1,3 +1,27 @@
+
+
+MIGRATION NOTICE:
+==================
+This module uses legacy regex-based extraction. For new code, consider using
+the unified parser instead:
+
+    from src.core.card_parser import UnifiedCardParser
+
+import warnings
+
+# Optional: Import unified parser for recommended path
+try:
+    from src.core.card_parser import UnifiedCardParser
+    _UNIFIED_PARSER_AVAILABLE = True
+except ImportError:
+    _UNIFIED_PARSER_AVAILABLE = False
+    parser = UnifiedCardParser()
+    abilities = parser.parse_card(card)
+
+See UNIFIED_ARCHITECTURE_GUIDE.md for details.
+
+The functions in this file are maintained for backward compatibility.
+
 """
 ETB (Enter The Battlefield) Trigger Extractors
 

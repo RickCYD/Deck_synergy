@@ -1,9 +1,37 @@
 """
 Aristocrats Detection Utilities
 Shared between synergy engine and simulation for consistent detection
+
+MIGRATION NOTICE:
+==================
+This module uses legacy regex-based extraction. For new code, consider using
+the unified parser instead:
+
+    from src.core.card_parser import UnifiedCardParser
+    parser = UnifiedCardParser()
+    abilities = parser.parse_card(card)
+
+    # Check for death triggers:
+    death_triggers = [t for t in abilities.triggers if t.event == 'death']
+
+    # Check for sacrifice outlets:
+    sac_outlets = [a for a in abilities.activated_abilities
+                   if 'sacrifice' in a.cost.lower()]
+
+See UNIFIED_ARCHITECTURE_GUIDE.md for details.
+
+The functions in this file are maintained for backward compatibility.
 """
 
 import re
+import warnings
+
+# Optional: Import unified parser for recommended path
+try:
+    from src.core.card_parser import UnifiedCardParser
+    _UNIFIED_PARSER_AVAILABLE = True
+except ImportError:
+    _UNIFIED_PARSER_AVAILABLE = False
 
 
 def detect_death_drain_trigger(oracle_text: str) -> int:
