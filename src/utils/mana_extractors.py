@@ -1,6 +1,4 @@
-
-
-MIGRATION NOTICE:
+"""MIGRATION NOTICE:
 ==================
 This module uses legacy regex-based extraction. For new code, consider using
 the unified parser instead:
@@ -22,7 +20,6 @@ See UNIFIED_ARCHITECTURE_GUIDE.md for details.
 
 The functions in this file are maintained for backward compatibility.
 
-"""
 Mana Land Extractors
 Extract and classify different types of mana-producing lands from card text.
 """
