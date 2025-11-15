@@ -1,4 +1,6 @@
-
+"""
+Damage & Life Drain Extractors
+Extract and classify damage, burn, drain, and life gain effects from card text.
 
 MIGRATION NOTICE:
 ==================
@@ -6,6 +8,13 @@ This module uses legacy regex-based extraction. For new code, consider using
 the unified parser instead:
 
     from src.core.card_parser import UnifiedCardParser
+    parser = UnifiedCardParser()
+    abilities = parser.parse_card(card)
+
+See UNIFIED_ARCHITECTURE_GUIDE.md for details.
+
+The functions in this file are maintained for backward compatibility.
+"""
 
 import warnings
 
@@ -15,17 +24,6 @@ try:
     _UNIFIED_PARSER_AVAILABLE = True
 except ImportError:
     _UNIFIED_PARSER_AVAILABLE = False
-    parser = UnifiedCardParser()
-    abilities = parser.parse_card(card)
-
-See UNIFIED_ARCHITECTURE_GUIDE.md for details.
-
-The functions in this file are maintained for backward compatibility.
-
-"""
-Damage & Life Drain Extractors
-Extract and classify damage, burn, drain, and life gain effects from card text.
-"""
 
 import re
 from typing import Dict, List, Optional
