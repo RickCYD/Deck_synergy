@@ -1,5 +1,4 @@
-
-
+"""
 MIGRATION NOTICE:
 ==================
 This module uses legacy regex-based extraction. For new code, consider using
@@ -22,7 +21,6 @@ See UNIFIED_ARCHITECTURE_GUIDE.md for details.
 
 The functions in this file are maintained for backward compatibility.
 
-"""
 Recursion & Graveyard Mechanics Extractors
 
 Extracts recursion and graveyard-related mechanics from MTG cards:
