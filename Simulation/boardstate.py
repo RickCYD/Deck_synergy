@@ -88,6 +88,19 @@ class BoardState:
         self.removal_probability = self.base_removal_probability * deck_analysis['removal_modifier']
         self.board_wipe_probability = self.base_board_wipe_probability * deck_analysis['wipe_modifier']
 
+        # Synergy-aware AI: Check if commander has detailed archetype info
+        self.archetype_priorities = {}
+        self.primary_archetype = None
+        self.secondary_archetype = None
+        if hasattr(commander, 'deck_archetype') and commander.deck_archetype:
+            archetype_data = commander.deck_archetype
+            self.archetype_priorities = archetype_data.get('priorities', {})
+            self.primary_archetype = archetype_data.get('primary_archetype', None)
+            self.secondary_archetype = archetype_data.get('secondary_archetype', None)
+            if self.primary_archetype:
+                # Override the basic deck_archetype with the detected one for better accuracy
+                self.deck_archetype = self.primary_archetype
+
         self.wipes_survived = 0
         self.creatures_removed = 0
         self.reanimation_targets = []  # Creatures that died and could be reanimated
@@ -2652,7 +2665,7 @@ class BoardState:
         Calculate a priority score for casting this creature.
         Higher score = higher priority to cast.
 
-        Priority order:
+        Priority order (adjusted by deck archetype):
         1. Commander (highest priority)
         2. High-power legendary creatures (voltron targets)
         3. Creatures with attack triggers (draw, tokens)
@@ -2660,8 +2673,11 @@ class BoardState:
         5. Mana dorks
         6. Utility creatures
         7. Low-power creatures (weenies)
+
+        SYNERGY-AWARE: Priorities are boosted based on detected deck archetype.
         """
         score = 100  # Base score
+        oracle = getattr(creature, 'oracle_text', '').lower()
 
         # Priority 1: Commander
         if getattr(creature, 'is_commander', False):
@@ -2670,16 +2686,126 @@ class BoardState:
                 print(f"    Creature {creature.name}: Commander (+1000) = {score}")
             return score
 
+        # SYNERGY-AWARE LOGIC: Apply archetype-specific priorities
+        archetype_bonus = 0
+
+        # Aristocrats archetype: Prioritize death triggers and sacrifice outlets
+        if self.primary_archetype == 'Aristocrats':
+            # Check for death triggers
+            if 'dies' in oracle and ('opponent' in oracle or 'each player' in oracle):
+                death_bonus = self.archetype_priorities.get('death_triggers', 850)
+                archetype_bonus += death_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Aristocrats] Death trigger (+{death_bonus})")
+
+            # Check for sacrifice outlets
+            if 'sacrifice' in oracle and ':' in oracle:
+                sac_bonus = self.archetype_priorities.get('sacrifice_outlets', 900)
+                archetype_bonus += sac_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Aristocrats] Sacrifice outlet (+{sac_bonus})")
+
+            # Token generators are valuable as fodder
+            if 'create' in oracle and 'token' in oracle:
+                token_bonus = self.archetype_priorities.get('token_generators_aristocrats', 750)
+                archetype_bonus += token_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Aristocrats] Token generator (+{token_bonus})")
+
+        # Tokens archetype: Prioritize token generators and doublers
+        elif self.primary_archetype == 'Tokens':
+            # Token doublers (highest priority)
+            if 'twice that many' in oracle or 'double' in oracle and 'token' in oracle:
+                double_bonus = self.archetype_priorities.get('token_doublers', 950)
+                archetype_bonus += double_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Tokens] Token doubler (+{double_bonus})")
+
+            # Token generators
+            if 'create' in oracle and 'token' in oracle:
+                gen_bonus = self.archetype_priorities.get('token_generators', 800)
+                archetype_bonus += gen_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Tokens] Token generator (+{gen_bonus})")
+
+            # Anthems (buff all creatures)
+            if 'creatures you control get +' in oracle:
+                anthem_bonus = self.archetype_priorities.get('token_anthems', 700)
+                archetype_bonus += anthem_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Tokens] Anthem (+{anthem_bonus})")
+
+        # Go-Wide archetype: Prioritize small creatures and anthems
+        elif self.primary_archetype == 'Go-Wide':
+            base_power = int(getattr(creature, 'power', 0) or 0)
+
+            # Small creatures are good in go-wide
+            if base_power <= 2:
+                small_bonus = self.archetype_priorities.get('small_creatures', 700)
+                archetype_bonus += small_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Go-Wide] Small creature (+{small_bonus})")
+
+            # Anthems are critical
+            if 'creatures you control get +' in oracle:
+                anthem_bonus = self.archetype_priorities.get('anthem_effects', 850)
+                archetype_bonus += anthem_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Go-Wide] Anthem (+{anthem_bonus})")
+
+        # Counters archetype: Prioritize +1/+1 counters and proliferate
+        elif self.primary_archetype == 'Counters':
+            # Proliferate
+            if 'proliferate' in oracle:
+                prolif_bonus = self.archetype_priorities.get('proliferate', 900)
+                archetype_bonus += prolif_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Counters] Proliferate (+{prolif_bonus})")
+
+            # +1/+1 counter generation
+            if '+1/+1 counter' in oracle:
+                counter_bonus = self.archetype_priorities.get('counter_generators', 850)
+                archetype_bonus += counter_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Counters] Counter generator (+{counter_bonus})")
+
+            # Counter doublers
+            if 'double' in oracle and 'counter' in oracle:
+                double_bonus = self.archetype_priorities.get('counter_doublers', 950)
+                archetype_bonus += double_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Counters] Counter doubler (+{double_bonus})")
+
+        # Reanimator archetype: Prioritize mill/discard and big creatures
+        elif self.primary_archetype == 'Reanimator':
+            base_power = int(getattr(creature, 'power', 0) or 0)
+
+            # Big creatures to reanimate
+            if base_power >= 6:
+                big_bonus = self.archetype_priorities.get('big_creatures', 650)
+                archetype_bonus += big_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Reanimator] Big creature (+{big_bonus})")
+
+            # Mill/discard outlets
+            if 'mill' in oracle or 'discard' in oracle:
+                mill_bonus = self.archetype_priorities.get('mill_effects', 700)
+                archetype_bonus += mill_bonus
+                if verbose:
+                    print(f"    Creature {creature.name}: [Reanimator] Mill/discard (+{mill_bonus})")
+
+        score += archetype_bonus
+
         # Priority 2: Legendary creatures with good stats (potential voltron targets)
         if getattr(creature, 'is_legendary', False):
             base_power = int(getattr(creature, 'power', 0) or 0)
             if base_power >= 3:
-                score += 500 + (base_power * 10)
+                legendary_bonus = 500 + (base_power * 10)
+                score += legendary_bonus
                 if verbose:
-                    print(f"    Creature {creature.name}: Legendary with {base_power} power (+{500 + base_power * 10}) = {score}")
+                    print(f"    Creature {creature.name}: Legendary with {base_power} power (+{legendary_bonus}) = {score}")
 
         # Priority 3: Attack triggers (card draw, tokens, treasures)
-        oracle = getattr(creature, 'oracle_text', '').lower()
         if 'whenever' in oracle and 'attack' in oracle:
             if 'draw' in oracle:
                 score += 300
@@ -2732,9 +2858,9 @@ class BoardState:
         base_power = int(getattr(creature, 'power', 0) or 0)
         score += base_power * 5
 
-        # Priority 7: Penalty for low power/toughness (weenies)
+        # Priority 7: Penalty for low power/toughness (weenies) - UNLESS it's a go-wide deck
         base_toughness = int(getattr(creature, 'toughness', 0) or 0)
-        if base_power <= 1 and base_toughness <= 1:
+        if base_power <= 1 and base_toughness <= 1 and self.primary_archetype != 'Go-Wide':
             score -= 50
             if verbose:
                 print(f"    Creature {creature.name}: Weenie penalty (-50) = {score}")
