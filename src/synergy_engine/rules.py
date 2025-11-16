@@ -10,6 +10,7 @@ from functools import lru_cache
 from src.utils.damage_extractors import classify_damage_effect
 from src.synergy_engine.card_advantage_synergies import CARD_ADVANTAGE_SYNERGY_RULES
 from src.synergy_engine.ally_prowess_synergies import ALLY_PROWESS_SYNERGY_RULES
+from src.synergy_engine.spellslinger_engine_synergies import SPELLSLINGER_ENGINE_SYNERGY_RULES
 from src.utils.token_extractors import extract_token_creation, extract_token_type_preferences
 from src.utils.recursion_extractors import extract_treasure_tokens
 from src.utils.tribal_extractors import (
@@ -5929,4 +5930,4 @@ ALL_RULES = [
     detect_kicker_synergy,
     detect_overload_synergy,
     detect_miracle_synergy
-] + CARD_ADVANTAGE_SYNERGY_RULES + ALLY_PROWESS_SYNERGY_RULES  # Add card advantage synergies + Ally/Prowess synergies
+] + CARD_ADVANTAGE_SYNERGY_RULES + ALLY_PROWESS_SYNERGY_RULES + SPELLSLINGER_ENGINE_SYNERGY_RULES  # Add card advantage + Ally/Prowess + Spellslinger engine synergies
