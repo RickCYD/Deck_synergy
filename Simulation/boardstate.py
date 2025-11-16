@@ -396,6 +396,43 @@ class BoardState:
                 key = (id(card), id(trig))
                 self._attack_triggers_fired.add(key)
 
+        # Check for global triggers (Kindred Discovery, etc.)
+        if event == "etb" and 'Creature' in getattr(card, 'type', ''):
+            self._check_kindred_discovery_etb(card, verbose)
+        elif event == "attack":
+            self._check_kindred_discovery_attack(card, verbose)
+
+    def _check_kindred_discovery_etb(self, creature, verbose=False):
+        """Check if Kindred Discovery should trigger when a creature enters."""
+        for permanent in self.enchantments + self.artifacts:
+            name = getattr(permanent, 'name', '').lower()
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+
+            # Kindred Discovery: Draw a card when creature of chosen type enters
+            if 'kindred discovery' in name or (
+                'choose a creature type' in oracle and 'enters or attacks' in oracle and 'draw a card' in oracle
+            ):
+                # Simplified: Assume the chosen type matches (tribal decks)
+                # In a real implementation, we'd track the chosen type
+                self.draw_card(1, verbose=verbose)
+                if verbose:
+                    print(f"  → {permanent.name} triggers: Draw a card ({creature.name} entered)")
+
+    def _check_kindred_discovery_attack(self, creature, verbose=False):
+        """Check if Kindred Discovery should trigger when a creature attacks."""
+        for permanent in self.enchantments + self.artifacts:
+            name = getattr(permanent, 'name', '').lower()
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+
+            # Kindred Discovery: Draw a card when creature of chosen type attacks
+            if 'kindred discovery' in name or (
+                'choose a creature type' in oracle and 'enters or attacks' in oracle and 'draw a card' in oracle
+            ):
+                # Simplified: Assume the chosen type matches (tribal decks)
+                self.draw_card(1, verbose=verbose)
+                if verbose:
+                    print(f"  → {permanent.name} triggers: Draw a card ({creature.name} attacked)")
+
     def deal_damage(self, creature, amount: int, verbose: bool = False) -> int:
         """Deal ``amount`` of damage to ``creature`` and handle damage triggers.
 
@@ -3558,6 +3595,7 @@ class BoardState:
         - Cast triggers (Guttersnipe, Young Pyromancer, Talrand)
         - Prowess/Magecraft (temporary power buffs)
         - Spell copy effects (Thousand-Year Storm)
+        - Veyran trigger doubling
         """
         card_type = getattr(card, 'type', '').lower()
 
@@ -3568,6 +3606,22 @@ class BoardState:
         # Increment spell counters
         self.spells_cast_this_turn += 1
         self.instant_sorcery_cast_this_turn += 1
+
+        # Check if Veyran, Voice of Duality is on board (doubles magecraft triggers)
+        veyran_on_board = False
+        for permanent in self.creatures:
+            name = getattr(permanent, 'name', '').lower()
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            if 'veyran' in name or (
+                'casting or copying an instant or sorcery' in oracle and 'triggers an additional time' in oracle
+            ):
+                veyran_on_board = True
+                if verbose:
+                    print(f"  ⚡ Veyran, Voice of Duality is on board - doubling all magecraft triggers!")
+                break
+
+        # If Veyran is on board, triggers fire twice
+        trigger_multiplier = 2 if veyran_on_board else 1
 
         spell_damage = 0
         tokens_created = 0
@@ -3659,9 +3713,63 @@ class BoardState:
             if 'storm-kiln artist' in name or (
                 'instant or sorcery' in oracle and 'create a treasure' in oracle and 'cast' in oracle
             ):
-                self.create_treasure(verbose=verbose)
+                # Veyran doubles this trigger
+                for _ in range(trigger_multiplier):
+                    self.create_treasure(verbose=verbose)
                 if verbose:
-                    print(f"  → {permanent.name} creates a Treasure token")
+                    treasures_text = f"{trigger_multiplier} Treasure token{'s' if trigger_multiplier > 1 else ''}"
+                    print(f"  → {permanent.name} creates {treasures_text}")
+
+            # Kykar, Wind's Fury: Create 1/1 Spirit token when you cast noncreature spell
+            if 'kykar' in name or (
+                'noncreature spell' in oracle and 'create a 1/1' in oracle and 'spirit' in oracle
+            ):
+                # Veyran doubles this trigger
+                for _ in range(trigger_multiplier):
+                    self.create_token(
+                        token_name="Spirit Token",
+                        power=1,
+                        toughness=1,
+                        token_type="Spirit",
+                        keywords=['Flying'],
+                        verbose=verbose
+                    )
+                    tokens_created += 1
+                if verbose:
+                    tokens_text = f"{trigger_multiplier} Spirit token{'s' if trigger_multiplier > 1 else ''}"
+                    print(f"  → {permanent.name} creates {tokens_text} with flying")
+
+            # Whirlwind of Thought: Draw a card when you cast noncreature spell
+            if 'whirlwind of thought' in name or (
+                'noncreature spell' in oracle and 'draw a card' in oracle and 'cast' in oracle
+            ):
+                # Veyran doubles this trigger
+                for _ in range(trigger_multiplier):
+                    self.draw_card(1, verbose=verbose)
+                    cards_drawn += 1
+                if verbose:
+                    cards_text = f"{trigger_multiplier} card{'s' if trigger_multiplier > 1 else ''}"
+                    print(f"  → {permanent.name} draws {cards_text}")
+
+            # Jeskai Ascendancy: Untap creatures + +1/+1 buff when you cast noncreature spell
+            if 'jeskai ascendancy' in name or (
+                'noncreature spell' in oracle and 'untap' in oracle and 'creatures you control get +1/+1' in oracle
+            ):
+                # Untap all creatures
+                for creature in self.creatures:
+                    if hasattr(creature, 'tapped'):
+                        creature.tapped = False
+
+                # Apply +1/+1 until end of turn (temporary buff)
+                # This is already handled by prowess-style bonuses, but Jeskai Ascendancy
+                # is unique - it's a static buff until end of turn, not prowess
+                for creature in self.creatures:
+                    if creature not in self.prowess_bonus:
+                        self.prowess_bonus[creature] = 0
+                    self.prowess_bonus[creature] += 1
+
+                if verbose:
+                    print(f"  → {permanent.name} untaps all creatures and gives them +1/+1 until end of turn")
 
             # Primal Amulet / Primal Wellspring: Add charge counter, flip if 4+
             if 'primal amulet' in name:
