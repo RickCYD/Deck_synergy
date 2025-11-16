@@ -252,11 +252,20 @@ def simulate_deck_effectiveness(
     if detect_archetype:
         try:
             from src.analysis.deck_archetype_detector import detect_deck_archetype
-            archetype_info = detect_deck_archetype(cards, commander, verbose=verbose)
+            # Use new optimized detection with synergy graph analysis
+            # Note: deck_synergies parameter can be passed here if available for better detection
+            archetype_info = detect_deck_archetype(
+                cards=cards,
+                deck_synergies=None,  # Could pass deck synergies if available
+                commander=commander,
+                verbose=verbose
+            )
             if verbose:
                 print(f"\n[ARCHETYPE] Detected: {archetype_info['primary_archetype']}")
                 if archetype_info['secondary_archetype']:
                     print(f"[ARCHETYPE] Secondary: {archetype_info['secondary_archetype']}")
+                print(f"[ARCHETYPE] Confidence: {archetype_info['confidence']:.3f}")
+                print(f"[ARCHETYPE] Modularity: {archetype_info['metrics']['modularity']:.3f}")
         except Exception as e:
             print(f"Warning: Could not detect archetype: {e}")
             archetype_info = None
