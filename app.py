@@ -1224,11 +1224,11 @@ def update_graph(deck_file):
                         }),
                         html.Div([
                             html.Div([
-                                html.Div(f"#{i+1}. {card['name']}", style={
+                                html.Div(f"#{i+1}. {card.get('card_name', card.get('name', 'Unknown'))}", style={
                                     'fontSize': '10px',
                                     'marginBottom': '4px'
                                 }),
-                                html.Div(f"  Avg Damage: {card['avg_damage']:.1f} | Played: {card['times_played']} times", style={
+                                html.Div(f"  Avg Damage: {card.get('avg_damage', 0):.1f} | Played: {card.get('appearances', card.get('times_played', 0))} times", style={
                                     'fontSize': '9px',
                                     'color': '#666',
                                     'marginBottom': '6px',
