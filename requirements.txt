@@ -17,3 +17,8 @@ gunicorn==21.2.0
 
 # AI/ML
 anthropic==0.39.0
+
+# Graph analysis and ML for archetype detection
+networkx>=3.0
+scikit-learn>=1.0
+scipy>=1.7

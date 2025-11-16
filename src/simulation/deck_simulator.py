@@ -209,7 +209,8 @@ def simulate_deck_effectiveness(
     commander: Optional[Dict] = None,
     num_games: int = 100,
     max_turns: int = 10,
-    verbose: bool = False
+    verbose: bool = False,
+    detect_archetype: bool = True
 ) -> Dict:
     """
     Simulate a deck and return effectiveness metrics
@@ -220,12 +221,14 @@ def simulate_deck_effectiveness(
         num_games: Number of games to simulate
         max_turns: Maximum turns per game
         verbose: Print detailed logs
+        detect_archetype: If True, detect deck archetype and apply synergy-aware AI (default: True)
 
     Returns:
         Dictionary with simulation results including:
         - total_damage: List of average damage per turn
         - total_power: List of average power on board per turn
         - summary: Summary statistics
+        - archetype: Detected deck archetype (if detect_archetype=True)
     """
     # Ensure simulation imports are loaded
     try:
@@ -243,6 +246,29 @@ def simulate_deck_effectiveness(
                 'commander_avg_cast_turn': None
             }
         }
+
+    # Detect deck archetype BEFORE simulation (if enabled)
+    archetype_info = None
+    if detect_archetype:
+        try:
+            from src.analysis.deck_archetype_detector import detect_deck_archetype
+            # Use new optimized detection with synergy graph analysis
+            # Note: deck_synergies parameter can be passed here if available for better detection
+            archetype_info = detect_deck_archetype(
+                cards=cards,
+                deck_synergies=None,  # Could pass deck synergies if available
+                commander=commander,
+                verbose=verbose
+            )
+            if verbose:
+                print(f"\n[ARCHETYPE] Detected: {archetype_info['primary_archetype']}")
+                if archetype_info['secondary_archetype']:
+                    print(f"[ARCHETYPE] Secondary: {archetype_info['secondary_archetype']}")
+                print(f"[ARCHETYPE] Confidence: {archetype_info['confidence']:.3f}")
+                print(f"[ARCHETYPE] Modularity: {archetype_info['metrics']['modularity']:.3f}")
+        except Exception as e:
+            print(f"Warning: Could not detect archetype: {e}")
+            archetype_info = None
 
     # Convert cards to simulation format
     sim_cards = []
@@ -282,6 +308,12 @@ def simulate_deck_effectiveness(
             is_commander=True,
             is_legendary=True
         )
+
+    # Attach archetype info to commander so BoardState can access it
+    if archetype_info and sim_commander:
+        sim_commander.deck_archetype = archetype_info
+    else:
+        sim_commander.deck_archetype = None
 
     if not sim_cards:
         print("Error: No cards to simulate")
@@ -342,7 +374,8 @@ def simulate_deck_effectiveness(
             print("=" * 80)
             print(statistical_report["formatted_report"])
 
-        return {
+        # Build result dictionary
+        result = {
             'total_damage': total_damage,
             'combat_damage': combat_damage,  # NEW
             'drain_damage': drain_damage,  # NEW
@@ -374,6 +407,22 @@ def simulate_deck_effectiveness(
             'interaction_summary': interaction_summary,
             'statistical_report': statistical_report  # NEW: Include statistical analysis
         }
+
+        # Add archetype information if detected
+        if archetype_info:
+            result['archetype'] = {
+                'primary': archetype_info['primary_archetype'],
+                'secondary': archetype_info['secondary_archetype'],
+                'scores': archetype_info['archetype_scores'],
+                'priorities': archetype_info['priorities'],
+                'stats': archetype_info['deck_stats']
+            }
+            # Also add to summary for easy access in UI
+            result['summary']['detected_archetype'] = archetype_info['primary_archetype']
+            if archetype_info['secondary_archetype']:
+                result['summary']['secondary_archetype'] = archetype_info['secondary_archetype']
+
+        return result
 
     except Exception as e:
         import traceback

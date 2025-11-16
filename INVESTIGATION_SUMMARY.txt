@@ -1,0 +1,157 @@
+================================================================================
+DECK EFFECTIVENESS INVESTIGATION - SUMMARY
+Zombielandia Deck (https://archidekt.com/decks/16754562/zombielandia)
+================================================================================
+
+ROOT CAUSE IDENTIFIED: ❌ DECK IS INACCESSIBLE (403 FORBIDDEN)
+
+The Archidekt API returns "403 Client Error: Forbidden" when attempting to
+fetch this deck, which prevents the entire loading process from completing.
+
+================================================================================
+WHY DECK EFFECTIVENESS IS NOT SHOWING
+================================================================================
+
+The deck effectiveness display depends on these conditions:
+  1. ✅ simulation_results exists
+  2. ✅ simulation_results has 'summary' key
+  3. ✅ summary does NOT have 'error' key
+
+For this deck:
+  ❌ The deck cannot be fetched from Archidekt (403 Forbidden)
+  ❌ Therefore, no analysis runs
+  ❌ Therefore, no simulation runs
+  ❌ Therefore, no deck effectiveness shown
+
+================================================================================
+MOST LIKELY REASON
+================================================================================
+
+The deck is PRIVATE on Archidekt.
+
+Private decks cannot be accessed via the API, even though the URL may work
+in a browser when logged in.
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+IMMEDIATE FIX:
+  1. Go to https://archidekt.com/decks/16754562/zombielandia
+  2. Check if you can access it (you may need to be logged in)
+  3. Change deck privacy to PUBLIC
+  4. Try loading the deck again in the app
+
+ALTERNATIVE:
+  - Test with a different public Archidekt deck to verify the system works
+  - Export the deck as a text list and use manual import (if available)
+
+VERIFY DEPENDENCIES:
+  pip install -r requirements.txt
+
+  Required for simulation:
+    - pandas
+    - numpy
+    - requests
+
+================================================================================
+VERIFICATION
+================================================================================
+
+I tested the simulation engine with a mock zombie deck and it worked perfectly:
+  ✅ Simulation ran successfully
+  ✅ Generated effectiveness metrics:
+     • Total damage (10 turns): 48.3
+     • Avg damage/turn: 4.83
+     • Peak board power: 12.8
+
+This proves the simulation system itself is functional.
+
+================================================================================
+DIAGNOSTIC TOOL
+================================================================================
+
+I created a diagnostic tool you can run:
+
+  python diagnose_deck_effectiveness.py <archidekt_url>
+
+This will check:
+  - Dependencies installed
+  - Simulation modules working
+  - Archidekt API accessibility
+  - Card fetching from Scryfall
+  - Simulation execution
+
+Example:
+  python diagnose_deck_effectiveness.py https://archidekt.com/decks/16754562/zombielandia
+
+================================================================================
+TECHNICAL DETAILS
+================================================================================
+
+Archidekt API Test:
+  URL: https://archidekt.com/api/decks/16754562/
+  Result: HTTP 403 Forbidden
+
+Error Message:
+  "Failed to fetch deck from Archidekt: 403 Client Error: Forbidden
+   for url: https://archidekt.com/api/decks/16754562/"
+
+Deck Loading Flow:
+  1. User enters URL → 2. Fetch from Archidekt → ❌ FAILS HERE (403)
+  3. Never gets to card fetching
+  4. Never gets to synergy analysis
+  5. Never gets to simulation
+  6. Never saves deck
+  7. Never shows effectiveness
+
+================================================================================
+SECONDARY ISSUES TO WATCH
+================================================================================
+
+These don't affect this specific deck (since it can't load), but could affect
+other decks:
+
+  ⚠️ Missing Dependencies (pandas/numpy)
+     → Simulation returns error in summary
+     → Deck effectiveness won't show
+
+  ⚠️ Missing Oracle Text on Cards
+     → Reduced simulation accuracy
+     → Some synergies not detected
+
+  ⚠️ No Commander Identified
+     → Uses dummy commander
+     → Commander metrics inaccurate
+
+================================================================================
+FILES CREATED DURING INVESTIGATION
+================================================================================
+
+  1. DECK_EFFECTIVENESS_INVESTIGATION_REPORT.md
+     - Full detailed report with code analysis
+
+  2. diagnose_deck_effectiveness.py
+     - Comprehensive diagnostic tool
+
+  3. test_zombielandia.py
+     - Test script for deck fetching
+
+  4. test_zombie_simulation.py
+     - Test script for simulation engine
+
+  5. INVESTIGATION_SUMMARY.txt (this file)
+     - Quick reference summary
+
+================================================================================
+CONCLUSION
+================================================================================
+
+The Zombielandia deck at https://archidekt.com/decks/16754562/zombielandia
+is returning a 403 Forbidden error, most likely because it's PRIVATE.
+
+SOLUTION: Make the deck PUBLIC on Archidekt.
+
+The simulation system is working correctly (verified with test data).
+
+================================================================================

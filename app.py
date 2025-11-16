@@ -1060,13 +1060,49 @@ def update_graph(deck_file):
         if simulation_results and 'summary' in simulation_results:
             summary = simulation_results['summary']
             if 'error' not in summary:
+                # Extract all metrics
                 total_dmg = summary.get('total_damage_10_turns', 0)
+                combat_dmg = summary.get('combat_damage_10_turns', 0)
+                drain_dmg = summary.get('drain_damage_10_turns', 0)
                 avg_dmg = summary.get('avg_damage_per_turn', 0)
                 peak_power = summary.get('peak_power', 0)
                 commander_turn = summary.get('commander_avg_cast_turn')
+                num_games = summary.get('num_games_simulated', 0)
 
+                # Resource generation metrics
+                tokens_created = summary.get('total_tokens_created', 0)
+                cards_drawn = summary.get('total_cards_drawn', 0)
+                life_gained = summary.get('total_life_gained', 0)
+                life_lost = summary.get('total_life_lost', 0)
+
+                # Performance metrics
+                win_rate = summary.get('Win Rate %', 0)
+                games_won = summary.get('Games Won', 0)
+                consistency = summary.get('Consistency Score', 0)
+
+                # Interaction metrics
+                creatures_removed = summary.get('Avg Creatures Removed', 0)
+                wipes_survived = summary.get('Avg Board Wipes Survived', 0)
+
+                # Top cards
+                top_cards = summary.get('Top Impact Cards', [])
+                deck_power = summary.get('Deck Power Summary', {})
+
+                # Archetype detection
+                detected_archetype = summary.get('detected_archetype', None)
+                secondary_archetype = summary.get('secondary_archetype', None)
+
+                # Create metric display helper
+                def metric_row(label, value, color='#2e7d32'):
+                    return html.Div([
+                        html.Span(label, style={'fontSize': '10px', 'color': '#666', 'display': 'block'}),
+                        html.Span(f"{value}", style={'fontSize': '16px', 'fontWeight': 'bold', 'color': color})
+                    ], style={'marginBottom': '6px'})
+
+                # Build comprehensive dashboard with collapsible sections
                 sim_section_content = html.Div([
-                    html.H4("Deck Effectiveness", style={
+                    # Header
+                    html.H4("Deck Effectiveness Simulation", style={
                         'color': '#2e7d32',
                         'marginBottom': '8px',
                         'fontSize': '14px',
@@ -1074,23 +1110,162 @@ def update_graph(deck_file):
                         'borderBottom': '2px solid #4caf50',
                         'paddingBottom': '4px'
                     }),
+
+                    # Archetype Badge (if detected)
+                    html.Div([
+                        html.Span(f"🎯 {detected_archetype}", style={
+                            'fontSize': '11px',
+                            'fontWeight': 'bold',
+                            'color': '#fff',
+                            'backgroundColor': '#1976d2',
+                            'padding': '3px 8px',
+                            'borderRadius': '4px',
+                            'marginRight': '6px',
+                            'display': 'inline-block'
+                        }),
+                        html.Span(f"+ {secondary_archetype}", style={
+                            'fontSize': '10px',
+                            'color': '#666',
+                            'backgroundColor': '#e3f2fd',
+                            'padding': '3px 6px',
+                            'borderRadius': '3px',
+                            'display': 'inline-block'
+                        }) if secondary_archetype else None
+                    ], style={'marginBottom': '10px'}) if detected_archetype else None,
+
+                    # Primary Metrics (always visible)
                     html.Div([
                         html.Div([
-                            html.Span("Total Damage (10 turns)", style={'fontSize': '10px', 'color': '#666', 'display': 'block'}),
-                            html.Span(f"{total_dmg:.0f}", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#2e7d32'})
-                        ], style={'marginBottom': '8px'}),
+                            metric_row("Total Damage (10 turns)", f"{total_dmg:.0f}"),
+                            metric_row("Avg Damage/Turn", f"{avg_dmg:.1f}"),
+                        ], style={'display': 'inline-block', 'width': '48%', 'verticalAlign': 'top'}),
                         html.Div([
-                            html.Span("Avg Damage/Turn", style={'fontSize': '10px', 'color': '#666', 'display': 'block'}),
-                            html.Span(f"{avg_dmg:.1f}", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#2e7d32'})
-                        ], style={'marginBottom': '8px'}),
+                            metric_row("Peak Board Power", f"{peak_power:.0f}"),
+                            metric_row("Commander Avg Turn", f"{commander_turn:.1f}" if commander_turn else "N/A"),
+                        ], style={'display': 'inline-block', 'width': '48%', 'marginLeft': '4%', 'verticalAlign': 'top'}),
+                    ], style={'marginBottom': '12px'}),
+
+                    # Damage Breakdown Section
+                    html.Details([
+                        html.Summary("Damage Breakdown", style={
+                            'fontSize': '12px',
+                            'fontWeight': 'bold',
+                            'color': '#1976d2',
+                            'cursor': 'pointer',
+                            'marginBottom': '6px'
+                        }),
                         html.Div([
-                            html.Span("Peak Board Power", style={'fontSize': '10px', 'color': '#666', 'display': 'block'}),
-                            html.Span(f"{peak_power:.0f}", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#2e7d32'})
-                        ], style={'marginBottom': '8px'}),
+                            metric_row("Combat Damage", f"{combat_dmg:.0f}", '#d32f2f'),
+                            metric_row("Drain/Loss Damage", f"{drain_dmg:.0f}", '#7b1fa2'),
+                            html.Div(style={'borderBottom': '1px solid #ddd', 'margin': '6px 0'}),
+                            metric_row("Total Damage", f"{total_dmg:.0f}", '#2e7d32'),
+                        ], style={'paddingLeft': '12px'})
+                    ], style={'marginBottom': '10px'}),
+
+                    # Resource Generation Section
+                    html.Details([
+                        html.Summary("Resource Generation", style={
+                            'fontSize': '12px',
+                            'fontWeight': 'bold',
+                            'color': '#1976d2',
+                            'cursor': 'pointer',
+                            'marginBottom': '6px'
+                        }),
                         html.Div([
-                            html.Span("Commander Avg Turn", style={'fontSize': '10px', 'color': '#666', 'display': 'block'}),
-                            html.Span(f"{commander_turn:.1f}" if commander_turn else "N/A", style={'fontSize': '18px', 'fontWeight': 'bold', 'color': '#2e7d32'})
-                        ], style={'marginBottom': '0px'}),
+                            metric_row("Tokens Created", f"{tokens_created:.1f}", '#f57c00'),
+                            metric_row("Cards Drawn", f"{cards_drawn:.1f}", '#0288d1'),
+                            metric_row("Life Gained", f"+{life_gained:.1f}", '#388e3c'),
+                            metric_row("Life Lost", f"-{life_lost:.1f}", '#d32f2f'),
+                        ], style={'paddingLeft': '12px'})
+                    ], style={'marginBottom': '10px'}),
+
+                    # Performance Metrics Section
+                    html.Details([
+                        html.Summary("Performance & Consistency", style={
+                            'fontSize': '12px',
+                            'fontWeight': 'bold',
+                            'color': '#1976d2',
+                            'cursor': 'pointer',
+                            'marginBottom': '6px'
+                        }),
+                        html.Div([
+                            metric_row("Win Rate", f"{win_rate:.1f}%" if win_rate else "N/A", '#2e7d32'),
+                            metric_row("Games Won", f"{games_won}/{num_games}" if games_won else "N/A", '#2e7d32'),
+                            metric_row("Consistency Score", f"{consistency:.1f}%" if consistency else "N/A", '#1976d2'),
+                            html.Div([
+                                html.Span("(Lower = More Consistent)", style={'fontSize': '9px', 'color': '#999', 'fontStyle': 'italic'})
+                            ]),
+                        ], style={'paddingLeft': '12px'})
+                    ], style={'marginBottom': '10px'}),
+
+                    # Interaction Section
+                    html.Details([
+                        html.Summary("Opponent Interaction", style={
+                            'fontSize': '12px',
+                            'fontWeight': 'bold',
+                            'color': '#1976d2',
+                            'cursor': 'pointer',
+                            'marginBottom': '6px'
+                        }),
+                        html.Div([
+                            metric_row("Creatures Removed (Avg)", f"{creatures_removed:.2f}", '#d32f2f'),
+                            metric_row("Board Wipes Survived (Avg)", f"{wipes_survived:.2f}", '#388e3c'),
+                        ], style={'paddingLeft': '12px'})
+                    ], style={'marginBottom': '10px'}),
+
+                    # Top Impact Cards Section
+                    html.Details([
+                        html.Summary("Top Impact Cards", style={
+                            'fontSize': '12px',
+                            'fontWeight': 'bold',
+                            'color': '#1976d2',
+                            'cursor': 'pointer',
+                            'marginBottom': '6px'
+                        }),
+                        html.Div([
+                            html.Div([
+                                html.Div(f"#{i+1}. {card['name']}", style={
+                                    'fontSize': '10px',
+                                    'marginBottom': '4px'
+                                }),
+                                html.Div(f"  Avg Damage: {card['avg_damage']:.1f} | Played: {card['times_played']} times", style={
+                                    'fontSize': '9px',
+                                    'color': '#666',
+                                    'marginBottom': '6px',
+                                    'paddingLeft': '12px'
+                                })
+                            ]) for i, card in enumerate(top_cards[:5]) if isinstance(card, dict)
+                        ] if top_cards else [html.Div("No data available", style={'fontSize': '10px', 'color': '#999'})], style={'paddingLeft': '12px'})
+                    ], style={'marginBottom': '10px'}),
+
+                    # Deck Power Summary Section
+                    html.Details([
+                        html.Summary("Deck Power Summary", style={
+                            'fontSize': '12px',
+                            'fontWeight': 'bold',
+                            'color': '#1976d2',
+                            'cursor': 'pointer',
+                            'marginBottom': '6px'
+                        }),
+                        html.Div([
+                            metric_row(f"Best Game Damage", f"{deck_power.get('Best Game Damage', 0):.0f}", '#388e3c'),
+                            metric_row(f"Worst Game Damage", f"{deck_power.get('Worst Game Damage', 0):.0f}", '#d32f2f'),
+                            metric_row(f"Average Game Damage", f"{deck_power.get('Average Game Damage', 0):.1f}", '#1976d2'),
+                        ], style={'paddingLeft': '12px'}) if deck_power else html.Div("No data available", style={'fontSize': '10px', 'color': '#999', 'paddingLeft': '12px'})
+                    ], style={'marginBottom': '10px'}),
+
+                    # Games simulated footer
+                    html.Div([
+                        html.Span(f"Based on {num_games} simulated games", style={
+                            'fontSize': '9px',
+                            'color': '#999',
+                            'fontStyle': 'italic',
+                            'display': 'block',
+                            'textAlign': 'center',
+                            'marginTop': '8px',
+                            'borderTop': '1px solid #e0e0e0',
+                            'paddingTop': '6px'
+                        })
                     ])
                 ], style={
                     'backgroundColor': '#e8f5e9',
