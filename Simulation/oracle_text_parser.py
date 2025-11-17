@@ -890,3 +890,174 @@ def parse_mill_value(oracle_text: str, card_name: str = "") -> int:
         return 1  # Default to 1 if amount not specified
 
     return 0
+
+
+def parse_cast_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
+    """
+    Parse "whenever you cast" triggered abilities from oracle text.
+
+    Handles patterns like:
+    - "Whenever you cast a noncreature spell, ..."
+    - "Whenever you cast an instant or sorcery spell, ..."
+    - "Whenever you cast a spell, ..."
+
+    Common effects:
+    - Create tokens (Kykar, Storm-Kiln Artist)
+    - Draw cards (Whirlwind of Thought)
+    - Buff creatures (Balmor, Jeskai Ascendancy)
+    - +1/+1 to self (Veyran)
+
+    Args:
+        text: Card's oracle text
+
+    Returns:
+        List of TriggeredAbility objects for cast triggers
+    """
+    if not text:
+        return []
+
+    lower = text.lower()
+    triggers: list[TriggeredAbility] = []
+
+    # Pattern 1: "Whenever you cast a noncreature spell, create X token"
+    # Examples: Kykar, Whirlwind of Thought, Jeskai Ascendancy
+    if 'whenever you cast a noncreature spell' in lower or 'whenever you cast a noncreature' in lower:
+        # Check for token creation
+        token_match = re.search(
+            r'create (?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) (?:(\d+)/(\d+) )?([^.]*?)token',
+            lower
+        )
+        if token_match:
+            # Extract token count
+            token_text = token_match.group(0)
+            num_map = {'a': 1, 'an': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}
+
+            count = 1
+            for word, num in num_map.items():
+                if f'create {word}' in token_text:
+                    count = num
+                    break
+
+            # Extract power/toughness if present
+            power = int(token_match.group(1)) if token_match.group(1) else 1
+            toughness = int(token_match.group(2)) if token_match.group(2) else 1
+            stats = f"{power}/{toughness}"
+
+            def make_noncreature_token_effect(num_tokens, token_stats):
+                def effect(board_state):
+                    # This will be called by the simulation when a noncreature spell is cast
+                    if hasattr(board_state, 'create_tokens'):
+                        board_state.create_tokens(num_tokens, token_stats)
+                    elif hasattr(board_state, 'tokens_created_this_turn'):
+                        board_state.tokens_created_this_turn += num_tokens
+                return effect
+
+            triggers.append(
+                TriggeredAbility(
+                    event="cast_noncreature",
+                    effect=make_noncreature_token_effect(count, stats),
+                    description=f"create {count} {stats} token(s) when casting noncreature spell"
+                )
+            )
+
+        # Check for draw effect
+        if 'draw a card' in lower or 'draw one' in lower:
+            def draw_on_noncreature(board_state):
+                if hasattr(board_state, 'draw_card'):
+                    board_state.draw_card(1)
+
+            triggers.append(
+                TriggeredAbility(
+                    event="cast_noncreature",
+                    effect=draw_on_noncreature,
+                    description="draw a card when casting noncreature spell"
+                )
+            )
+
+        # Check for creature buff (Jeskai Ascendancy)
+        if 'creatures you control get +' in lower and 'untap' in lower:
+            buff_match = re.search(r'creatures you control get \+(\d+)/\+(\d+)', lower)
+            if buff_match:
+                power_buff = int(buff_match.group(1))
+                toughness_buff = int(buff_match.group(2))
+
+                def jeskai_buff(board_state, p=power_buff, t=toughness_buff):
+                    # Untap all creatures
+                    for creature in getattr(board_state, 'creatures', []):
+                        if hasattr(creature, 'tapped'):
+                            creature.tapped = False
+
+                    # Apply +X/+X buff (using prowess system)
+                    if hasattr(board_state, 'prowess_bonus'):
+                        for creature in getattr(board_state, 'creatures', []):
+                            if creature not in board_state.prowess_bonus:
+                                board_state.prowess_bonus[creature] = 0
+                            board_state.prowess_bonus[creature] += p
+
+                triggers.append(
+                    TriggeredAbility(
+                        event="cast_noncreature",
+                        effect=jeskai_buff,
+                        description=f"untap creatures and give +{power_buff}/+{toughness_buff} when casting noncreature"
+                    )
+                )
+
+    # Pattern 2: "Whenever you cast an instant or sorcery spell, ..."
+    # Examples: Storm-Kiln Artist, Balmor, Veyran
+    if 'whenever you cast an instant or sorcery' in lower or 'whenever you cast or copy an instant or sorcery' in lower:
+        # Check for token creation (Storm-Kiln Artist - Treasure tokens)
+        if 'treasure' in lower or ('token' in lower and 'artifact' in lower):
+            def create_treasure_on_spell(board_state):
+                if hasattr(board_state, 'create_treasure'):
+                    board_state.create_treasure(verbose=False)
+                elif hasattr(board_state, 'tokens_created_this_turn'):
+                    board_state.tokens_created_this_turn += 1
+
+            triggers.append(
+                TriggeredAbility(
+                    event="cast_instant_sorcery",
+                    effect=create_treasure_on_spell,
+                    description="create Treasure token when casting instant/sorcery"
+                )
+            )
+
+        # Check for creature buff (Balmor)
+        buff_match = re.search(r'creatures you control get \+(\d+)/\+(\d+)', lower)
+        if buff_match:
+            power_buff = int(buff_match.group(1))
+            toughness_buff = int(buff_match.group(2))
+
+            def balmor_buff(board_state, p=power_buff):
+                # Apply +X/+0 buff and trample
+                if hasattr(board_state, 'prowess_bonus'):
+                    for creature in getattr(board_state, 'creatures', []):
+                        if creature not in board_state.prowess_bonus:
+                            board_state.prowess_bonus[creature] = 0
+                        board_state.prowess_bonus[creature] += p
+                        # Grant trample until end of turn
+                        creature.has_trample = True
+
+            triggers.append(
+                TriggeredAbility(
+                    event="cast_instant_sorcery",
+                    effect=balmor_buff,
+                    description=f"creatures get +{power_buff}/+{toughness_buff} and trample when casting instant/sorcery"
+                )
+            )
+
+        # Check for self-buff (Veyran)
+        elif 'gets +' in lower and ('copy' in lower or 'veyran' in lower):
+            def veyran_buff(board_state):
+                # This would need to find Veyran and buff it
+                # Simplified: use prowess system
+                pass  # Veyran is complex, handle via prowess for now
+
+            triggers.append(
+                TriggeredAbility(
+                    event="cast_instant_sorcery",
+                    effect=veyran_buff,
+                    description="gets +1/+1 when casting/copying instant/sorcery"
+                )
+            )
+
+    return triggers

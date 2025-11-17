@@ -136,13 +136,22 @@ def convert_card_to_simulation_format(card_data: Dict):
             produces_colors = ['Any']
 
     # Check for keywords
-    has_haste = 'haste' in oracle_text.lower() or 'haste' in type_line.lower()
-    has_flash = 'flash' in oracle_text.lower()
-    has_trample = 'trample' in oracle_text.lower()
-    has_first_strike = 'first strike' in oracle_text.lower()
+    oracle_lower = oracle_text.lower()
+    type_lower = type_line.lower()
+
+    has_haste = 'haste' in oracle_lower or 'haste' in type_lower
+    has_flash = 'flash' in oracle_lower or 'flash' in type_lower
+    has_trample = 'trample' in oracle_lower or 'trample' in type_lower
+    has_first_strike = 'first strike' in oracle_lower and 'double strike' not in oracle_lower
+    has_flying = 'flying' in oracle_lower or 'flying' in type_lower
+    has_vigilance = 'vigilance' in oracle_lower or 'vigilance' in type_lower
+    has_lifelink = 'lifelink' in oracle_lower or 'lifelink' in type_lower
+    has_deathtouch = 'deathtouch' in oracle_lower or 'deathtouch' in type_lower
+    has_menace = 'menace' in oracle_lower or 'menace' in type_lower
+    is_unblockable = "can't be blocked" in oracle_lower or 'unblockable' in oracle_lower
 
     # Check for ETB tapped
-    etb_tapped = 'enters the battlefield tapped' in oracle_text.lower()
+    etb_tapped = 'enters the battlefield tapped' in oracle_lower
 
     # Check for ramp effects
     puts_land = 'search your library' in oracle_text.lower() and 'land' in oracle_text.lower()
@@ -161,24 +170,48 @@ def convert_card_to_simulation_format(card_data: Dict):
     # Check for legendary
     is_legendary = 'legendary' in type_line.lower()
 
-    # ARISTOCRATS: Parse death triggers and sacrifice outlets
+    # Parse triggered abilities from oracle text
+    from oracle_text_parser import (
+        parse_etb_triggers_from_oracle,
+        parse_attack_triggers_from_oracle,
+        parse_cast_triggers_from_oracle,
+        parse_direct_damage_from_oracle
+    )
+
+    triggered_abilities = []
+
+    # ETB triggers (includes token creation, rally triggers, draw, etc.)
+    etb_triggers = parse_etb_triggers_from_oracle(oracle_text)
+    if etb_triggers:
+        triggered_abilities.extend(etb_triggers)
+
+    # Attack triggers
+    attack_triggers = parse_attack_triggers_from_oracle(oracle_text)
+    if attack_triggers:
+        triggered_abilities.extend(attack_triggers)
+
+    # Cast triggers (whenever you cast spell triggers)
+    cast_triggers = parse_cast_triggers_from_oracle(oracle_text)
+    if cast_triggers:
+        triggered_abilities.extend(cast_triggers)
+
+    # Death triggers (aristocrats)
     death_triggers_result = parse_death_triggers_from_oracle(oracle_text)
     sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
 
     # Handle both old (int) and new (list) formats for death triggers
     if isinstance(death_triggers_result, list):
         death_trigger_value = len(death_triggers_result)  # Count of triggers
+        triggered_abilities.extend(death_triggers_result)  # Add to triggered_abilities list
     elif isinstance(death_triggers_result, (int, float)):
         death_trigger_value = int(death_triggers_result)
     else:
         death_trigger_value = 0
 
-    # DEBUG: Print aristocrats cards
-    if death_trigger_value > 0 or sacrifice_outlet:
-        print(f"  [ARISTOCRATS] {name}:")
-        print(f"    death_trigger_value={death_trigger_value}")
-        print(f"    sacrifice_outlet={sacrifice_outlet}")
-        print(f"    oracle_text={oracle_text[:100] if oracle_text else 'MISSING'}...")
+    # Parse direct damage for instants/sorceries
+    deals_damage = 0
+    if 'Instant' in type_line or 'Sorcery' in type_line:
+        deals_damage = parse_direct_damage_from_oracle(oracle_text, name)
 
     # Create Card object
     return Card(
@@ -195,9 +228,17 @@ def convert_card_to_simulation_format(card_data: Dict):
         has_flash=has_flash,
         has_trample=has_trample,
         has_first_strike=has_first_strike,
+        has_flying=has_flying,
+        has_vigilance=has_vigilance,
+        has_lifelink=has_lifelink,
+        has_deathtouch=has_deathtouch,
+        has_menace=has_menace,
+        is_unblockable=is_unblockable,
         is_legendary=is_legendary,
         puts_land=puts_land,
         draw_cards=draw_cards,
+        deals_damage=deals_damage,
+        triggered_abilities=triggered_abilities,
         oracle_text=oracle_text,
         death_trigger_value=death_trigger_value,
         sacrifice_outlet=sacrifice_outlet
