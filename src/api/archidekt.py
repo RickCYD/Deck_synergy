@@ -65,12 +65,45 @@ def fetch_deck_from_archidekt(url: str) -> Dict:
         # Extract deck ID
         deck_id = extract_deck_id(url)
 
-        # Archidekt API endpoint
-        api_url = f"https://archidekt.com/api/decks/{deck_id}/"
+        # Create a session for better compatibility
+        session = requests.Session()
 
-        # Fetch deck data
-        response = requests.get(api_url, timeout=30)
-        response.raise_for_status()
+        # Headers to mimic a browser request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Referer': f'https://archidekt.com/decks/{deck_id}/',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+        }
+
+        session.headers.update(headers)
+
+        # Try different API endpoint formats
+        api_urls = [
+            f"https://archidekt.com/api/decks/{deck_id}/",
+            f"https://archidekt.com/api/decks/{deck_id}/small/",
+            f"https://www.archidekt.com/api/decks/{deck_id}/",
+        ]
+
+        response = None
+        last_error = None
+
+        for api_url in api_urls:
+            try:
+                response = session.get(api_url, timeout=30)
+                response.raise_for_status()
+                break  # Success, exit loop
+            except requests.RequestException as e:
+                last_error = e
+                continue
+
+        if response is None or response.status_code != 200:
+            raise last_error or Exception("All API endpoint attempts failed")
 
         data = response.json()
 
