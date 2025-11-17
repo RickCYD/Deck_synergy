@@ -4,12 +4,19 @@ Quick Deck Analyzer - Parse and analyze a deck from text format
 Works around Archidekt API access issues
 """
 
-from src.api.local_cards import get_card_by_name
+from src.api.local_cards import get_card_by_name, load_local_database
 from src.models.deck import Deck
 from src.synergy_engine.analyzer import analyze_deck_synergies
-from src.analysis.weakness_detector import detect_weaknesses
+from src.analysis.weakness_detector import DeckWeaknessAnalyzer
 import sys
 import re
+
+# Load the local card database
+print("Loading card database...")
+if not load_local_database():
+    print("ERROR: Could not load card database")
+    sys.exit(1)
+print()
 
 
 def parse_deck_text(deck_text):
@@ -18,10 +25,24 @@ def parse_deck_text(deck_text):
     cards = []
     commander = None
 
+    # Common category headers to skip
+    category_headers = {
+        'commander', 'anthem', 'artifact', 'burn', 'copy', 'creature', 'draw',
+        'evasion', 'finisher', 'instant', 'land', 'lifegain', 'protection',
+        'pump', 'ramp', 'recursion', 'removal', 'sorcery', 'tokens',
+        'enchantment', 'planeswalker', 'utility', 'tribal', 'combo'
+    }
+
     for line in lines:
         line = line.strip()
         if not line or line.startswith('#') or line.startswith('//'):
             continue
+
+        # Skip category headers (lines with no number prefix)
+        if not re.match(r'^\d+', line):
+            # Check if it's a category header
+            if line.lower() in category_headers:
+                continue
 
         # Match patterns like:
         # "1 Card Name"
@@ -31,22 +52,24 @@ def parse_deck_text(deck_text):
         if match:
             quantity = int(match.group(1))
             card_name = match.group(2).strip()
-        else:
-            quantity = 1
-            card_name = line.strip()
 
-        # Get card data
-        card = get_card_by_name(card_name)
-        if card:
-            # First card is often commander in exports
-            if not commander and quantity == 1:
-                commander = card_name
-                card['is_commander'] = True
+            # Get card data
+            card = get_card_by_name(card_name)
+            if card:
+                # Mark commander
+                if not commander and 'commander' in deck_text.lower():
+                    # Look for commander in earlier lines
+                    pass
+                if quantity == 1 and not cards:  # First card
+                    commander = card_name
+                    card['is_commander'] = True
 
-            for _ in range(quantity):
-                cards.append(card)
-        else:
-            print(f"Warning: Could not find card '{card_name}'")
+                for _ in range(quantity):
+                    cards.append(card)
+            else:
+                # Only warn if it's not a category header
+                if card_name.lower() not in category_headers:
+                    print(f"Warning: Could not find card '{card_name}'")
 
     return cards, commander
 
@@ -69,20 +92,27 @@ def analyze_deck_from_text(deck_text, deck_name="Imported Deck"):
         print(f"✓ Commander: {commander}")
 
     # Create Deck object
-    deck = Deck(cards=cards, commander=commander, name=deck_name)
+    deck = Deck(deck_id='text_import', name=deck_name, cards=cards)
 
     # Analyze synergies
     print("\n" + "="*70)
     print("SYNERGY ANALYSIS")
     print("="*70)
 
-    synergies = analyze_deck_synergies(deck)
+    synergy_results = analyze_deck_synergies(cards, run_simulation=False)  # Don't run simulation by default
 
-    if synergies:
-        print(f"\n✓ Found {len(synergies)} synergies")
+    # Extract synergy list from results
+    if isinstance(synergy_results, dict):
+        two_way_synergies = synergy_results.get('two_way', {})
+        synergies_list = list(two_way_synergies.values()) if two_way_synergies else []
+    else:
+        synergies_list = []
+
+    if synergies_list:
+        print(f"\n✓ Found {len(synergies_list)} synergies")
 
         # Show top synergies
-        sorted_synergies = sorted(synergies, key=lambda x: x.get('strength', 0), reverse=True)
+        sorted_synergies = sorted(synergies_list, key=lambda x: x.get('strength', 0), reverse=True)
 
         print("\n🔥 Top 10 Synergies:")
         for i, syn in enumerate(sorted_synergies[:10], 1):
@@ -101,17 +131,30 @@ def analyze_deck_from_text(deck_text, deck_name="Imported Deck"):
     print("="*70)
 
     try:
-        weaknesses = detect_weaknesses(deck)
-        if weaknesses:
-            print(f"\n⚠️ Found {len(weaknesses)} potential weaknesses:\n")
-            for weakness in weaknesses:
-                print(f"• {weakness.get('type', 'Unknown')}: {weakness.get('description', '')}")
-                if 'suggestion' in weakness:
-                    print(f"  Suggestion: {weakness.get('suggestion')}")
-        else:
-            print("\n✓ No major weaknesses detected")
+        analyzer = DeckWeaknessAnalyzer()
+        weakness_analysis = analyzer.analyze_deck(cards)
+
+        if weakness_analysis.get('weaknesses'):
+            print(f"\n⚠️ Found {len(weakness_analysis['weaknesses'])} potential weaknesses:\n")
+            for weakness in weakness_analysis['weaknesses']:
+                print(f"• {weakness.get('role', 'Unknown')}: {weakness.get('description', '')}")
+
+        # Show role distribution
+        print("\n📊 Role Distribution:")
+        role_dist = weakness_analysis.get('role_distribution', {})
+        for role, count in sorted(role_dist.items()):
+            status = "✓" if count >= 8 else "⚠️"
+            print(f"  {status} {role.replace('_', ' ').title()}: {count}")
+
+        # Show suggestions
+        if weakness_analysis.get('suggestions'):
+            print("\n💡 Suggestions:")
+            for suggestion in weakness_analysis['suggestions'][:5]:
+                print(f"  • {suggestion}")
     except Exception as e:
         print(f"\n⚠️ Could not analyze weaknesses: {e}")
+        import traceback
+        traceback.print_exc()
 
     # Basic stats
     print("\n" + "="*70)
