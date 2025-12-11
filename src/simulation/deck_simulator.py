@@ -411,15 +411,16 @@ def simulate_deck_effectiveness(
         # Add archetype information if detected
         if archetype_info:
             result['archetype'] = {
-                'primary': archetype_info['primary_archetype'],
-                'secondary': archetype_info['secondary_archetype'],
-                'scores': archetype_info['archetype_scores'],
-                'priorities': archetype_info['priorities'],
-                'stats': archetype_info['deck_stats']
+                'primary': archetype_info.get('primary_archetype'),
+                'secondary': archetype_info.get('secondary_archetype'),
+                'scores': archetype_info.get('archetype_scores', {}),
+                'confidence': archetype_info.get('confidence', 0),
+                'metrics': archetype_info.get('metrics', {})
             }
             # Also add to summary for easy access in UI
-            result['summary']['detected_archetype'] = archetype_info['primary_archetype']
-            if archetype_info['secondary_archetype']:
+            if archetype_info.get('primary_archetype'):
+                result['summary']['detected_archetype'] = archetype_info['primary_archetype']
+            if archetype_info.get('secondary_archetype'):
                 result['summary']['secondary_archetype'] = archetype_info['secondary_archetype']
 
         return result
