@@ -1274,6 +1274,33 @@ def update_graph(deck_file):
                     'padding': '12px',
                     'marginBottom': '16px'
                 })
+            else:
+                # Simulation has error
+                error_msg = summary.get('error', 'Unknown error')
+                sim_section_content = html.Div([
+                    html.H4("Deck Effectiveness", style={'color': '#d32f2f', 'marginBottom': '8px', 'fontSize': '14px'}),
+                    html.P(f"Simulation error: {error_msg}", style={'color': '#666', 'fontSize': '12px'}),
+                    html.P("Try reloading the deck from the URL.", style={'color': '#999', 'fontSize': '11px', 'fontStyle': 'italic'})
+                ], style={
+                    'backgroundColor': '#ffebee',
+                    'border': '1px solid #ef9a9a',
+                    'borderRadius': '6px',
+                    'padding': '12px',
+                    'marginBottom': '16px'
+                })
+        else:
+            # No simulation results - deck may have been saved before simulation was available
+            sim_section_content = html.Div([
+                html.H4("Deck Effectiveness", style={'color': '#f57c00', 'marginBottom': '8px', 'fontSize': '14px'}),
+                html.P("No simulation data available.", style={'color': '#666', 'fontSize': '12px'}),
+                html.P("Reload this deck from its Archidekt URL to run the simulation.", style={'color': '#999', 'fontSize': '11px', 'fontStyle': 'italic'})
+            ], style={
+                'backgroundColor': '#fff3e0',
+                'border': '1px solid #ffcc80',
+                'borderRadius': '6px',
+                'padding': '12px',
+                'marginBottom': '16px'
+            })
 
         print(f"[UPDATE GRAPH] SUCCESS - Graph updated!")
 
