@@ -1120,6 +1120,13 @@ class BoardState:
         # PRIORITY 2: Apply +1/+1 counter effects (Cathars' Crusade)
         self.apply_etb_counter_effects(card, verbose=verbose)
 
+        # Apply drain from ETB triggers (Impact Tremors, Warleader's Call)
+        drain_on_etb = self.calculate_etb_drain()
+        if drain_on_etb > 0:
+            self.drain_damage_this_turn += drain_on_etb
+            if verbose:
+                print(f"  → ETB drain: {drain_on_etb} damage (Impact Tremors/Warleader's Call)")
+
         if verbose:
             print(f"Played creature: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -2063,6 +2070,13 @@ class BoardState:
 
         # Trigger ETB effects
         self._execute_triggers("etb", target, verbose)
+
+        # Apply drain from ETB triggers (Impact Tremors, Warleader's Call)
+        drain_on_etb = self.calculate_etb_drain()
+        if drain_on_etb > 0:
+            self.drain_damage_this_turn += drain_on_etb
+            if verbose:
+                print(f"  → ETB drain: {drain_on_etb} damage (Impact Tremors/Warleader's Call)")
 
         return True
 
