@@ -845,4 +845,13 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             print(f"Combat damage: {metrics['combat_damage'][turn]}")
             print("-" * 30)
 
+        # ─────────────────── WIN CONDITION CHECK ───────────────────
+        # Check if we've dealt enough damage to win (120 = 3 opponents × 40 life)
+        if metrics["game_won"] is None:
+            cumulative_damage = sum(metrics["combat_damage"][:turn+1]) + sum(metrics["drain_damage"][:turn+1])
+            if cumulative_damage >= 120:
+                metrics["game_won"] = turn
+                if verbose:
+                    print(f"🏆 WIN! Dealt {cumulative_damage} damage by turn {turn}")
+
     return metrics
