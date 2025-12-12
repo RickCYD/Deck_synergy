@@ -564,6 +564,27 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                     did_action = True
                     continue
 
+            # 3.5) play enchantments (Impact Tremors, Warleader's Call, anthems, etc.)
+            # Prioritize enchantments that benefit from creatures entering or boost creatures
+            enchantment = next(
+                (
+                    c
+                    for c in board.hand
+                    if "Enchantment" in c.type
+                    and "Creature" not in c.type  # Skip enchantment creatures (handled as creatures)
+                    and Mana_utils.can_pay(c.mana_cost, board.mana_pool)
+                ),
+                None,
+            )
+            if enchantment:
+                if board.play_card(enchantment, verbose=verbose):
+                    mana_spent_this_turn += parse_mana_cost(enchantment.mana_cost)
+                    if verbose:
+                        spent = parse_mana_cost(enchantment.mana_cost)
+                        print(f"Spent {spent} mana on {enchantment.name}")
+                    did_action = True
+                    continue
+
             # 4) play best castable creature (with strategic AI decision-making)
             creature = board.get_best_creature_to_cast(verbose=verbose)
 
