@@ -744,6 +744,9 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # In goldfish mode, all creatures attack and deal full damage (no blockers)
         # This measures deck's damage potential
         total_combat_damage = 0
+
+        # First pass: determine which creatures can attack
+        attackers = []
         for creature in board.creatures:
             # Initialize turns on board tracking if needed
             if not hasattr(creature, '_turns_on_board'):
@@ -751,9 +754,39 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
             # Only creatures without summoning sickness can attack
             can_attack = creature.has_haste or creature._turns_on_board >= 1
+            if can_attack:
+                attackers.append(creature)
+
+        # Check for Shared Animosity
+        has_shared_animosity = any(
+            'shared animosity' in getattr(e, 'name', '').lower()
+            for e in board.enchantments
+        )
+
+        # Second pass: calculate damage with anthem bonuses and Shared Animosity
+        for creature in board.creatures:
+            can_attack = creature in attackers
 
             if can_attack:
-                power = getattr(creature, 'power', 0) or 0
+                # Use effective power (includes anthem bonuses like Door of Destinies, Obelisk of Urd)
+                power = board.get_effective_power(creature)
+
+                # Shared Animosity: +1/+0 for each other attacking creature of same type
+                if has_shared_animosity:
+                    creature_type = getattr(creature, 'type', '').lower()
+                    shared_bonus = 0
+                    for other in attackers:
+                        if other is not creature:
+                            other_type = getattr(other, 'type', '').lower()
+                            # Check for shared creature type (simplified: check for common types)
+                            for ctype in ['ally', 'human', 'warrior', 'soldier', 'goblin', 'elf', 'zombie']:
+                                if ctype in creature_type and ctype in other_type:
+                                    shared_bonus += 1
+                                    break
+                    power += shared_bonus
+                    if verbose and shared_bonus > 0:
+                        print(f"    → {creature.name}: +{shared_bonus} from Shared Animosity")
+
                 total_combat_damage += power
                 if verbose:
                     print(f"    → {creature.name} attacks for {power} damage (turns_on_board={creature._turns_on_board})")
@@ -844,5 +877,14 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             )
             print(f"Combat damage: {metrics['combat_damage'][turn]}")
             print("-" * 30)
+
+        # ─────────────────── WIN CONDITION CHECK ───────────────────
+        # Check if we've dealt enough damage to win (120 = 3 opponents × 40 life)
+        if metrics["game_won"] is None:
+            cumulative_damage = sum(metrics["combat_damage"][:turn+1]) + sum(metrics["drain_damage"][:turn+1])
+            if cumulative_damage >= 120:
+                metrics["game_won"] = turn
+                if verbose:
+                    print(f"🏆 WIN! Dealt {cumulative_damage} damage by turn {turn}")
 
     return metrics

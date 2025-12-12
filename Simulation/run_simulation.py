@@ -112,6 +112,7 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
     total_creatures_removed = 0
     total_wipes_survived = 0
     games_won = 0
+    win_turns: List[int] = []  # Track which turn each game was won
 
     COLOURS = ["W", "U", "B", "R", "G", "C", "Any"]
     total_board_mana = {c: [0] * (max_turns + 1) for c in COLOURS}
@@ -171,6 +172,7 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
         total_wipes_survived += metrics.get("board_wipes_survived", 0)
         if metrics.get("game_won") is not None:
             games_won += 1
+            win_turns.append(metrics["game_won"])
 
         for name, p in metrics.get("creature_power", {}).items():
             total_creature_power[name] = total_creature_power.get(name, 0) + p
@@ -381,9 +383,11 @@ def _aggregate_results(results: Iterable[dict], num_games: int, max_turns: int, 
     }
 
     # Add interaction summary
+    avg_win_turn = round(sum(win_turns) / len(win_turns), 1) if win_turns else None
     interaction_summary = {
         "Games Won": games_won,
         "Win Rate %": round((games_won / num_games) * 100, 2),
+        "Avg Win Turn": avg_win_turn,
         "Avg Creatures Removed": round(total_creatures_removed / num_games, 2),
         "Avg Board Wipes Survived": round(total_wipes_survived / num_games, 2),
 

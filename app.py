@@ -1078,6 +1078,7 @@ def update_graph(deck_file):
                 # Performance metrics
                 win_rate = summary.get('Win Rate %', 0)
                 games_won = summary.get('Games Won', 0)
+                avg_win_turn = summary.get('Avg Win Turn')
                 consistency = summary.get('Consistency Score', 0)
 
                 # Interaction metrics
@@ -1191,6 +1192,7 @@ def update_graph(deck_file):
                         html.Div([
                             metric_row("Win Rate", f"{win_rate:.1f}%" if win_rate else "N/A", '#2e7d32'),
                             metric_row("Games Won", f"{games_won}/{num_games}" if games_won else "N/A", '#2e7d32'),
+                            metric_row("Avg Win Turn", f"Turn {avg_win_turn}" if avg_win_turn else "N/A", '#2e7d32'),
                             metric_row("Consistency Score", f"{consistency:.1f}%" if consistency else "N/A", '#1976d2'),
                             html.Div([
                                 html.Span("(Lower = More Consistent)", style={'fontSize': '9px', 'color': '#999', 'fontStyle': 'italic'})

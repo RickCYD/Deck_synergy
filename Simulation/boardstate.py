@@ -1120,6 +1120,26 @@ class BoardState:
         # PRIORITY 2: Apply +1/+1 counter effects (Cathars' Crusade)
         self.apply_etb_counter_effects(card, verbose=verbose)
 
+        # Apply drain from ETB triggers (Impact Tremors, Warleader's Call)
+        drain_on_etb = self.calculate_etb_drain()
+        if drain_on_etb > 0:
+            self.drain_damage_this_turn += drain_on_etb
+            if verbose:
+                print(f"  → ETB drain: {drain_on_etb} damage (Impact Tremors/Warleader's Call)")
+
+        # Door of Destinies: Add charge counter when casting creature of chosen type
+        creature_type = getattr(card, 'type', '').lower()
+        for artifact in self.artifacts:
+            artifact_name = getattr(artifact, 'name', '').lower()
+            if 'door of destinies' in artifact_name:
+                chosen_type = getattr(artifact, 'chosen_type', 'ally').lower()
+                if chosen_type in creature_type or 'ally' in creature_type:
+                    if not hasattr(artifact, 'counters'):
+                        artifact.counters = {}
+                    artifact.counters['charge'] = artifact.counters.get('charge', 0) + 1
+                    if verbose:
+                        print(f"  → Door of Destinies: +1 charge counter (now {artifact.counters['charge']})")
+
         if verbose:
             print(f"Played creature: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -2063,6 +2083,13 @@ class BoardState:
 
         # Trigger ETB effects
         self._execute_triggers("etb", target, verbose)
+
+        # Apply drain from ETB triggers (Impact Tremors, Warleader's Call)
+        drain_on_etb = self.calculate_etb_drain()
+        if drain_on_etb > 0:
+            self.drain_damage_this_turn += drain_on_etb
+            if verbose:
+                print(f"  → ETB drain: {drain_on_etb} damage (Impact Tremors/Warleader's Call)")
 
         return True
 
@@ -3888,6 +3915,34 @@ class BoardState:
             elif 'white creatures you control get +' in oracle:
                 # Simplified: assume most creatures benefit (proper implementation would check colors)
                 if '+1/+1' in oracle:
+                    power_bonus += 1
+                    toughness_bonus += 1
+
+            # Pattern 4: Door of Destinies - creatures of chosen type get +1/+1 per counter
+            elif 'door of destinies' in perm_name or ('chosen type' in oracle and 'charge counter' in oracle):
+                # Get charge counters on this permanent
+                counters = getattr(permanent, 'counters', {}).get('charge', 0)
+                if counters > 0:
+                    # Check if creature matches chosen type (simplified: assume tribal match)
+                    creature_type = getattr(creature, 'type', '').lower()
+                    chosen_type = getattr(permanent, 'chosen_type', 'ally').lower()
+                    if chosen_type in creature_type or 'ally' in creature_type:
+                        power_bonus += counters
+                        toughness_bonus += counters
+
+            # Pattern 5: Obelisk of Urd - chosen creature type gets +2/+2
+            elif 'obelisk of urd' in perm_name or ('creature type' in oracle and 'get +2/+2' in oracle):
+                creature_type = getattr(creature, 'type', '').lower()
+                chosen_type = getattr(permanent, 'chosen_type', 'ally').lower()
+                if chosen_type in creature_type or 'ally' in creature_type:
+                    power_bonus += 2
+                    toughness_bonus += 2
+
+            # Pattern 6: Banner of Kinship / Patchwork Banner - +1/+1 to creature type
+            elif 'banner of kinship' in perm_name or 'patchwork banner' in perm_name:
+                creature_type = getattr(creature, 'type', '').lower()
+                chosen_type = getattr(permanent, 'chosen_type', 'ally').lower()
+                if chosen_type in creature_type or 'ally' in creature_type:
                     power_bonus += 1
                     toughness_bonus += 1
 
