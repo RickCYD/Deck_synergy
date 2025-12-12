@@ -1499,6 +1499,26 @@ class BoardState:
 
     def play_instant(self, card, verbose=False):
         """Cast an instant. It resolves and goes to the graveyard."""
+        # Skip purely defensive cards in goldfish simulation - they do nothing
+        card_name = getattr(card, 'name', '').lower()
+        oracle = getattr(card, 'oracle_text', '').lower()
+        defensive_cards = [
+            "teferi's protection", "heroic intervention", "flawless maneuver",
+            "clever concealment", "unbreakable formation", "make a stand",
+            "rootborn defenses", "wrap in vigor", "faith's reward"
+        ]
+        if any(dc in card_name for dc in defensive_cards):
+            if verbose:
+                print(f"Skipping {card.name} (defensive card, useless in goldfish)")
+            return False
+        # Also skip if oracle text is purely defensive
+        if ('your permanents' in oracle or 'you control' in oracle) and \
+           ('indestructible' in oracle or 'hexproof' in oracle or 'protection from' in oracle) and \
+           'damage' not in oracle and 'draw' not in oracle and 'token' not in oracle:
+            if verbose:
+                print(f"Skipping {card.name} (defensive card, useless in goldfish)")
+            return False
+
         if not Mana_utils.can_pay(card.mana_cost, self.mana_pool):
             if verbose:
                 print(f"Not enough mana to play {card.name}")
