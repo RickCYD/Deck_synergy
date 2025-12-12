@@ -231,32 +231,32 @@ def parse_etb_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
             def rally_haste(board_state):
                 if hasattr(board_state, 'grant_keyword_until_eot'):
                     board_state.grant_keyword_until_eot('haste')
-            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_haste, description="rally: grant haste"))
+            triggers.append(TriggeredAbility(event="rally", effect=rally_haste, description="rally: grant haste"))
 
         elif 'gain vigilance' in lower or 'have vigilance' in lower:
             def rally_vigilance(board_state):
                 if hasattr(board_state, 'grant_keyword_until_eot'):
                     board_state.grant_keyword_until_eot('vigilance')
-            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_vigilance, description="rally: grant vigilance"))
+            triggers.append(TriggeredAbility(event="rally", effect=rally_vigilance, description="rally: grant vigilance"))
 
         elif 'gain lifelink' in lower or 'have lifelink' in lower:
             def rally_lifelink(board_state):
                 if hasattr(board_state, 'grant_keyword_until_eot'):
                     board_state.grant_keyword_until_eot('lifelink')
-            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_lifelink, description="rally: grant lifelink"))
+            triggers.append(TriggeredAbility(event="rally", effect=rally_lifelink, description="rally: grant lifelink"))
 
         elif 'gain double strike' in lower or 'have double strike' in lower:
             def rally_double_strike(board_state):
                 if hasattr(board_state, 'grant_keyword_until_eot'):
                     board_state.grant_keyword_until_eot('double strike')
-            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_double_strike, description="rally: grant double strike"))
+            triggers.append(TriggeredAbility(event="rally", effect=rally_double_strike, description="rally: grant double strike"))
 
         # Check for +1/+1 counters
         elif re.search(r'put.*\+1/\+1 counter', lower):
             def rally_counters(board_state):
                 if hasattr(board_state, 'put_counter_on_creatures'):
                     board_state.put_counter_on_creatures(1, 'all')
-            triggers.append(TriggeredAbility(event="ally_etb", effect=rally_counters, description="rally: +1/+1 counter"))
+            triggers.append(TriggeredAbility(event="rally", effect=rally_counters, description="rally: +1/+1 counter"))
 
     return triggers
 
