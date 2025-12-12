@@ -1140,6 +1140,10 @@ class BoardState:
                     if verbose:
                         print(f"  → Door of Destinies: +1 charge counter (now {artifact.counters['charge']})")
 
+        # Rally triggers: When an Ally enters, check for Rally abilities on all Allies
+        if 'ally' in creature_type:
+            self.trigger_rally_abilities(card, verbose=verbose)
+
         if verbose:
             print(f"Played creature: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -1839,12 +1843,16 @@ class BoardState:
             is_unblockable = getattr(attacker, 'is_unblockable', False)
             has_flying = getattr(attacker, 'has_flying', False)
             has_menace = getattr(attacker, 'has_menace', False)
-            has_lifelink = getattr(attacker, 'has_lifelink', False)
+            has_lifelink = getattr(attacker, 'has_lifelink', False) or getattr(attacker, 'has_rally_lifelink', False)
             has_deathtouch = getattr(attacker, 'has_deathtouch', False)
+            has_double_strike = getattr(attacker, 'has_double_strike', False) or getattr(attacker, 'has_rally_double_strike', False)
+
+            # Double strike doubles combat damage
+            damage_mult = 2 if has_double_strike else 1
 
             if not target_opp['creatures'] or is_unblockable:
                 # No blockers or unblockable, damage goes through
-                damage = int(attack_power * self.damage_multiplier)
+                damage = int(attack_power * self.damage_multiplier * damage_mult)
                 unblocked_damage += damage
                 if has_lifelink:
                     life_gained += damage
@@ -1880,10 +1888,10 @@ class BoardState:
                     if verbose:
                         print(f"{attacker.name} was destroyed by {blocker.name}")
 
-                blocked_damage += attack_power
+                blocked_damage += attack_power * damage_mult
             else:
                 # Unblocked
-                damage = int(attack_power * self.damage_multiplier)
+                damage = int(attack_power * self.damage_multiplier * damage_mult)
                 unblocked_damage += damage
                 if has_lifelink:
                     life_gained += damage
@@ -3513,6 +3521,68 @@ class BoardState:
                         drain += 1 * num_alive_opps
 
         return drain
+
+    def trigger_rally_abilities(self, entering_ally, verbose: bool = False):
+        """
+        Trigger Rally abilities when an Ally enters the battlefield.
+
+        Rally abilities trigger on ALL Allies you control (including the one entering)
+        when any Ally enters the battlefield.
+
+        Common Rally effects:
+        - Lantern Scout: Creatures you control gain lifelink until end of turn
+        - Ondu Cleric: Gain life equal to the number of Allies you control
+        - Kor Bladewhirl: Creatures you control gain first strike until end of turn
+        - Chasm Guide: Creatures you control gain haste until end of turn
+        """
+        num_allies = sum(1 for c in self.creatures if 'ally' in getattr(c, 'type', '').lower())
+
+        for ally in self.creatures:
+            oracle = getattr(ally, 'oracle_text', '').lower()
+            ally_name = getattr(ally, 'name', '').lower()
+
+            # Check for Rally keyword or "whenever this creature or another ally enters"
+            if 'rally' not in oracle and 'whenever' not in oracle:
+                continue
+            if 'ally' not in oracle and 'rally' not in oracle:
+                continue
+
+            # Ondu Cleric: "gain life equal to the number of Allies you control"
+            if 'ondu cleric' in ally_name or ('gain life' in oracle and 'number of all' in oracle):
+                life_gain = num_allies
+                self.life_total += life_gain
+                self.life_gained_this_turn += life_gain
+                if verbose:
+                    print(f"  → Rally: {ally.name} gains {life_gain} life ({num_allies} Allies)")
+
+            # Lantern Scout: "creatures you control gain lifelink"
+            elif 'lantern scout' in ally_name or ('gain lifelink' in oracle):
+                # Mark creatures as having lifelink this turn (handled in combat)
+                for creature in self.creatures:
+                    creature.has_rally_lifelink = True
+                if verbose:
+                    print(f"  → Rally: {ally.name} grants lifelink to all creatures")
+
+            # Kor Bladewhirl: "creatures you control gain first strike"
+            elif 'kor bladewhirl' in ally_name or ('gain first strike' in oracle and 'rally' in oracle):
+                for creature in self.creatures:
+                    creature.has_rally_first_strike = True
+                if verbose:
+                    print(f"  → Rally: {ally.name} grants first strike to all creatures")
+
+            # Chasm Guide: "creatures you control gain haste"
+            elif 'chasm guide' in ally_name or ('gain haste' in oracle and 'rally' in oracle):
+                for creature in self.creatures:
+                    creature.tapped = False  # Haste means they can attack
+                if verbose:
+                    print(f"  → Rally: {ally.name} grants haste to all creatures")
+
+            # Resolute Blademaster: "creatures you control gain double strike"
+            elif 'resolute blademaster' in ally_name or ('gain double strike' in oracle and 'rally' in oracle):
+                for creature in self.creatures:
+                    creature.has_rally_double_strike = True
+                if verbose:
+                    print(f"  → Rally: {ally.name} grants double strike to all creatures")
 
     def handle_ozolith_on_death(self, creature, verbose: bool = False):
         """
