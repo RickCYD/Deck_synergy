@@ -341,6 +341,13 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         board.lands_played_this_turn = 0  # Reset land plays for this turn
         board.landfall_triggers_this_turn = 0  # Reset landfall triggers
 
+        # Reset per-turn tracking at START of turn (not middle!)
+        board.drain_damage_this_turn = 0
+        board.tokens_created_this_turn = 0
+        board.creatures_died_this_turn = 0
+        board.life_gained_this_turn = 0
+        board.life_lost_this_turn = 0
+
         # PRIORITY FIX P1: Reset Muldrotha graveyard casts for new turn
         board.muldrotha_casts_this_turn = {
             'creature': False,
@@ -681,13 +688,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # Activate planeswalkers
         for pw in board.planeswalkers:
             board.activate_planeswalker(pw, verbose=verbose)
-
-        # Reset per-turn tracking
-        board.drain_damage_this_turn = 0
-        board.tokens_created_this_turn = 0
-        board.creatures_died_this_turn = 0  # PRIORITY 2: For Mahadi
-        board.life_gained_this_turn = 0
-        board.life_lost_this_turn = 0
 
         # SPELLSLINGER: Track spells cast this turn
         metrics["spells_cast"][turn] = board.spells_cast_this_turn
