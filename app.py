@@ -1190,10 +1190,10 @@ def update_graph(deck_file):
                             'marginBottom': '6px'
                         }),
                         html.Div([
-                            metric_row("Win Rate", f"{win_rate:.1f}%" if win_rate else "N/A", '#2e7d32'),
-                            metric_row("Games Won", f"{games_won}/{num_games}" if games_won else "N/A", '#2e7d32'),
+                            metric_row("Win Rate", f"{win_rate:.1f}%" if win_rate is not None else "N/A", '#2e7d32'),
+                            metric_row("Games Won", f"{games_won}/{num_games}" if games_won is not None else "N/A", '#2e7d32'),
                             metric_row("Avg Win Turn", f"Turn {avg_win_turn}" if avg_win_turn else "N/A", '#2e7d32'),
-                            metric_row("Consistency Score", f"{consistency:.1f}%" if consistency else "N/A", '#1976d2'),
+                            metric_row("Consistency Score", f"{consistency:.1f}%" if consistency is not None else "N/A", '#1976d2'),
                             html.Div([
                                 html.Span("(Lower = More Consistent)", style={'fontSize': '9px', 'color': '#999', 'fontStyle': 'italic'})
                             ]),
@@ -1252,7 +1252,7 @@ def update_graph(deck_file):
                         html.Div([
                             metric_row(f"Best Game Damage", f"{deck_power.get('Best Game Damage', 0):.0f}", '#388e3c'),
                             metric_row(f"Worst Game Damage", f"{deck_power.get('Worst Game Damage', 0):.0f}", '#d32f2f'),
-                            metric_row(f"Average Game Damage", f"{deck_power.get('Average Game Damage', 0):.1f}", '#1976d2'),
+                            metric_row(f"Average Game Damage", f"{deck_power.get('Avg Total Damage', 0):.1f}", '#1976d2'),
                         ], style={'paddingLeft': '12px'}) if deck_power else html.Div("No data available", style={'fontSize': '10px', 'color': '#999', 'paddingLeft': '12px'})
                     ], style={'marginBottom': '10px'}),
 
