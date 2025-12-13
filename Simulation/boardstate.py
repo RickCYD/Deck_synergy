@@ -182,6 +182,9 @@ class BoardState:
         self.experience_counters = 0  # Experience counters for Meren
         self.meren_triggered_this_turn = False  # Has Meren's end step triggered this turn?
 
+        # Y'shtola, Night's Blessed tracking
+        self.yshtola_on_board = False  # Is Y'shtola, Night's Blessed on the battlefield?
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
 
@@ -875,6 +878,12 @@ class BoardState:
                     if verbose:
                         print("♻️  Meren of Clan Nel Toth enables end-step reanimation!")
 
+                # Detect Y'shtola, Night's Blessed entering battlefield
+                if 'creature' in card.type.lower() and "y'shtola" in card.name.lower() and "night's blessed" in card.name.lower():
+                    self.yshtola_on_board = True
+                    if verbose:
+                        print("🌙 Y'shtola, Night's Blessed is on the battlefield!")
+
                 self._execute_triggers("etb", card, verbose)
                 if 'Land' in card.type:
                     self._trigger_landfall(verbose)
@@ -1158,6 +1167,10 @@ class BoardState:
         self.hand.remove(card)
         self.artifacts.append(card)
         Mana_utils.pay(card.mana_cost, self.mana_pool)
+
+        # Y'SHTOLA: Trigger noncreature spell effects
+        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+
         if verbose:
             print(f"→ {card.name} enters the battlefield (artifact)")
         return True
@@ -1246,6 +1259,10 @@ class BoardState:
         if card in self.hand:
             self.hand.remove(card)
         self.enchantments.append(card)
+
+        # Y'SHTOLA: Trigger noncreature spell effects
+        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+
         if verbose:
             print(f"Played enchantment: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -1287,6 +1304,10 @@ class BoardState:
 
         # SPELLSLINGER: Trigger cast effects (Guttersnipe, Young Pyromancer, etc.)
         self.trigger_cast_effects(card, verbose=verbose)
+
+        # Y'SHTOLA: Trigger noncreature spell effects
+        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
 
@@ -1535,6 +1556,9 @@ class BoardState:
         # SPELLSLINGER: Trigger cast effects (Guttersnipe, Young Pyromancer, etc.)
         self.trigger_cast_effects(card, verbose=verbose)
 
+        # Y'SHTOLA: Trigger noncreature spell effects
+        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
 
@@ -1616,6 +1640,10 @@ class BoardState:
             self.hand.remove(card)
         self.planeswalkers.append(card)
         card.tapped = False
+
+        # Y'SHTOLA: Trigger noncreature spell effects
+        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+
         if verbose:
             print(f"Played planeswalker: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -3919,6 +3947,51 @@ class BoardState:
             'tokens': tokens_created,
             'cards_drawn': cards_drawn
         }
+
+    def trigger_noncreature_spell_effects(self, card, verbose: bool = False):
+        """
+        Trigger effects when any noncreature spell is cast.
+
+        This handles:
+        - Y'shtola, Night's Blessed: Deal 2 damage and gain 2 life when casting MV 3+ noncreature spells
+
+        Args:
+            card: The card being cast
+            verbose: Whether to print debug output
+        """
+        from convert_dataframe_deck import parse_mana_cost
+
+        card_type = getattr(card, 'type', '').lower()
+
+        # Only trigger for noncreature spells
+        if 'creature' in card_type:
+            return
+
+        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with mana value 3 or greater,
+        # Y'shtola deals 2 damage to each opponent and you gain 2 life
+        if self.yshtola_on_board:
+            mana_cost = getattr(card, 'mana_cost', '')
+            cmc = parse_mana_cost(mana_cost)
+
+            if cmc >= 3:
+                # Deal 2 damage to each opponent
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                damage_dealt = 0
+                for opp in alive_opps:
+                    opp['life_total'] -= 2
+                    damage_dealt += 2
+
+                    # Check if they died
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                        if verbose:
+                            print(f"  → {opp['name']} eliminated by Y'shtola's trigger!")
+
+                # Gain 2 life
+                self.gain_life(2, verbose=False)
+
+                if verbose:
+                    print(f"  🌙 Y'shtola, Night's Blessed triggers: dealt {damage_dealt} damage (2 to each opponent), gained 2 life")
 
     def apply_prowess_bonus(self):
         """
