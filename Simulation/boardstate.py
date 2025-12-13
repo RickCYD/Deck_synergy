@@ -1168,8 +1168,20 @@ class BoardState:
         self.artifacts.append(card)
         Mana_utils.pay(card.mana_cost, self.mana_pool)
 
-        # Y'SHTOLA: Trigger noncreature spell effects
-        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
+        if self.yshtola_on_board:
+            from convert_dataframe_deck import parse_mana_cost
+            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
+            if cmc >= 3:
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                for opp in alive_opps:
+                    opp['life_total'] -= 2
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                self.gain_life(2, verbose=False)
+                if verbose:
+                    damage_dealt = 2 * len(alive_opps)
+                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
 
         if verbose:
             print(f"→ {card.name} enters the battlefield (artifact)")
@@ -1260,8 +1272,20 @@ class BoardState:
             self.hand.remove(card)
         self.enchantments.append(card)
 
-        # Y'SHTOLA: Trigger noncreature spell effects
-        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
+        if self.yshtola_on_board:
+            from convert_dataframe_deck import parse_mana_cost
+            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
+            if cmc >= 3:
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                for opp in alive_opps:
+                    opp['life_total'] -= 2
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                self.gain_life(2, verbose=False)
+                if verbose:
+                    damage_dealt = 2 * len(alive_opps)
+                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
 
         if verbose:
             print(f"Played enchantment: {card.name}")
@@ -1303,10 +1327,8 @@ class BoardState:
         self.graveyard.append(card)
 
         # SPELLSLINGER: Trigger cast effects (Guttersnipe, Young Pyromancer, etc.)
+        # NOTE: trigger_cast_effects now also handles Y'shtola's MV 3+ trigger
         self.trigger_cast_effects(card, verbose=verbose)
-
-        # Y'SHTOLA: Trigger noncreature spell effects
-        self.trigger_noncreature_spell_effects(card, verbose=verbose)
 
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
@@ -1554,10 +1576,8 @@ class BoardState:
         self.graveyard.append(card)
 
         # SPELLSLINGER: Trigger cast effects (Guttersnipe, Young Pyromancer, etc.)
+        # NOTE: trigger_cast_effects now also handles Y'shtola's MV 3+ trigger
         self.trigger_cast_effects(card, verbose=verbose)
-
-        # Y'SHTOLA: Trigger noncreature spell effects
-        self.trigger_noncreature_spell_effects(card, verbose=verbose)
 
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
@@ -1641,8 +1661,20 @@ class BoardState:
         self.planeswalkers.append(card)
         card.tapped = False
 
-        # Y'SHTOLA: Trigger noncreature spell effects
-        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
+        if self.yshtola_on_board:
+            from convert_dataframe_deck import parse_mana_cost
+            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
+            if cmc >= 3:
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                for opp in alive_opps:
+                    opp['life_total'] -= 2
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                self.gain_life(2, verbose=False)
+                if verbose:
+                    damage_dealt = 2 * len(alive_opps)
+                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
 
         if verbose:
             print(f"Played planeswalker: {card.name}")
@@ -3922,6 +3954,23 @@ class BoardState:
                 if verbose:
                     print(f"  → {permanent.name} adds charge counter")
 
+        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+,
+        # deal 2 damage to each opponent and gain 2 life
+        # NOTE: This only handles instants/sorceries; artifacts/enchantments/planeswalkers are handled in their respective play_* functions
+        if self.yshtola_on_board:
+            from convert_dataframe_deck import parse_mana_cost
+            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
+            if cmc >= 3:
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                for opp in alive_opps:
+                    opp['life_total'] -= 2
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                self.gain_life(2, verbose=False)
+                if verbose:
+                    damage_dealt = 2 * len(alive_opps)
+                    print(f"  🌙 Y'shtola, Night's Blessed triggers: dealt {damage_dealt} damage (2 to each opponent), gained 2 life")
+
         # Apply prowess/magecraft to all creatures
         self.apply_prowess_bonus()
 
@@ -3947,51 +3996,6 @@ class BoardState:
             'tokens': tokens_created,
             'cards_drawn': cards_drawn
         }
-
-    def trigger_noncreature_spell_effects(self, card, verbose: bool = False):
-        """
-        Trigger effects when any noncreature spell is cast.
-
-        This handles:
-        - Y'shtola, Night's Blessed: Deal 2 damage and gain 2 life when casting MV 3+ noncreature spells
-
-        Args:
-            card: The card being cast
-            verbose: Whether to print debug output
-        """
-        from convert_dataframe_deck import parse_mana_cost
-
-        card_type = getattr(card, 'type', '').lower()
-
-        # Only trigger for noncreature spells
-        if 'creature' in card_type:
-            return
-
-        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with mana value 3 or greater,
-        # Y'shtola deals 2 damage to each opponent and you gain 2 life
-        if self.yshtola_on_board:
-            mana_cost = getattr(card, 'mana_cost', '')
-            cmc = parse_mana_cost(mana_cost)
-
-            if cmc >= 3:
-                # Deal 2 damage to each opponent
-                alive_opps = [o for o in self.opponents if o['is_alive']]
-                damage_dealt = 0
-                for opp in alive_opps:
-                    opp['life_total'] -= 2
-                    damage_dealt += 2
-
-                    # Check if they died
-                    if opp['life_total'] <= 0:
-                        opp['is_alive'] = False
-                        if verbose:
-                            print(f"  → {opp['name']} eliminated by Y'shtola's trigger!")
-
-                # Gain 2 life
-                self.gain_life(2, verbose=False)
-
-                if verbose:
-                    print(f"  🌙 Y'shtola, Night's Blessed triggers: dealt {damage_dealt} damage (2 to each opponent), gained 2 life")
 
     def apply_prowess_bonus(self):
         """
