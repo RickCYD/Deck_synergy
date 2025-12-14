@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+# Import boardstate extensions for unified architecture support
+from Simulation.boardstate_extensions import enhance_boardstate
+
 
 @dataclass
 class ActivatedAbility:
@@ -185,6 +188,9 @@ class BoardState:
         # Y'shtola, Night's Blessed tracking
         self.yshtola_on_board = False  # Is Y'shtola, Night's Blessed on the battlefield?
 
+        # Apply boardstate extensions for unified architecture support
+        # This adds enhanced methods for trigger handling, temporary effects, etc.
+        enhance_boardstate(self)
 
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
