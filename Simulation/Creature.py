@@ -13,9 +13,13 @@ class Creature:
         self.mana_cost = None
 
     def take_damage(self, damage):
-        effective_damage = max(0, damage - self.toughness)
-        self.toughness -= effective_damage
-        return effective_damage
+        """Mark damage on this creature and return the damage dealt.
+
+        Note: In this simplified simulation, damage doesn't modify toughness.
+        The combat system manually checks if creatures should die.
+        """
+        # Return the full damage amount without modifying toughness
+        return damage
 
     def is_alive(self):
         return self.toughness > 0

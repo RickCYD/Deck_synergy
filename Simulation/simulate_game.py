@@ -175,13 +175,15 @@ class Card:
         return True
 
     def take_damage(self, amount: int) -> int:
-        """Mark combat damage on this card and return the damage dealt."""
+        """Mark combat damage on this card and return the damage dealt.
 
-        if self.toughness is None:
-            return amount
-        dealt = min(amount, self.toughness)
-        self.toughness -= dealt
-        return dealt
+        Note: In this simplified simulation, damage doesn't actually modify
+        toughness. Combat code manually checks if creatures die based on
+        comparing damage to toughness.
+        """
+        # Don't modify toughness - damage is tracked externally
+        # Just return the full amount of damage dealt
+        return amount
 
 
 def clean_produces_colors(value):
