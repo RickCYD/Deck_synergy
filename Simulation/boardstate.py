@@ -1948,7 +1948,7 @@ class BoardState:
                     if verbose:
                         print(f"{attacker.name} was destroyed by {blocker.name}")
 
-                blocked_damage += attack_power * damage_mult
+                blocked_damage += int(attack_power * self.damage_multiplier * damage_mult)
             else:
                 # Unblocked
                 damage = int(attack_power * self.damage_multiplier * damage_mult)
@@ -2001,7 +2001,7 @@ class BoardState:
             # Estimate commander contributed to damage based on its power vs total power
             total_power = sum(self.get_effective_power(c) for c in self.creatures)
             if total_power > 0:
-                commander_contribution = int(unblocked_damage * commander_power / total_power)
+                commander_contribution = round(unblocked_damage * commander_power / total_power)
                 target_opp['commander_damage'] += commander_contribution
 
         total_damage_dealt = unblocked_damage
@@ -3547,12 +3547,16 @@ class BoardState:
         if drain_total > 0:
             self.drain_damage_this_turn += drain_total
 
-            # Apply drain to opponents
+            # Apply drain to opponents (evenly, with remainder to first opponent)
             alive_opps = [o for o in self.opponents if o['is_alive']]
             if alive_opps:
                 drain_per_opp = drain_total // len(alive_opps)
-                for opp in alive_opps:
-                    opp['life_total'] -= drain_per_opp
+                remainder = drain_total % len(alive_opps)
+
+                for i, opp in enumerate(alive_opps):
+                    # First opponent gets the remainder to avoid losing damage
+                    opp_drain = drain_per_opp + (remainder if i == 0 else 0)
+                    opp['life_total'] -= opp_drain
 
                     # Check if they died
                     if opp['life_total'] <= 0:
@@ -3978,12 +3982,16 @@ class BoardState:
         if spell_damage > 0:
             self.spell_damage_this_turn += spell_damage
 
-            # Distribute damage to alive opponents
+            # Distribute damage to alive opponents (evenly, with remainder to first opponent)
             alive_opps = [o for o in self.opponents if o['is_alive']]
             if alive_opps:
                 damage_per_opp = spell_damage // len(alive_opps)
-                for opp in alive_opps:
-                    opp['life_total'] -= damage_per_opp
+                remainder = spell_damage % len(alive_opps)
+
+                for i, opp in enumerate(alive_opps):
+                    # First opponent gets the remainder to avoid losing damage
+                    opp_damage = damage_per_opp + (remainder if i == 0 else 0)
+                    opp['life_total'] -= opp_damage
 
                     # Check if they died
                     if opp['life_total'] <= 0:
