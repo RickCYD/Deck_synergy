@@ -894,6 +894,20 @@ class BoardState:
                         print("🌙 Y'shtola, Night's Blessed is on the battlefield!")
 
                 self._execute_triggers("etb", card, verbose)
+
+                # GENERIC: Check for "Whenever another Ally enters" triggers (like Wartime Protestors)
+                if 'ally' in card.type.lower():
+                    for creature in self.creatures:
+                        if creature is card:
+                            continue
+                        oracle = getattr(creature, 'oracle_text', '').lower()
+                        # "Whenever another Ally you control enters, put a +1/+1 counter on that creature and it gains haste"
+                        if 'whenever another ally' in oracle and 'enters' in oracle and '+1/+1 counter' in oracle:
+                            self.add_counters_with_doubling(card, "+1/+1", 1, verbose=False)
+                            card.has_haste = True
+                            if verbose:
+                                print(f"  → {creature.name}: +1/+1 counter on {card.name}, gains haste")
+
                 if 'Land' in card.type:
                     self._trigger_landfall(verbose)
 
@@ -1916,9 +1930,21 @@ class BoardState:
             is_unblockable = getattr(attacker, 'is_unblockable', False)
             has_flying = getattr(attacker, 'has_flying', False)
             has_menace = getattr(attacker, 'has_menace', False)
-            has_lifelink = getattr(attacker, 'has_lifelink', False) or getattr(attacker, 'has_rally_lifelink', False)
+            has_lifelink = getattr(attacker, 'is_lifelink', False) or getattr(attacker, 'has_rally_lifelink', False)
             has_deathtouch = getattr(attacker, 'has_deathtouch', False)
             has_double_strike = getattr(attacker, 'has_double_strike', False) or getattr(attacker, 'has_rally_double_strike', False)
+
+            # GENERIC: Check for enchantments granting keywords to Allies
+            attacker_type = getattr(attacker, 'type', '').lower()
+            if 'ally' in attacker_type:
+                for enchantment in self.enchantments:
+                    oracle = getattr(enchantment, 'oracle_text', '').lower()
+                    # "Allies you control have double strike and lifelink"
+                    if 'allies you control have' in oracle:
+                        if 'double strike' in oracle:
+                            has_double_strike = True
+                        if 'lifelink' in oracle:
+                            has_lifelink = True
 
             # Double strike doubles combat damage
             damage_mult = 2 if has_double_strike else 1
@@ -4064,13 +4090,38 @@ class BoardState:
 
         Prowess: +1/+1 until end of turn when you cast a noncreature spell
         Magecraft: Various effects when you cast/copy instant/sorcery
+
+        Also handles creatures that grant prowess to others:
+        - "Other Allies you control have prowess"
+        - "Other creatures you control have prowess"
         """
         for creature in self.creatures:
             oracle = getattr(creature, 'oracle_text', '').lower()
             name = getattr(creature, 'name', '').lower()
+            creature_type = getattr(creature, 'type', '').lower()
 
-            # Prowess: +1/+1 until end of turn
-            if 'prowess' in oracle or 'prowess' in name:
+            has_prowess = False
+
+            # Natural prowess on the creature itself
+            if 'prowess' in oracle:
+                has_prowess = True
+
+            # Check all other permanents for prowess-granting effects
+            for permanent in self.creatures:
+                if permanent is creature:
+                    continue
+                perm_oracle = getattr(permanent, 'oracle_text', '').lower()
+
+                # "Other Allies you control have prowess"
+                if 'other allies you control have' in perm_oracle and 'prowess' in perm_oracle:
+                    if 'ally' in creature_type:
+                        has_prowess = True
+
+                # "Other creatures you control have prowess"
+                if 'other creatures you control have' in perm_oracle and 'prowess' in perm_oracle:
+                    has_prowess = True
+
+            if has_prowess:
                 if creature not in self.prowess_bonus:
                     self.prowess_bonus[creature] = 0
                 self.prowess_bonus[creature] += 1
