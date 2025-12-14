@@ -182,6 +182,9 @@ class BoardState:
         self.experience_counters = 0  # Experience counters for Meren
         self.meren_triggered_this_turn = False  # Has Meren's end step triggered this turn?
 
+        # Y'shtola, Night's Blessed tracking
+        self.yshtola_on_board = False  # Is Y'shtola, Night's Blessed on the battlefield?
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
 
@@ -875,6 +878,12 @@ class BoardState:
                     if verbose:
                         print("♻️  Meren of Clan Nel Toth enables end-step reanimation!")
 
+                # Detect Y'shtola, Night's Blessed entering battlefield
+                if 'creature' in card.type.lower() and "y'shtola" in card.name.lower() and "night's blessed" in card.name.lower():
+                    self.yshtola_on_board = True
+                    if verbose:
+                        print("🌙 Y'shtola, Night's Blessed is on the battlefield!")
+
                 self._execute_triggers("etb", card, verbose)
                 if 'Land' in card.type:
                     self._trigger_landfall(verbose)
@@ -1158,6 +1167,22 @@ class BoardState:
         self.hand.remove(card)
         self.artifacts.append(card)
         Mana_utils.pay(card.mana_cost, self.mana_pool)
+
+        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
+        if self.yshtola_on_board:
+            from convert_dataframe_deck import parse_mana_cost
+            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
+            if cmc >= 3:
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                for opp in alive_opps:
+                    opp['life_total'] -= 2
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                self.gain_life(2, verbose=False)
+                if verbose:
+                    damage_dealt = 2 * len(alive_opps)
+                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
+
         if verbose:
             print(f"→ {card.name} enters the battlefield (artifact)")
         return True
@@ -1246,6 +1271,22 @@ class BoardState:
         if card in self.hand:
             self.hand.remove(card)
         self.enchantments.append(card)
+
+        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
+        if self.yshtola_on_board:
+            from convert_dataframe_deck import parse_mana_cost
+            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
+            if cmc >= 3:
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                for opp in alive_opps:
+                    opp['life_total'] -= 2
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                self.gain_life(2, verbose=False)
+                if verbose:
+                    damage_dealt = 2 * len(alive_opps)
+                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
+
         if verbose:
             print(f"Played enchantment: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -1286,7 +1327,9 @@ class BoardState:
         self.graveyard.append(card)
 
         # SPELLSLINGER: Trigger cast effects (Guttersnipe, Young Pyromancer, etc.)
+        # NOTE: trigger_cast_effects now also handles Y'shtola's MV 3+ trigger
         self.trigger_cast_effects(card, verbose=verbose)
+
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
 
@@ -1533,6 +1576,7 @@ class BoardState:
         self.graveyard.append(card)
 
         # SPELLSLINGER: Trigger cast effects (Guttersnipe, Young Pyromancer, etc.)
+        # NOTE: trigger_cast_effects now also handles Y'shtola's MV 3+ trigger
         self.trigger_cast_effects(card, verbose=verbose)
 
         if getattr(card, "draw_cards", 0) > 0:
@@ -1616,6 +1660,22 @@ class BoardState:
             self.hand.remove(card)
         self.planeswalkers.append(card)
         card.tapped = False
+
+        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
+        if self.yshtola_on_board:
+            from convert_dataframe_deck import parse_mana_cost
+            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
+            if cmc >= 3:
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                for opp in alive_opps:
+                    opp['life_total'] -= 2
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                self.gain_life(2, verbose=False)
+                if verbose:
+                    damage_dealt = 2 * len(alive_opps)
+                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
+
         if verbose:
             print(f"Played planeswalker: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -3893,6 +3953,23 @@ class BoardState:
                 # Simplified: Just note we're getting cost reduction
                 if verbose:
                     print(f"  → {permanent.name} adds charge counter")
+
+        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+,
+        # deal 2 damage to each opponent and gain 2 life
+        # NOTE: This only handles instants/sorceries; artifacts/enchantments/planeswalkers are handled in their respective play_* functions
+        if self.yshtola_on_board:
+            from convert_dataframe_deck import parse_mana_cost
+            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
+            if cmc >= 3:
+                alive_opps = [o for o in self.opponents if o['is_alive']]
+                for opp in alive_opps:
+                    opp['life_total'] -= 2
+                    if opp['life_total'] <= 0:
+                        opp['is_alive'] = False
+                self.gain_life(2, verbose=False)
+                if verbose:
+                    damage_dealt = 2 * len(alive_opps)
+                    print(f"  🌙 Y'shtola, Night's Blessed triggers: dealt {damage_dealt} damage (2 to each opponent), gained 2 life")
 
         # Apply prowess/magecraft to all creatures
         self.apply_prowess_bonus()

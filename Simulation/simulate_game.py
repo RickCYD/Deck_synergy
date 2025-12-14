@@ -837,6 +837,30 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         if board.meren_on_board:
             board.meren_end_step_trigger(verbose=verbose)
 
+        # Y'SHTOLA: End step card draw trigger
+        # "At the beginning of each end step, if a player lost 4 or more life this turn, you draw a card"
+        if board.yshtola_on_board:
+            # Check if ANY player (including opponents) lost 4+ life this turn
+            # In goldfish mode, we check:
+            # 1. Player's own life loss (paying life, etc.)
+            # 2. Damage dealt to opponents (combat + drain + spell damage)
+            total_life_lost = board.life_lost_this_turn
+            damage_to_opponents = (
+                total_combat_damage +
+                board.drain_damage_this_turn +
+                board.spell_damage_this_turn
+            )
+
+            if total_life_lost >= 4 or damage_to_opponents >= 4:
+                board.draw_card(1, verbose=verbose)
+                if verbose:
+                    life_sources = []
+                    if total_life_lost >= 4:
+                        life_sources.append(f"player lost {total_life_lost} life")
+                    if damage_to_opponents >= 4:
+                        life_sources.append(f"opponents lost {damage_to_opponents} life")
+                    print(f"  🌙 Y'shtola, Night's Blessed triggers: {' and '.join(life_sources)}, draw a card")
+
         board.check_end_of_turn_treasures(board.creatures_died_this_turn, verbose=verbose)
 
         # MOBILIZE: Sacrifice mobilize warrior tokens at end of turn
