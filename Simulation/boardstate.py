@@ -185,14 +185,6 @@ class BoardState:
         # Y'shtola, Night's Blessed tracking
         self.yshtola_on_board = False  # Is Y'shtola, Night's Blessed on the battlefield?
 
-        # Sokka, Tenacious Tactician tracking
-        self.sokka_on_board = False  # Is Sokka, Tenacious Tactician on the battlefield?
-
-        # Bria, Riptide Rogue tracking
-        self.bria_on_board = False  # Is Bria, Riptide Rogue on the battlefield?
-
-        # Sokka's Charge tracking
-        self.sokkas_charge_on_board = False  # Is Sokka's Charge on the battlefield?
 
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
@@ -417,13 +409,10 @@ class BoardState:
     def _check_kindred_discovery_etb(self, creature, verbose=False):
         """Check if Kindred Discovery should trigger when a creature enters."""
         for permanent in self.enchantments + self.artifacts:
-            name = getattr(permanent, 'name', '').lower()
             oracle = getattr(permanent, 'oracle_text', '').lower()
 
-            # Kindred Discovery: Draw a card when creature of chosen type enters
-            if 'kindred discovery' in name or (
-                'choose a creature type' in oracle and 'enters or attacks' in oracle and 'draw a card' in oracle
-            ):
+            # GENERIC: "Choose a creature type. Whenever a creature of that type enters or attacks, draw a card"
+            if 'choose a creature type' in oracle and 'enters or attacks' in oracle and 'draw a card' in oracle:
                 # Simplified: Assume the chosen type matches (tribal decks)
                 # In a real implementation, we'd track the chosen type
                 self.draw_card(1, verbose=verbose)
@@ -433,13 +422,10 @@ class BoardState:
     def _check_kindred_discovery_attack(self, creature, verbose=False):
         """Check if Kindred Discovery should trigger when a creature attacks."""
         for permanent in self.enchantments + self.artifacts:
-            name = getattr(permanent, 'name', '').lower()
             oracle = getattr(permanent, 'oracle_text', '').lower()
 
-            # Kindred Discovery: Draw a card when creature of chosen type attacks
-            if 'kindred discovery' in name or (
-                'choose a creature type' in oracle and 'enters or attacks' in oracle and 'draw a card' in oracle
-            ):
+            # GENERIC: "Choose a creature type. Whenever a creature of that type enters or attacks, draw a card"
+            if 'choose a creature type' in oracle and 'enters or attacks' in oracle and 'draw a card' in oracle:
                 # Simplified: Assume the chosen type matches (tribal decks)
                 self.draw_card(1, verbose=verbose)
                 if verbose:
@@ -3300,9 +3286,15 @@ class BoardState:
 
         for i in range(num_to_create):
             # Create token as a creature
+            # Build type string including token_type if provided
+            if token_type:
+                type_line = f"Creature — {token_type} Token"
+            else:
+                type_line = "Creature — Token"
+
             token = Card(
                 name=token_name,
-                type="Creature — Token",
+                type=type_line,
                 mana_cost="",
                 power=power,
                 toughness=toughness,
@@ -4048,9 +4040,11 @@ class BoardState:
         """
         Trigger effects when ANY noncreature spell is cast (instant, sorcery, artifact, enchantment, planeswalker).
 
+        Uses ONLY generic oracle text parsing - no card-name-specific checks.
+
         Handles:
-        - Sokka, Tenacious Tactician: Create 1/1 white Ally token
-        - Bria, Riptide Rogue: Target creature can't be blocked
+        - "Whenever you cast a noncreature spell, create a 1/1 [color] Ally creature token"
+        - "Whenever you cast a noncreature spell, target creature you control can't be blocked this turn"
         - Prowess triggers for all creatures
         """
         card_type = getattr(card, 'type', '').lower()
@@ -4061,26 +4055,31 @@ class BoardState:
 
         tokens_created = 0
 
-        # Sokka, Tenacious Tactician: Create 1/1 white Ally token when you cast noncreature spell
-        if self.sokka_on_board:
-            self.create_token(
-                token_name="Ally Token",
-                power=1,
-                toughness=1,
-                token_type="Ally",
-                verbose=verbose
-            )
-            tokens_created += 1
-            if verbose:
-                print(f"  → Sokka, Tenacious Tactician: Created 1/1 white Ally token")
+        # Check all creatures for noncreature spell triggers
+        for creature in self.creatures:
+            oracle = getattr(creature, 'oracle_text', '').lower()
 
-        # Bria, Riptide Rogue: Target creature you control can't be blocked this turn
-        if self.bria_on_board and self.creatures:
-            # Choose the best attacker (highest power)
-            best_attacker = max(self.creatures, key=lambda c: self.get_effective_power(c))
-            best_attacker.is_unblockable = True
-            if verbose:
-                print(f"  → Bria, Riptide Rogue: {best_attacker.name} can't be blocked this turn")
+            # GENERIC: "Whenever you cast a noncreature spell, create a 1/1 [color] Ally creature token"
+            if 'whenever you cast a noncreature spell' in oracle and 'create' in oracle and 'ally' in oracle and 'token' in oracle:
+                self.create_token(
+                    token_name="Ally Token",
+                    power=1,
+                    toughness=1,
+                    token_type="Ally",
+                    verbose=verbose
+                )
+                tokens_created += 1
+                if verbose:
+                    print(f"  → {creature.name}: Created 1/1 Ally token")
+
+            # GENERIC: "Whenever you cast a noncreature spell, target creature you control can't be blocked this turn"
+            if 'whenever you cast a noncreature spell' in oracle and "can't be blocked" in oracle:
+                if self.creatures:
+                    # Choose the best attacker (highest power)
+                    best_attacker = max(self.creatures, key=lambda c: self.get_effective_power(c))
+                    best_attacker.is_unblockable = True
+                    if verbose:
+                        print(f"  → {creature.name}: {best_attacker.name} can't be blocked this turn")
 
         return {'tokens': tokens_created}
 
