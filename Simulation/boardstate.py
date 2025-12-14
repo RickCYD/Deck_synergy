@@ -185,6 +185,15 @@ class BoardState:
         # Y'shtola, Night's Blessed tracking
         self.yshtola_on_board = False  # Is Y'shtola, Night's Blessed on the battlefield?
 
+        # Sokka, Tenacious Tactician tracking
+        self.sokka_on_board = False  # Is Sokka, Tenacious Tactician on the battlefield?
+
+        # Bria, Riptide Rogue tracking
+        self.bria_on_board = False  # Is Bria, Riptide Rogue on the battlefield?
+
+        # Sokka's Charge tracking
+        self.sokkas_charge_on_board = False  # Is Sokka's Charge on the battlefield?
+
     def _apply_equipped_keywords(self, creature):
         equipped = creature in self.equipment_attached.values()
 
@@ -1182,6 +1191,10 @@ class BoardState:
                 if verbose:
                     damage_dealt = 2 * len(alive_opps)
                     print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
+
+        # Trigger noncreature spell effects (Sokka, Bria, etc.)
+        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+        self.apply_prowess_bonus()
 
         if verbose:
             print(f"→ {card.name} enters the battlefield (artifact)")
@@ -4004,6 +4017,46 @@ class BoardState:
             'tokens': tokens_created,
             'cards_drawn': cards_drawn
         }
+
+    def trigger_noncreature_spell_effects(self, card, verbose: bool = False):
+        """
+        Trigger effects when ANY noncreature spell is cast (instant, sorcery, artifact, enchantment, planeswalker).
+
+        Handles:
+        - Sokka, Tenacious Tactician: Create 1/1 white Ally token
+        - Bria, Riptide Rogue: Target creature can't be blocked
+        - Prowess triggers for all creatures
+        """
+        card_type = getattr(card, 'type', '').lower()
+
+        # Only trigger for noncreature spells
+        if 'creature' in card_type and 'tribal' not in card_type:
+            return
+
+        tokens_created = 0
+
+        # Sokka, Tenacious Tactician: Create 1/1 white Ally token when you cast noncreature spell
+        if self.sokka_on_board:
+            self.create_token(
+                token_name="Ally Token",
+                power=1,
+                toughness=1,
+                token_type="Ally",
+                verbose=verbose
+            )
+            tokens_created += 1
+            if verbose:
+                print(f"  → Sokka, Tenacious Tactician: Created 1/1 white Ally token")
+
+        # Bria, Riptide Rogue: Target creature you control can't be blocked this turn
+        if self.bria_on_board and self.creatures:
+            # Choose the best attacker (highest power)
+            best_attacker = max(self.creatures, key=lambda c: self.get_effective_power(c))
+            best_attacker.is_unblockable = True
+            if verbose:
+                print(f"  → Bria, Riptide Rogue: {best_attacker.name} can't be blocked this turn")
+
+        return {'tokens': tokens_created}
 
     def apply_prowess_bonus(self):
         """
