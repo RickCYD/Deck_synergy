@@ -69,14 +69,32 @@ def run_effectiveness_analysis(
         # Convert deck dicts to Card objects
         from simulate_game import Card
 
+        def _safe_power_toughness(value) -> int:
+            """Convert power/toughness string to int, handling special values."""
+            if value is None:
+                return 0
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                # Handle numeric strings
+                if value.isdigit():
+                    return int(value)
+                # Handle negative numbers like "-1"
+                if value.lstrip('-').isdigit():
+                    return int(value)
+                # Handle special values: *, X, *, 1+*, etc. -> treat as 0
+                # These are variable and can't be known at simulation time
+                return 0
+            return 0
+
         def dict_to_card(d: Dict, is_commander: bool = False) -> Card:
             """Convert card dict to Card object."""
             return Card(
                 name=d.get('name', 'Unknown'),
                 type=d.get('type_line', d.get('type', 'Unknown')),
                 mana_cost=d.get('mana_cost', ''),
-                power=d.get('power', 0),
-                toughness=d.get('toughness', 0),
+                power=_safe_power_toughness(d.get('power')),
+                toughness=_safe_power_toughness(d.get('toughness')),
                 produces_colors=d.get('produces_colors', []),
                 mana_production=d.get('mana_production', 0),
                 etb_tapped=d.get('etb_tapped', False),

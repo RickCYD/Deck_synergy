@@ -502,7 +502,8 @@ def run_goldfish_simulation_with_metrics(
 
     # Track wins by turn
     wins_by_turn = {t: 0 for t in range(1, max_turns + 1)}
-    damage_by_turn = {t: [] for t in range(1, max_turns + 1)}
+    damage_by_turn = {t: [] for t in range(1, max_turns + 1)}  # Cumulative damage
+    per_turn_damage = {t: [] for t in range(1, max_turns + 1)}  # Per-turn damage
 
     for sim in range(num_simulations):
         # Run simulation
@@ -516,6 +517,7 @@ def run_goldfish_simulation_with_metrics(
         # Calculate cumulative damage per turn
         cumulative = 0
         game_damage = []
+        game_won = False  # Track if THIS simulation has won
 
         for turn in range(1, max_turns + 1):
             combat = game_metrics.get('combat_damage', [0] * (max_turns + 1))[turn]
@@ -524,21 +526,22 @@ def run_goldfish_simulation_with_metrics(
             cumulative += turn_damage
             game_damage.append(turn_damage)
             damage_by_turn[turn].append(cumulative)
+            per_turn_damage[turn].append(turn_damage)
 
-            # Check win condition
-            if cumulative >= 120 and wins_by_turn[turn] == 0:
-                # First turn we could win
+            # Check win condition - only record first win turn for this simulation
+            if cumulative >= 120 and not game_won:
+                game_won = True
+                # Increment wins for this turn and all later turns
                 for t in range(turn, max_turns + 1):
                     wins_by_turn[t] += 1
                 metrics.win_turns.append(turn)
                 metrics.total_wins += 1
 
-                # Track win type
+                # Track win type based on damage sources
                 if drain > combat * 0.5:
                     metrics.drain_damage_wins += 1
                 else:
                     metrics.combat_damage_wins += 1
-                break
 
         metrics.damage_per_turn_samples.append(game_damage)
 
@@ -562,8 +565,9 @@ def run_goldfish_simulation_with_metrics(
 
     # Calculate average damage per turn
     for turn in range(1, max_turns + 1):
+        if per_turn_damage[turn]:
+            metrics.avg_damage_per_turn.append(statistics.mean(per_turn_damage[turn]))
         if damage_by_turn[turn]:
-            metrics.avg_damage_per_turn.append(statistics.mean(damage_by_turn[turn]))
             metrics.cumulative_damage_by_turn.append(statistics.mean(damage_by_turn[turn]))
 
     return metrics
