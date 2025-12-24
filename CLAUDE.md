@@ -2,8 +2,8 @@
 
 > **Purpose:** This guide is specifically designed for Claude Code and other AI assistants working on the MTG Commander Deck Synergy Analyzer. It provides essential context, workflows, and conventions to ensure effective contributions.
 
-**Last Updated:** 2025-11-16
-**Version:** 2.0
+**Last Updated:** 2025-12-24
+**Version:** 3.0
 **Repository:** Deck_synergy
 
 ---
@@ -30,8 +30,8 @@
 - **Framework:** Dash (Flask-based), Plotly, Cytoscape.js
 - **Domain:** Magic: The Gathering (MTG) card game mechanics
 - **Main Purpose:** Analyze Commander decks for synergies and simulate gameplay
-- **Codebase Size:** ~19,000 lines of Python across 80+ files
-- **Key Feature:** Detects 69+ types of card interactions
+- **Codebase Size:** ~25,000 lines of Python across 90+ files
+- **Key Feature:** Detects 100+ types of card interactions including specialized tribal and spellslinger synergies
 
 ### First Steps
 1. **Read this file completely** - You're doing it!
@@ -116,15 +116,41 @@ For each card pair (card1, card2) in deck:
 - **Output:** Statistical deck performance metrics
 
 **Core Files:**
-- `boardstate.py` (194KB) - ALL MTG game mechanics
+- `boardstate.py` (5,548 lines) - ALL MTG game mechanics
 - `simulate_game.py` - Game loop and turn phases
 - `oracle_text_parser.py` - Parse card abilities
+- `extended_mechanics.py` - Extended mechanic support (NEW)
+- `win_metrics.py` - Win condition tracking (NEW)
 
 #### 3. Web Dashboard
-- **Location:** `app.py` (3,387 lines)
+- **Location:** `app.py` (3,591 lines)
 - **Framework:** Dash (React-based Python framework)
 - **Visualization:** Cytoscape.js for graphs, Plotly for charts
 - **Pattern:** Callback-based reactive updates
+
+### Recent Major Updates (v3.0 - December 2024)
+
+Since the last major update (v2.0 in November 2024), the following significant enhancements have been made:
+
+**New Synergy Detection:**
+- **Spellslinger Engine Synergies**: Dedicated module for detecting Jeskai Ascendancy, Veyran, Kindred Discovery, and other spell-based engines (`spellslinger_engine_synergies.py`)
+- **Ally/Prowess Tribal Synergies**: Specialized detection for Rally triggers, Ally tribal interactions, and Prowess mechanics (`ally_prowess_synergies.py`)
+- **Extended Synergy Rules**: Rules.py expanded from ~900 lines to 5,933 lines with 100+ distinct synergy patterns
+
+**Simulation Enhancements:**
+- **Win Metrics Tracking**: New `win_metrics.py` module tracks average win turn and win conditions
+- **Deck Effectiveness Analysis**: Dashboard integration for goldfish simulation results with win probability charts
+- **Extended Mechanics**: Support for complex triggered abilities and tribal interactions
+- **Damage Calculation Fixes**: Corrected 5 critical bugs in damage value calculations
+
+**New Extractors:**
+- `spellslinger_extractors.py`: Detects untap engines, trigger doublers, spell copy abilities
+- Enhanced tribal extractors for Rally, Ally matters, and tribal token creation
+
+**Performance & Code Quality:**
+- Oracle text parsing now handles 6+ complex cards with generic parsing
+- Improved trigger detection for attack, ETB, and spell cast events
+- Better error handling in simulation integration
 
 ### Key Technologies
 
@@ -148,7 +174,7 @@ For each card pair (card1, card2) in deck:
 ```
 /home/user/Deck_synergy/
 │
-├── app.py (3,387 lines)              # MAIN ENTRY: Web dashboard
+├── app.py (3,591 lines)              # MAIN ENTRY: Web dashboard
 ├── requirements.txt                   # Python dependencies
 ├── Procfile                           # Heroku deployment config
 ├── shared_mechanics.py                # Shared detection logic
@@ -161,7 +187,7 @@ For each card pair (card1, card2) in deck:
 │   │   ├── commander_spellbook.py    # Verified combo database
 │   │   └── recommendations.py        # AI-powered suggestions
 │   │
-│   ├── core/                         # Unified architecture (NEW)
+│   ├── core/                         # Unified architecture
 │   │   ├── card_parser.py           # Single source of truth for parsing
 │   │   ├── trigger_registry.py      # Centralized trigger management
 │   │   ├── trigger_effects.py       # Effect creation utilities
@@ -169,23 +195,30 @@ For each card pair (card1, card2) in deck:
 │   │
 │   ├── synergy_engine/               # SYNERGY DETECTION SYSTEM
 │   │   ├── analyzer.py              # MAIN ENTRY - orchestrates analysis
-│   │   ├── rules.py (~900 lines)    # 69+ synergy detection rules
+│   │   ├── rules.py (5,933 lines)   # 100+ synergy detection rules
 │   │   ├── combo_detector.py        # Verified combo detection
 │   │   ├── three_way_synergies.py   # Multi-card combos
+│   │   ├── spellslinger_engine_synergies.py  # Spellslinger strategies (NEW)
+│   │   ├── ally_prowess_synergies.py         # Tribal synergies (NEW)
+│   │   ├── card_advantage_synergies.py       # Draw/tutor synergies
+│   │   ├── recursion_synergies.py            # Graveyard recursion
 │   │   ├── categories.py            # Synergy categorization/coloring
-│   │   └── ... (7 more files)
+│   │   ├── embedding_analyzer.py    # ML-based semantic analysis
+│   │   └── ... (4 more files)
 │   │
-│   ├── utils/                        # Mechanic extractors (24 files)
+│   ├── utils/                        # Mechanic extractors (25+ files)
 │   │   ├── aristocrats_extractors.py    # Sacrifice/death triggers
 │   │   ├── token_extractors.py          # Token generation
 │   │   ├── graveyard_extractors.py      # Graveyard mechanics
 │   │   ├── ramp_extractors.py           # Mana acceleration
 │   │   ├── removal_extractors.py        # Removal spells
 │   │   ├── card_advantage_extractors.py # Card draw
+│   │   ├── spellslinger_extractors.py   # Spellslinger mechanics (NEW)
+│   │   ├── tribal_extractors.py         # Tribal mechanics
 │   │   ├── keyword_extractors.py        # Keywords (flying, haste, etc.)
 │   │   ├── card_roles.py                # Card categorization
 │   │   ├── graph_builder.py             # Build synergy graphs
-│   │   └── ... (15 more utilities)
+│   │   └── ... (14 more utilities)
 │   │
 │   ├── models/                       # Data structures
 │   │   ├── deck.py                  # Deck model with methods
@@ -195,19 +228,23 @@ For each card pair (card1, card2) in deck:
 │   ├── analysis/                     # Analysis tools
 │   │   ├── deck_archetype_detector.py   # Detect deck archetypes
 │   │   ├── weakness_detector.py         # Find deck weaknesses
-│   │   └── impact_analyzer.py           # Card impact analysis
+│   │   ├── impact_analyzer.py           # Card impact analysis
+│   │   └── replacement_analyzer.py      # Card replacement suggestions
 │   │
 │   └── simulation/                   # Simulation wrappers
 │       ├── deck_simulator.py        # High-level simulation interface
+│       ├── deck_effectiveness.py    # Deck effectiveness metrics (NEW)
 │       └── mana_simulator.py        # Mana curve analysis
 │
-├── Simulation/                        # Legacy game simulation engine
-│   ├── boardstate.py (194KB)         # CORE: All MTG mechanics
+├── Simulation/                        # Game simulation engine
+│   ├── boardstate.py (5,548 lines)   # CORE: All MTG mechanics
 │   ├── simulate_game.py (35KB)       # MAIN LOOP: Game simulation
 │   ├── oracle_text_parser.py (27KB)  # Parse card abilities
+│   ├── extended_mechanics.py         # Extended mechanic support (NEW)
+│   ├── win_metrics.py                # Win condition tracking (NEW)
 │   ├── turn_phases.py                # MTG turn structure
 │   ├── mtg_abilities.py              # Ability data structures
-│   └── tests/ (22 files)             # Comprehensive test coverage
+│   └── tests/ (32 files)             # Comprehensive test coverage
 │
 ├── tests/                             # Synergy engine tests (10 files)
 ├── scripts/                           # Utility scripts (8 files)
@@ -331,22 +368,27 @@ app.py: render dashboard with graph + metrics
 
 **Example:** Adding "Energy counter synergies"
 
-1. **Create Extractor** (if needed)
+1. **Decide Location**
+   - **General synergy?** → Add to `src/synergy_engine/rules.py`
+   - **Specialized archetype?** → Create dedicated module (e.g., `energy_synergies.py`)
+   - **Examples of specialized modules:** `spellslinger_engine_synergies.py`, `ally_prowess_synergies.py`
+
+2. **Create Extractor** (if needed)
    ```bash
    # File: src/utils/energy_extractors.py
    ```
    - Add functions: `extract_produces_energy()`, `extract_uses_energy()`
-   - Follow existing extractor patterns (see `token_extractors.py`)
+   - Follow existing extractor patterns (see `token_extractors.py` or `spellslinger_extractors.py`)
 
-2. **Add Detection Rule**
+3. **Add Detection Rule**
    ```bash
-   # File: src/synergy_engine/rules.py
+   # File: src/synergy_engine/rules.py (or specialized module)
    ```
    - Add function: `detect_energy_synergies(card1, card2, deck_info=None)`
    - Import your extractors
    - Return synergy dict with `name`, `category`, `strength`, `description`
 
-3. **Add to Rule Registry**
+4. **Add to Rule Registry**
    ```python
    # In rules.py, add to ALL_RULES list:
    ALL_RULES = [
@@ -355,16 +397,17 @@ app.py: render dashboard with graph + metrics
        # ... existing rules
        detect_energy_synergies,  # ADD HERE
    ]
+   # OR import from specialized module in analyzer.py
    ```
 
-4. **Add Category (if new)**
+5. **Add Category (if new)**
    ```bash
    # File: src/synergy_engine/categories.py
    ```
    - Add to `CATEGORY_COLORS` dict
    - Add to `CATEGORY_DISPLAY_NAMES` dict
 
-5. **Test**
+6. **Test**
    ```bash
    pytest tests/test_synergy_rules.py -v
    ```
@@ -1065,11 +1108,15 @@ def test_regression_issue_123_food_tokens():
 
 | File | Lines | Purpose | Modify When... |
 |------|-------|---------|----------------|
-| `app.py` | 3,387 | **Main web dashboard** | Adding UI features, callbacks, layout changes |
+| `app.py` | 3,591 | **Main web dashboard** | Adding UI features, callbacks, layout changes |
 | `src/synergy_engine/analyzer.py` | ~500 | **Synergy orchestrator** | Changing analysis pipeline, adding global features |
-| `src/synergy_engine/rules.py` | ~900 | **69+ synergy rules** | Adding new synergy types |
-| `Simulation/boardstate.py` | ~4,800 | **ALL MTG mechanics** | Adding game mechanics for simulation |
+| `src/synergy_engine/rules.py` | 5,933 | **100+ synergy rules** | Adding new synergy types |
+| `src/synergy_engine/spellslinger_engine_synergies.py` | ~400 | **Spellslinger synergies** | Adding spellslinger-specific synergies |
+| `src/synergy_engine/ally_prowess_synergies.py` | ~300 | **Tribal synergies** | Adding tribal-specific synergies |
+| `Simulation/boardstate.py` | 5,548 | **ALL MTG mechanics** | Adding game mechanics for simulation |
 | `Simulation/simulate_game.py` | ~900 | **Game loop** | Changing simulation behavior |
+| `Simulation/extended_mechanics.py` | ~400 | **Extended mechanics** | Adding complex mechanic implementations |
+| `Simulation/win_metrics.py` | ~300 | **Win tracking** | Modifying win condition detection |
 
 ### Configuration Files
 
@@ -1331,9 +1378,17 @@ def update_component(n_clicks, data):
 
 ---
 
-**Last Updated:** 2025-11-16
-**Version:** 2.0
+**Last Updated:** 2025-12-24
+**Version:** 3.0
 **Maintained by:** AI-assisted development team
+
+**Major Changes in v3.0:**
+- 100+ synergy detection rules (up from 69+)
+- Specialized spellslinger and tribal synergy modules
+- Win metrics and deck effectiveness tracking
+- 5,933-line rules.py (6x growth from v2.0)
+- Extended simulation mechanics
+- Damage calculation fixes
 
 **Questions or issues?** Check the GitHub Issues or Discussions.
 
