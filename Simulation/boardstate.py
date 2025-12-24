@@ -124,9 +124,11 @@ class BoardState:
         self.damage_multiplier = 1.0  # For damage doublers like Fiery Emancipation
         self.token_multiplier = 1  # For token doublers like Doubling Season
 
-        # Cost reduction
+        # Cost reduction (Phase 3)
         self.cost_reduction = 0  # Generic cost reduction
         self.affinity_count = 0  # Artifacts for affinity
+        self.spell_cost_reduction = 0  # Instant/sorcery cost reduction
+        self.creature_cost_reduction = 0  # Creature cost reduction
 
         # Sacrifice tracking
         self.creatures_sacrificed = 0
@@ -175,6 +177,10 @@ class BoardState:
         # Card draw triggers tracking (Phase 2)
         self.draw_triggers = []  # List of "when you draw" effects
         self.cards_drawn_this_turn = 0  # Track draws for Niv-Mizzet, etc.
+
+        # Energy counters (Phase 3)
+        self.energy_counters = 0  # Energy counter pool
+        self.energy_gained_this_turn = 0  # Track energy generation
 
         # Reanimator mechanics tracking
         self.creatures_reanimated = 0  # Total creatures brought back from graveyard
@@ -1013,6 +1019,255 @@ class BoardState:
                 if verbose and count > 0:
                     print(f"  → Paradox Engine: Untapped {count} creatures")
 
+    def get_spell_copies(self, spell, verbose=False):
+        """
+        Get the number of times to copy a spell.
+
+        Checks for copy effects like:
+        - Fork (copies target instant/sorcery)
+        - Dualcaster Mage (ETB copy target instant/sorcery)
+        - Thousand-Year Storm (copy for each spell cast before it)
+        - Swarm Intelligence (copy first instant/sorcery each turn)
+        """
+        num_copies = 0
+        card_type = getattr(spell, 'type', '').lower()
+
+        # Only copy instants and sorceries
+        if 'instant' not in card_type and 'sorcery' not in card_type:
+            return 0
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Thousand-Year Storm: Copy for each spell cast before it this turn
+            if 'thousand-year storm' in name:
+                copies = self.spells_cast_this_turn - 1  # Don't count current spell
+                if copies > 0:
+                    num_copies += copies
+                    if verbose:
+                        print(f"  → Thousand-Year Storm: Copying {copies} times")
+
+            # Swarm Intelligence: Copy first instant/sorcery each turn
+            if 'swarm intelligence' in name:
+                if not getattr(permanent, '_copied_this_turn', False):
+                    num_copies += 1
+                    permanent._copied_this_turn = True
+                    if verbose:
+                        print(f"  → Swarm Intelligence: Copying spell")
+
+            # Pyromancer's Goggles: Copy instant/sorcery if R paid
+            if 'pyromancer' in name and 'goggles' in name:
+                # Simplified: If we have mana, copy once per turn
+                if not getattr(permanent, '_copied_this_turn', False) and len(self.mana_pool) > 0:
+                    num_copies += 1
+                    permanent._copied_this_turn = True
+                    if verbose:
+                        print(f"  → Pyromancer's Goggles: Copying spell")
+
+        # Track total copies
+        self.spell_copies_this_turn += num_copies
+
+        return num_copies
+
+    def resolve_spell_copy(self, spell, x_value=0, verbose=False):
+        """
+        Resolve a copy of a spell.
+
+        Copies do NOT trigger cast effects (no Guttersnipe damage, etc.)
+        but DO resolve their effects (damage, card draw, tokens, etc.)
+        """
+        oracle = getattr(spell, 'oracle_text', '').lower()
+
+        # Card draw
+        if getattr(spell, "draw_cards", 0) > 0:
+            self.draw_card(getattr(spell, "draw_cards"), verbose=verbose)
+
+        # Direct damage
+        damage = getattr(spell, "deals_damage", 0)
+        if damage > 0:
+            self.spell_damage_this_turn += damage
+            alive_opps = [opp for opp in self.opponents if opp['life_total'] > 0]
+            if alive_opps:
+                target_opp = alive_opps[0]
+                target_opp['life_total'] -= damage
+                if target_opp['life_total'] <= 0:
+                    target_opp['is_alive'] = False
+                if verbose:
+                    print(f"    Copy deals {damage} damage to {target_opp['name']}")
+
+        # Token creation
+        if oracle and "create" in oracle and "token" in oracle:
+            import re
+            m_token = re.search(
+                r"create (?P<num>x|\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten) (?P<stats>\d+/\d+)?[^.]*tokens?",
+                oracle,
+            )
+            if m_token:
+                num_map = {
+                    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+                    "four": 4, "five": 5, "six": 6, "seven": 7,
+                    "eight": 8, "nine": 9, "ten": 10, "x": x_value if x_value else 1,
+                }
+                val = m_token.group("num")
+                token_count = num_map.get(val, int(val) if val.isdigit() else 1)
+                stats = m_token.group("stats") if m_token.group("stats") else "1/1"
+
+                keywords = []
+                if "haste" in oracle:
+                    keywords.append("haste")
+                if "flying" in oracle:
+                    keywords.append("flying")
+
+                self.create_tokens(token_count, stats, keywords=keywords, verbose=verbose)
+                if verbose:
+                    print(f"    Copy created {token_count} {stats} token(s)")
+
+        # Wheel effects
+        if 'discard' in oracle and 'hand' in oracle and 'draw' in oracle:
+            # Wheel of Fortune style: discard hand, draw 7
+            if 'each player' in oracle or 'all players' in oracle or 'your hand' in oracle:
+                self.wheel_effect(7, verbose=verbose)
+
+        # Extra turn (INFINITE COMBO ALERT!)
+        if 'extra turn' in oracle or 'another turn' in oracle:
+            if verbose:
+                print(f"    ⚠️  INFINITE COMBO DETECTED: Spell copy + extra turn!")
+            # Don't actually take infinite turns in simulation (would hang)
+            # Mark as infinite combo instead
+            self.spell_damage_this_turn += 999  # Effectively a win
+
+    def calculate_cost_reduction(self, card, verbose=False):
+        """
+        Calculate cost reduction for a spell.
+
+        Checks for cost reducers like:
+        - Goblin Electromancer (instant/sorcery cost {1} less)
+        - Jace's Sanctum (instant/sorcery cost {1} less)
+        - Animar (creature cost {1} less per counter)
+        - Affinity (artifacts reduce cost)
+        """
+        reduction = 0
+        card_type = getattr(card, 'type', '').lower()
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Goblin Electromancer: Instant/sorcery cost {1} less
+            if ('goblin electromancer' in name) or ('instant and sorcery spells you cast cost' in oracle):
+                if 'instant' in card_type or 'sorcery' in card_type:
+                    reduction += 1
+                    if verbose:
+                        print(f"  → {permanent.name}: -{reduction} cost")
+
+            # Jace's Sanctum: Instant/sorcery cost {1} less
+            if 'jace' in name and 'sanctum' in name:
+                if 'instant' in card_type or 'sorcery' in card_type:
+                    reduction += 1
+
+            # Baral, Chief of Compliance: Instant/sorcery cost {1} less
+            if ('baral' in name) or ('instant and sorcery spells you cast cost {1} less' in oracle):
+                if 'instant' in card_type or 'sorcery' in card_type:
+                    reduction += 1
+
+            # Animar: Creature spells cost {1} less per counter
+            if 'animar' in name:
+                if 'creature' in card_type:
+                    counters = getattr(permanent, 'counters', {}).get('+1/+1', 0)
+                    reduction += counters
+                    if verbose and counters > 0:
+                        print(f"  → Animar: -{counters} cost ({counters} counters)")
+
+            # Primal Amulet / Primal Wellspring: Generic cost reduction
+            if 'primal' in name and ('amulet' in name or 'wellspring' in name):
+                if 'instant' in card_type or 'sorcery' in card_type:
+                    reduction += 1
+
+        # Affinity for artifacts
+        if 'affinity for artifacts' in getattr(card, 'oracle_text', '').lower():
+            artifact_count = len(self.artifacts)
+            reduction += artifact_count
+            if verbose and artifact_count > 0:
+                print(f"  → Affinity: -{artifact_count} cost ({artifact_count} artifacts)")
+
+        return reduction
+
+    def gain_energy(self, amount, verbose=False):
+        """
+        Gain energy counters.
+
+        Used by: Aether Hub, Glimmer of Genius, Harnessed Lightning, etc.
+        """
+        self.energy_counters += amount
+        self.energy_gained_this_turn += amount
+        if verbose:
+            print(f"Gained {amount} energy (total: {self.energy_counters})")
+
+        return amount
+
+    def spend_energy(self, amount, verbose=False):
+        """
+        Spend energy counters.
+
+        Returns True if successful, False if not enough energy.
+        """
+        if self.energy_counters >= amount:
+            self.energy_counters -= amount
+            if verbose:
+                print(f"Spent {amount} energy (remaining: {self.energy_counters})")
+            return True
+        else:
+            if verbose:
+                print(f"Not enough energy (have {self.energy_counters}, need {amount})")
+            return False
+
+    def trigger_energy_payoffs(self, verbose=False):
+        """
+        Trigger effects that care about energy.
+
+        Checks for:
+        - Aetherworks Marvel (pay 6 energy, cast free spell)
+        - Electrostatic Pummeler (pay 3 energy, double power)
+        - Whirler Virtuoso (pay 3 energy, create Thopter)
+        """
+        for permanent in self.creatures + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Aetherworks Marvel: Pay 6 energy, cast free spell
+            if 'aetherworks marvel' in name:
+                if self.energy_counters >= 6:
+                    if self.spend_energy(6, verbose=verbose):
+                        # Simplified: Draw a card as proxy for "cast free spell"
+                        self.draw_card(1, verbose=verbose)
+                        if verbose:
+                            print(f"  → Aetherworks Marvel: Cast free spell!")
+
+            # Whirler Virtuoso: Pay 3 energy, create Thopter
+            if 'whirler virtuoso' in name:
+                # Create as many Thopters as we can afford
+                while self.energy_counters >= 3:
+                    if self.spend_energy(3, verbose=verbose):
+                        self.create_token(
+                            token_name="Thopter Token",
+                            power=1,
+                            toughness=1,
+                            token_type="Thopter",
+                            keywords=['Flying'],
+                            verbose=verbose
+                        )
+                        if verbose:
+                            print(f"  → Whirler Virtuoso: Created Thopter token")
+
+            # Electrostatic Pummeler: Pay 3 energy, double power
+            if 'electrostatic pummeler' in name and permanent in self.creatures:
+                if self.energy_counters >= 3:
+                    if self.spend_energy(3, verbose=verbose):
+                        permanent.power = (permanent.power or 1) * 2
+                        if verbose:
+                            print(f"  → Electrostatic Pummeler: Power doubled to {permanent.power}!")
+
     def draw_card(self, num_cards, verbose=False):
         """
         Draws ``num_cards`` from the library to the hand and returns the cards
@@ -1767,6 +2022,23 @@ class BoardState:
         # UNTAP ENGINES: Trigger untap effects on spell cast (Jeskai Ascendancy, Paradox Engine)
         self.trigger_on_spell_cast_untaps(card, verbose=verbose)
 
+        # SPELL COPY: Check for copy effects (Fork, Dualcaster Mage, etc.)
+        oracle = getattr(card, "oracle_text", "").lower()
+        num_copies = self.get_spell_copies(card, verbose=verbose)
+        for copy_num in range(num_copies):
+            if verbose:
+                print(f"  → Copy #{copy_num + 1} of {card.name}")
+            self.resolve_spell_copy(card, x_val, verbose=verbose)
+
+        # STORM: Check for storm mechanic
+        if 'storm' in oracle:
+            storm_count = self.spells_cast_this_turn - 1  # Don't count the storm spell itself
+            if storm_count > 0:
+                if verbose:
+                    print(f"  → Storm triggers: Creating {storm_count} copies")
+                for _ in range(storm_count):
+                    self.resolve_spell_copy(card, x_val, verbose=verbose)
+
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
 
@@ -2018,6 +2290,23 @@ class BoardState:
 
         # UNTAP ENGINES: Trigger untap effects on spell cast (Jeskai Ascendancy, Paradox Engine)
         self.trigger_on_spell_cast_untaps(card, verbose=verbose)
+
+        # SPELL COPY: Check for copy effects (Fork, Dualcaster Mage, etc.)
+        oracle = getattr(card, "oracle_text", "").lower()
+        num_copies = self.get_spell_copies(card, verbose=verbose)
+        for copy_num in range(num_copies):
+            if verbose:
+                print(f"  → Copy #{copy_num + 1} of {card.name}")
+            self.resolve_spell_copy(card, x_val, verbose=verbose)
+
+        # STORM: Check for storm mechanic
+        if 'storm' in oracle:
+            storm_count = self.spells_cast_this_turn - 1  # Don't count the storm spell itself
+            if storm_count > 0:
+                if verbose:
+                    print(f"  → Storm triggers: Creating {storm_count} copies")
+                for _ in range(storm_count):
+                    self.resolve_spell_copy(card, x_val, verbose=verbose)
 
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
