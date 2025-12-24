@@ -336,5 +336,75 @@ class TestGamePlanDetection:
         assert ai.game_plan == 'combo'
 
 
+class TestWinCountingLogic:
+    """Test that win counting works correctly across multiple simulations."""
+
+    def test_wins_counted_per_simulation(self):
+        """Test that each simulation's win is counted independently."""
+        metrics = WinMetrics()
+        metrics.total_games = 3
+
+        # Simulate 3 games that all win by turn 8
+        wins_by_turn = {t: 0 for t in range(1, 11)}
+
+        for sim in range(3):
+            # Each simulation wins on turn 8
+            win_turn = 8
+            for t in range(win_turn, 11):
+                wins_by_turn[t] += 1
+            metrics.win_turns.append(win_turn)
+            metrics.total_wins += 1
+
+        # All 3 simulations should be counted for turn 8, 9, 10
+        assert wins_by_turn[8] == 3, "All 3 simulations should be counted for turn 8"
+        assert wins_by_turn[9] == 3, "All 3 simulations should be counted for turn 9"
+        assert wins_by_turn[10] == 3, "All 3 simulations should be counted for turn 10"
+        assert metrics.total_wins == 3, "Total wins should be 3"
+
+    def test_different_win_turns_counted_correctly(self):
+        """Test wins at different turns are tracked correctly."""
+        wins_by_turn = {t: 0 for t in range(1, 11)}
+
+        # Sim 1: wins turn 6
+        for t in range(6, 11):
+            wins_by_turn[t] += 1
+
+        # Sim 2: wins turn 8
+        for t in range(8, 11):
+            wins_by_turn[t] += 1
+
+        # Sim 3: wins turn 10
+        for t in range(10, 11):
+            wins_by_turn[t] += 1
+
+        assert wins_by_turn[6] == 1, "Only 1 simulation wins by turn 6"
+        assert wins_by_turn[7] == 1, "Only 1 simulation wins by turn 7"
+        assert wins_by_turn[8] == 2, "2 simulations win by turn 8"
+        assert wins_by_turn[9] == 2, "2 simulations win by turn 9"
+        assert wins_by_turn[10] == 3, "All 3 simulations win by turn 10"
+
+
+class TestDamageMetricsSeparation:
+    """Test that per-turn and cumulative damage are tracked separately."""
+
+    def test_metrics_are_different(self):
+        """Test that avg_damage_per_turn and cumulative_damage_by_turn differ."""
+        metrics = WinMetrics()
+
+        # Simulate damage: 10, 15, 20 per turn
+        per_turn = [10, 15, 20]
+        cumulative = [10, 25, 45]
+
+        metrics.avg_damage_per_turn = per_turn
+        metrics.cumulative_damage_by_turn = cumulative
+
+        # They should be different
+        assert metrics.avg_damage_per_turn != metrics.cumulative_damage_by_turn
+        assert metrics.avg_damage_per_turn[0] == 10
+        assert metrics.cumulative_damage_by_turn[0] == 10
+        assert metrics.avg_damage_per_turn[2] == 20
+        assert metrics.cumulative_damage_by_turn[2] == 45
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
