@@ -1217,7 +1217,7 @@ def update_graph(deck_file):
 
                     # Top Impact Cards Section
                     html.Details([
-                        html.Summary("Top Impact Cards", style={
+                        html.Summary("Top Impact Cards (Opening Hand)", style={
                             'fontSize': '12px',
                             'fontWeight': 'bold',
                             'color': '#1976d2',
@@ -1225,19 +1225,27 @@ def update_graph(deck_file):
                             'marginBottom': '6px'
                         }),
                         html.Div([
+                            html.Div("Cards that improve win rate when in opening hand:", style={
+                                'fontSize': '9px',
+                                'color': '#888',
+                                'fontStyle': 'italic',
+                                'marginBottom': '6px'
+                            }),
                             html.Div([
-                                html.Div(f"#{i+1}. {card.get('card_name', card.get('name', 'Unknown'))}", style={
-                                    'fontSize': '10px',
-                                    'marginBottom': '4px'
-                                }),
-                                html.Div(f"  Avg Damage: {card.get('avg_damage', 0):.1f} | Played: {card.get('appearances', card.get('times_played', 0))} times", style={
-                                    'fontSize': '9px',
-                                    'color': '#666',
-                                    'marginBottom': '6px',
-                                    'paddingLeft': '12px'
-                                })
-                            ]) for i, card in enumerate(top_cards[:5]) if isinstance(card, dict)
-                        ] if top_cards else [html.Div("No data available", style={'fontSize': '10px', 'color': '#999'})], style={'paddingLeft': '12px'})
+                                html.Div([
+                                    html.Div(f"#{i+1}. {card.get('card_name', card.get('name', 'Unknown'))}", style={
+                                        'fontSize': '10px',
+                                        'marginBottom': '4px'
+                                    }),
+                                    html.Div(f"  Impact: {card.get('overall_impact', 0):+.1f}% | In opening hand: {card.get('appearances', card.get('times_played', 0))} games", style={
+                                        'fontSize': '9px',
+                                        'color': '#666',
+                                        'marginBottom': '6px',
+                                        'paddingLeft': '12px'
+                                    })
+                                ]) for i, card in enumerate(top_cards[:5]) if isinstance(card, dict)
+                            ] if top_cards else [html.Div("No data available", style={'fontSize': '10px', 'color': '#999'})])
+                        ], style={'paddingLeft': '12px'})
                     ], style={'marginBottom': '10px'}),
 
                     # Deck Power Summary Section
