@@ -182,6 +182,12 @@ class BoardState:
         self.energy_counters = 0  # Energy counter pool
         self.energy_gained_this_turn = 0  # Track energy generation
 
+        # Topdeck manipulation (Phase 4)
+        self.scry_count_this_turn = 0  # Number of scry triggers
+        self.surveil_count_this_turn = 0  # Number of surveil triggers
+        self.top_card_known = None  # Track top card for miracle/topdeck matters
+        self.cards_tutored_this_turn = 0  # Tutor tracking
+
         # Reanimator mechanics tracking
         self.creatures_reanimated = 0  # Total creatures brought back from graveyard
         self.creatures_reanimated_this_turn = 0  # For per-turn tracking
@@ -1296,6 +1302,10 @@ class BoardState:
             # Track draws for this turn
             self.cards_drawn_this_turn += 1
 
+            # Check for Miracle (cast for reduced cost if first draw)
+            if self.cards_drawn_this_turn == 1:
+                self.check_and_cast_miracle(drawn_card, verbose=verbose)
+
             # Trigger "when you draw" effects (Niv-Mizzet, etc.)
             self.trigger_draw_effects(verbose=verbose)
 
@@ -1405,6 +1415,246 @@ class BoardState:
                 self.spell_damage_this_turn += damage
                 if verbose:
                     print(f"  → {permanent.name} deals {damage} damage (discard trigger)")
+
+    def scry(self, amount, verbose=False):
+        """
+        Scry X: Look at top X cards, put any number on top in any order, rest on bottom.
+
+        Simplified implementation: Keep top card if good, otherwise put on bottom.
+        """
+        if amount <= 0 or not self.library:
+            return
+
+        self.scry_count_this_turn += amount
+
+        # Simplified: Look at top card, keep if CMC >= 3, otherwise bottom
+        # This simulates filtering for higher-value cards
+        cards_to_scry = min(amount, len(self.library))
+
+        if cards_to_scry > 0:
+            top_card = self.library[0]
+            self.top_card_known = top_card
+
+            # Simple heuristic: Keep if CMC >= 3 or if it's a land
+            cmc = getattr(top_card, 'cmc', 0)
+            card_type = getattr(top_card, 'type', '').lower()
+
+            if cmc >= 3 or 'land' in card_type:
+                # Keep on top
+                if verbose:
+                    print(f"Scry {cards_to_scry}: Kept {top_card.name} on top")
+            else:
+                # Put on bottom
+                self.library.pop(0)
+                self.library.append(top_card)
+                if verbose:
+                    print(f"Scry {cards_to_scry}: Put {top_card.name} on bottom")
+                self.top_card_known = None if not self.library else self.library[0]
+
+        return cards_to_scry
+
+    def surveil(self, amount, verbose=False):
+        """
+        Surveil X: Look at top X cards, put any number in graveyard, rest on top.
+
+        Simplified: Put low-CMC cards in graveyard (enabler for graveyard strategies).
+        """
+        if amount <= 0 or not self.library:
+            return
+
+        self.surveil_count_this_turn += amount
+
+        # Simplified: Look at top card, bin if CMC <= 2, otherwise keep
+        cards_to_surveil = min(amount, len(self.library))
+
+        if cards_to_surveil > 0:
+            top_card = self.library[0]
+            self.top_card_known = top_card
+
+            # Simple heuristic: Bin if CMC <= 2 (for reanimation)
+            cmc = getattr(top_card, 'cmc', 0)
+
+            if cmc <= 2:
+                # Put in graveyard
+                self.library.pop(0)
+                self.graveyard.append(top_card)
+                if verbose:
+                    print(f"Surveil {cards_to_surveil}: Put {top_card.name} in graveyard")
+                self.top_card_known = None if not self.library else self.library[0]
+            else:
+                # Keep on top
+                if verbose:
+                    print(f"Surveil {cards_to_surveil}: Kept {top_card.name} on top")
+
+        return cards_to_surveil
+
+    def tutor(self, card_type=None, to_hand=True, verbose=False):
+        """
+        Search library for a card and put it in hand or on top of library.
+
+        card_type: 'creature', 'instant', 'sorcery', 'land', etc.
+        to_hand: If True, put in hand. If False, put on top of library.
+        """
+        if not self.library:
+            return None
+
+        self.cards_tutored_this_turn += 1
+
+        # Search for matching card
+        matching_cards = []
+        for card in self.library:
+            if card_type is None:
+                matching_cards.append(card)
+            else:
+                card_type_lower = getattr(card, 'type', '').lower()
+                if card_type.lower() in card_type_lower:
+                    matching_cards.append(card)
+
+        if not matching_cards:
+            if verbose:
+                print(f"Tutor: No {card_type or 'cards'} found in library")
+            return None
+
+        # Pick best card (highest CMC as proxy for power level)
+        best_card = max(matching_cards, key=lambda c: getattr(c, 'cmc', 0))
+        self.library.remove(best_card)
+
+        if to_hand:
+            self.hand.append(best_card)
+            if verbose:
+                print(f"Tutored {best_card.name} to hand")
+        else:
+            self.library.insert(0, best_card)
+            self.top_card_known = best_card
+            if verbose:
+                print(f"Tutored {best_card.name} to top of library")
+
+        # Shuffle library (simplified: just mark as shuffled)
+        if verbose:
+            print(f"Shuffled library")
+
+        return best_card
+
+    def fling_creature(self, creature, verbose=False):
+        """
+        Sacrifice creature and deal damage equal to its power.
+
+        Used by: Fling, Thud, Kazuul's Fury, etc.
+        """
+        if creature not in self.creatures:
+            return 0
+
+        # Get effective power including anthems
+        damage = self.get_effective_power(creature)
+
+        # Sacrifice the creature
+        self.sacrifice_creature(creature, source_name="Fling effect", verbose=verbose)
+
+        # Deal damage to opponents
+        alive_opps = [opp for opp in self.opponents if opp['is_alive']]
+        if alive_opps:
+            target_opp = alive_opps[0]
+            target_opp['life_total'] -= damage
+            self.spell_damage_this_turn += damage
+
+            if target_opp['life_total'] <= 0:
+                target_opp['is_alive'] = False
+                if verbose:
+                    print(f"  → {target_opp['name']} eliminated by fling damage!")
+
+            if verbose:
+                print(f"Flung {creature.name} for {damage} damage to {target_opp['name']}")
+
+        return damage
+
+    def check_and_cast_miracle(self, card, verbose=False):
+        """
+        Check if card has Miracle and cast it for reduced cost if first card drawn this turn.
+
+        Miracle: You may cast this card for its miracle cost when you draw it if it's
+        the first card you drew this turn.
+
+        Simplified: If miracle card is drawn first, automatically cast it.
+        """
+        oracle = getattr(card, 'oracle_text', '').lower()
+
+        if 'miracle' not in oracle:
+            return False
+
+        # Card has miracle! Cast it for reduced cost
+        card_type = getattr(card, 'type', '').lower()
+
+        if verbose:
+            print(f"Miracle! Casting {card.name} for reduced cost")
+
+        # Remove from hand (it's being cast)
+        if card in self.hand:
+            self.hand.remove(card)
+
+        # Resolve miracle spell effects based on type
+        if 'instant' in card_type or 'sorcery' in card_type:
+            # Common miracle spells: Temporal Mastery, Terminus, Entreat the Angels
+
+            # Temporal Mastery: Extra turn
+            if 'extra turn' in oracle:
+                if verbose:
+                    print(f"  → Miracle: {card.name} grants extra turn!")
+                return True
+
+            # Terminus: Board wipe (put creatures on bottom)
+            if 'terminus' in card.name.lower() or ('put' in oracle and 'bottom' in oracle and 'creature' in oracle):
+                # Simplified: Destroy all opponent creatures
+                self.spell_damage_this_turn += 10  # Proxy for board wipe value
+                if verbose:
+                    print(f"  → Miracle: {card.name} board wipe!")
+                return True
+
+            # Entreat the Angels: Create X 4/4 Angel tokens
+            if 'angel' in oracle and 'token' in oracle:
+                # Create 3 Angels as simplified value
+                for _ in range(3):
+                    self.create_token(
+                        token_name="Angel Token",
+                        power=4,
+                        toughness=4,
+                        token_type="Angel",
+                        keywords=['Flying'],
+                        verbose=verbose
+                    )
+                if verbose:
+                    print(f"  → Miracle: {card.name} created 3 Angel tokens!")
+                return True
+
+            # Thunderous Wrath: Deal 5 damage
+            if 'thunderous wrath' in card.name.lower() or ('deal' in oracle and 'damage' in oracle):
+                damage = 5
+                alive_opps = [opp for opp in self.opponents if opp['is_alive']]
+                if alive_opps:
+                    target_opp = alive_opps[0]
+                    target_opp['life_total'] -= damage
+                    self.spell_damage_this_turn += damage
+                    if verbose:
+                        print(f"  → Miracle: {card.name} deals {damage} damage!")
+                return True
+
+            # Bonfire of the Damned: Deal X damage to creatures and players
+            if 'bonfire' in card.name.lower():
+                damage = 5
+                alive_opps = [opp for opp in self.opponents if opp['is_alive']]
+                if alive_opps:
+                    target_opp = alive_opps[0]
+                    target_opp['life_total'] -= damage
+                    self.spell_damage_this_turn += damage
+                    if verbose:
+                        print(f"  → Miracle: {card.name} deals {damage} damage to all!")
+                return True
+
+            # Generic miracle spell
+            if verbose:
+                print(f"  → Miracle: Cast {card.name}")
+            return True
+
+        return False
 
     def gain_life(self, amount: int, verbose: bool = False):
         """
