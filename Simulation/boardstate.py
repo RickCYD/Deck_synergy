@@ -151,6 +151,23 @@ class BoardState:
         self.spell_damage_this_turn = 0  # Damage from cast triggers (Guttersnipe, etc.)
         self.prowess_bonus = {}  # Track prowess creatures: {creature: bonus}
 
+        # Tap/Untap engine tracking
+        self.untap_triggers = []  # List of untap effects (Jeskai Ascendancy, Seedborn Muse, etc.)
+        self.tap_for_value_effects = []  # Effects that trigger when creatures tap
+
+        # Trigger doubling tracking (Panharmonicon, Yarok, Veyran)
+        self.trigger_multiplier = 1  # Default 1x, Panharmonicon/Yarok = 2x
+        self.magecraft_multiplier = 1  # Default 1x, Veyran = 2x for magecraft/prowess
+
+        # Spell copy tracking
+        self.spell_copies_this_turn = 0  # Track spell copies created
+        self.copy_effects = []  # List of copy effect sources
+
+        # Anthem effects tracking (global +1/+1 bonuses)
+        self.global_power_bonus = 0  # Global +X/+0
+        self.global_toughness_bonus = 0  # Global +0/+X
+        self.tribal_anthems = {}  # {creature_type: (power_bonus, toughness_bonus)}
+
         # Reanimator mechanics tracking
         self.creatures_reanimated = 0  # Total creatures brought back from graveyard
         self.creatures_reanimated_this_turn = 0  # For per-turn tracking
@@ -365,6 +382,42 @@ class BoardState:
             if ability not in self.available_abilities:
                 self.available_abilities.append(ability)
 
+    def get_trigger_multiplier(self, event: str, card) -> int:
+        """
+        Get the trigger multiplier based on Panharmonicon, Yarok, Veyran, etc.
+
+        Returns number of times to execute trigger (1, 2, or more).
+        """
+        multiplier = 1
+
+        # Check for Panharmonicon (doubles artifact/creature ETB triggers)
+        for artifact in self.artifacts:
+            name = getattr(artifact, 'name', '').lower()
+            if 'panharmonicon' in name:
+                if event == 'etb':
+                    card_type = getattr(card, 'type', '').lower()
+                    if 'creature' in card_type or 'artifact' in card_type:
+                        multiplier = 2
+                        break
+
+        # Check for Yarok (doubles permanents ETB triggers)
+        for creature in self.creatures:
+            name = getattr(creature, 'name', '').lower()
+            if 'yarok' in name:
+                if event == 'etb':
+                    multiplier = 2
+                    break
+
+        # Check for Veyran (doubles magecraft/prowess triggers from spells)
+        for creature in self.creatures:
+            name = getattr(creature, 'name', '').lower()
+            if 'veyran' in name:
+                # Veyran doubles triggers from casting spells
+                # This is handled separately in magecraft_multiplier
+                pass
+
+        return multiplier
+
     def _execute_triggers(self, event: str, card, verbose=False):
         """Execute triggered abilities on *card* that match *event*.
 
@@ -372,6 +425,9 @@ class BoardState:
         battlefield), ``"equip"`` when an equipment becomes attached, and
         ``"attack"`` whenever a creature attacks.
         """
+        # Get trigger multiplier (Panharmonicon, Yarok, etc.)
+        multiplier = self.get_trigger_multiplier(event, card)
+
         for trig in getattr(card, "triggered_abilities", []):
             if trig.event != event:
                 continue
@@ -394,8 +450,15 @@ class BoardState:
                     continue
 
             if verbose and trig.description:
-                print(f"Trigger on {card.name}: {trig.description}")
-            trig.effect(self)
+                if multiplier > 1:
+                    print(f"Trigger on {card.name}: {trig.description} (x{multiplier} from doubler)")
+                else:
+                    print(f"Trigger on {card.name}: {trig.description}")
+
+            # Execute trigger multiplier times
+            for i in range(multiplier):
+                trig.effect(self)
+
             if event == "attack":
                 key = (id(card), id(trig))
                 self._attack_triggers_fired.add(key)
@@ -650,6 +713,18 @@ class BoardState:
 
     def _apply_global_effects(self, creature):
         """Apply global effects from artifacts and enchantments to a creature."""
+        # Calculate anthem and lord bonuses
+        power_bonus, toughness_bonus = self.calculate_anthem_bonuses(creature)
+
+        # Store bonuses (these are temporary and recalculated each time)
+        if not hasattr(creature, '_anthem_power'):
+            creature._anthem_power = 0
+        if not hasattr(creature, '_anthem_toughness'):
+            creature._anthem_toughness = 0
+
+        creature._anthem_power = power_bonus
+        creature._anthem_toughness = toughness_bonus
+
         # Check for Akroma's Memorial - grants flying, first strike, vigilance, trample, haste, protection
         for permanent in self.artifacts + self.enchantments:
             name = getattr(permanent, 'name', '').lower()
@@ -682,22 +757,182 @@ class BoardState:
                 if 'lifelink' in oracle:
                     creature.has_lifelink = True
 
+    def calculate_anthem_bonuses(self, creature):
+        """
+        Calculate global +X/+X bonuses from anthems and tribal lords.
+
+        Returns (power_bonus, toughness_bonus).
+        """
+        power_bonus = self.global_power_bonus
+        toughness_bonus = self.global_toughness_bonus
+
+        # Check tribal anthems
+        creature_types = getattr(creature, 'type', '').lower()
+        for tribe_type, (p_bonus, t_bonus) in self.tribal_anthems.items():
+            if tribe_type in creature_types:
+                power_bonus += p_bonus
+                toughness_bonus += t_bonus
+
+        # Check for anthem effects from permanents
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Skip the creature itself
+            if permanent is creature:
+                continue
+
+            # Intangible Virtue: Tokens get +1/+1
+            if ('intangible virtue' in name) or ('token creatures you control get +1/+1' in oracle):
+                if getattr(creature, 'is_token', False):
+                    power_bonus += 1
+                    toughness_bonus += 1
+
+            # Spear of Heliod: Creatures you control get +1/+1
+            if ('spear of heliod' in name) or ('creatures you control get +1/+1' in oracle):
+                if 'creature' in creature_types:
+                    power_bonus += 1
+                    toughness_bonus += 1
+
+            # Tribal lords (e.g., "Elf creatures you control get +1/+1")
+            import re
+            tribal_lord_pattern = r'(\w+) creatures you control get \+(\d+)/\+(\d+)'
+            match = re.search(tribal_lord_pattern, oracle)
+            if match:
+                tribe = match.group(1).lower()
+                p_boost = int(match.group(2))
+                t_boost = int(match.group(3))
+                if tribe in creature_types:
+                    power_bonus += p_boost
+                    toughness_bonus += t_boost
+
+            # Generic anthem ("Creatures you control get +X/+X")
+            generic_anthem_pattern = r'creatures you control get \+(\d+)/\+(\d+)'
+            match = re.search(generic_anthem_pattern, oracle)
+            if match:
+                p_boost = int(match.group(1))
+                t_boost = int(match.group(2))
+                if 'creature' in creature_types:
+                    power_bonus += p_boost
+                    toughness_bonus += t_boost
+
+        return (power_bonus, toughness_bonus)
+
     def attack(self, creature, verbose=False):
         """Declare *creature* as an attacker and handle attack triggers."""
         if creature not in self.creatures:
             if verbose:
                 print(f"{creature.name} is not on the battlefield.")
             return False
+
+        # Check if creature is already tapped
+        if getattr(creature, 'tapped', False):
+            if verbose:
+                print(f"{creature.name} is already tapped and cannot attack.")
+            return False
+
+        # Check if creature has vigilance (doesn't tap to attack)
+        has_vigilance = getattr(creature, 'has_vigilance', False)
+
         if self.current_combat_turn != self.turn:
             self.current_combat_turn = self.turn
             self.current_attackers = []
             self._attack_triggers_fired.clear()
+
         self.current_attackers.append(creature)
+
+        # Tap creature unless it has vigilance
+        if not has_vigilance:
+            creature.tapped = True
+            if verbose:
+                print(f"{creature.name} tapped to attack")
+
         self._apply_equipped_keywords(creature)
         self._apply_global_effects(creature)
         for atk in list(self.current_attackers):
             self._execute_triggers("attack", atk, verbose)
         return True
+
+    def tap_creature(self, creature, verbose=False):
+        """Tap a creature and trigger any tap-for-value effects."""
+        if creature not in self.creatures:
+            if verbose:
+                print(f"{creature.name} is not on the battlefield.")
+            return False
+
+        if getattr(creature, 'tapped', False):
+            if verbose:
+                print(f"{creature.name} is already tapped.")
+            return False
+
+        creature.tapped = True
+        if verbose:
+            print(f"Tapped {creature.name}")
+
+        # Trigger any "when creature taps" effects
+        for effect in self.tap_for_value_effects:
+            effect(creature, verbose)
+
+        return True
+
+    def untap_creature(self, creature, verbose=False):
+        """Untap a creature."""
+        if creature not in self.creatures:
+            if verbose:
+                print(f"{creature.name} is not on the battlefield.")
+            return False
+
+        if not getattr(creature, 'tapped', False):
+            if verbose:
+                print(f"{creature.name} is already untapped.")
+            return False
+
+        creature.tapped = False
+        if verbose:
+            print(f"Untapped {creature.name}")
+
+        return True
+
+    def untap_all_creatures(self, verbose=False):
+        """Untap all creatures. Used for Seedborn Muse, etc."""
+        count = 0
+        for creature in self.creatures:
+            if getattr(creature, 'tapped', False):
+                creature.tapped = False
+                count += 1
+
+        if verbose and count > 0:
+            print(f"Untapped {count} creatures")
+
+        return count
+
+    def trigger_on_spell_cast_untaps(self, spell, verbose=False):
+        """Trigger untap effects when a noncreature spell is cast (Jeskai Ascendancy, etc.)."""
+        # Check for Jeskai Ascendancy
+        for enchantment in self.enchantments:
+            oracle = getattr(enchantment, 'oracle_text', '').lower()
+            name = getattr(enchantment, 'name', '').lower()
+
+            if 'jeskai ascendancy' in name:
+                # Untap all creatures
+                count = self.untap_all_creatures(verbose=verbose)
+                if verbose and count > 0:
+                    print(f"  → Jeskai Ascendancy: Untapped {count} creatures")
+
+                # +1/+1 until end of turn (tracked in prowess_bonus)
+                for creature in self.creatures:
+                    current_bonus = self.prowess_bonus.get(creature, 0)
+                    self.prowess_bonus[creature] = current_bonus + 1
+
+        # Check for other untap engines
+        for artifact in self.artifacts:
+            name = getattr(artifact, 'name', '').lower()
+
+            if 'paradox engine' in name:
+                # Untap all nonland permanents
+                count = self.untap_all_creatures(verbose=verbose)
+                if verbose and count > 0:
+                    print(f"  → Paradox Engine: Untapped {count} creatures")
 
     def draw_card(self,num_cards, verbose=False):
         """
@@ -1343,6 +1578,9 @@ class BoardState:
         # NOTE: trigger_cast_effects now also handles Y'shtola's MV 3+ trigger
         self.trigger_cast_effects(card, verbose=verbose)
 
+        # UNTAP ENGINES: Trigger untap effects on spell cast (Jeskai Ascendancy, Paradox Engine)
+        self.trigger_on_spell_cast_untaps(card, verbose=verbose)
+
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
 
@@ -1591,6 +1829,9 @@ class BoardState:
         # SPELLSLINGER: Trigger cast effects (Guttersnipe, Young Pyromancer, etc.)
         # NOTE: trigger_cast_effects now also handles Y'shtola's MV 3+ trigger
         self.trigger_cast_effects(card, verbose=verbose)
+
+        # UNTAP ENGINES: Trigger untap effects on spell cast (Jeskai Ascendancy, Paradox Engine)
+        self.trigger_on_spell_cast_untaps(card, verbose=verbose)
 
         if getattr(card, "draw_cards", 0) > 0:
             self.draw_card(getattr(card, "draw_cards"), verbose=verbose)
@@ -3850,41 +4091,51 @@ class BoardState:
             if 'guttersnipe' in name or (
                 'instant or sorcery' in oracle and 'deals 2 damage' in oracle and 'each opponent' in oracle
             ):
-                damage = 2 * num_alive_opps
+                # Veyran doubles this trigger
+                damage = 2 * num_alive_opps * trigger_multiplier
                 spell_damage += damage
                 if verbose:
-                    print(f"  → {permanent.name} deals {damage} damage (2 × {num_alive_opps} opponents)")
+                    damage_text = f"{damage} damage"
+                    if trigger_multiplier > 1:
+                        damage_text += f" (doubled by Veyran)"
+                    print(f"  → {permanent.name} deals {damage_text}")
 
             # Young Pyromancer: Create 1/1 Elemental when you cast instant/sorcery
             if 'young pyromancer' in name or (
                 'instant or sorcery' in oracle and 'create a 1/1' in oracle and 'elemental' in oracle
             ):
-                self.create_token(
-                    token_name="Elemental Token",
-                    power=1,
-                    toughness=1,
-                    token_type="Elemental",
-                    verbose=verbose
-                )
-                tokens_created += 1
+                # Veyran doubles this trigger
+                for _ in range(trigger_multiplier):
+                    self.create_token(
+                        token_name="Elemental Token",
+                        power=1,
+                        toughness=1,
+                        token_type="Elemental",
+                        verbose=verbose
+                    )
+                    tokens_created += 1
                 if verbose:
-                    print(f"  → {permanent.name} creates 1/1 Elemental token")
+                    tokens_text = f"{trigger_multiplier} Elemental token{'s' if trigger_multiplier > 1 else ''}"
+                    print(f"  → {permanent.name} creates {tokens_text}")
 
             # Talrand, Sky Summoner: Create 2/2 Drake when you cast instant/sorcery
             if 'talrand' in name or (
                 'instant or sorcery' in oracle and 'create a 2/2' in oracle and 'drake' in oracle
             ):
-                self.create_token(
-                    token_name="Drake Token",
-                    power=2,
-                    toughness=2,
-                    token_type="Drake",
-                    keywords=['Flying'],
-                    verbose=verbose
-                )
-                tokens_created += 1
+                # Veyran doubles this trigger
+                for _ in range(trigger_multiplier):
+                    self.create_token(
+                        token_name="Drake Token",
+                        power=2,
+                        toughness=2,
+                        token_type="Drake",
+                        keywords=['Flying'],
+                        verbose=verbose
+                    )
+                    tokens_created += 1
                 if verbose:
-                    print(f"  → {permanent.name} creates 2/2 Drake token with flying")
+                    tokens_text = f"{trigger_multiplier} Drake token{'s' if trigger_multiplier > 1 else ''}"
+                    print(f"  → {permanent.name} creates {tokens_text} with flying")
 
             # Aetherflux Reservoir: Gain life equal to storm count
             if 'aetherflux reservoir' in name or (
@@ -4238,8 +4489,8 @@ class BoardState:
         - Prowess/Magecraft bonuses (until end of turn)
         """
         base_power = creature.power or 0
-        power_bonus, _ = self.calculate_anthem_bonus(creature)
-        prowess_bonus = self.get_prowess_power_bonus(creature)
+        power_bonus, _ = self.calculate_anthem_bonuses(creature)
+        prowess_bonus = self.prowess_bonus.get(creature, 0)
         return base_power + power_bonus + prowess_bonus
 
     def get_effective_toughness(self, creature) -> int:
@@ -4253,7 +4504,7 @@ class BoardState:
         - Anthem effects (calculated dynamically)
         """
         base_toughness = creature.toughness or 0
-        _, toughness_bonus = self.calculate_anthem_bonus(creature)
+        _, toughness_bonus = self.calculate_anthem_bonuses(creature)
         return base_toughness + toughness_bonus
 
     def sacrifice_creature(self, creature, source_name: str = "sacrifice outlet", verbose: bool = False):
