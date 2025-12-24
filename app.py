@@ -1079,7 +1079,10 @@ def update_graph(deck_file):
                 win_rate = summary.get('Win Rate %', 0)
                 games_won = summary.get('Games Won', 0)
                 avg_win_turn = summary.get('Avg Win Turn')
-                consistency = summary.get('Consistency Score', 0)
+
+                # Deck power summary (contains consistency score)
+                deck_power = summary.get('Deck Power Summary', {})
+                consistency = deck_power.get('Consistency Score', 0)
 
                 # Interaction metrics
                 creatures_removed = summary.get('Avg Creatures Removed', 0)
@@ -1087,7 +1090,6 @@ def update_graph(deck_file):
 
                 # Top cards
                 top_cards = summary.get('Top Impact Cards', [])
-                deck_power = summary.get('Deck Power Summary', {})
 
                 # Archetype detection
                 detected_archetype = summary.get('detected_archetype', None)
