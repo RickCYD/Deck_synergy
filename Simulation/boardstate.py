@@ -2226,6 +2226,11 @@ class BoardState:
                     damage_dealt = 2 * len(alive_opps)
                     print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
 
+        # NONCREATURE SPELL TRIGGERS: Generic triggers for any noncreature spell
+        # Handles: Sokka ally tokens, Kykar spirits, prowess, etc.
+        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+        self.apply_prowess_bonus()
+
         if verbose:
             print(f"Played enchantment: {card.name}")
             print(f"Mana pool now: {self._mana_pool_str()}")
@@ -2271,6 +2276,11 @@ class BoardState:
 
         # UNTAP ENGINES: Trigger untap effects on spell cast (Jeskai Ascendancy, Paradox Engine)
         self.trigger_on_spell_cast_untaps(card, verbose=verbose)
+
+        # NONCREATURE SPELL TRIGGERS: Generic triggers for any noncreature spell
+        # Handles: Sokka ally tokens, Kykar spirits, prowess, etc.
+        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+        self.apply_prowess_bonus()
 
         # SPELL COPY: Check for copy effects (Fork, Dualcaster Mage, etc.)
         oracle = getattr(card, "oracle_text", "").lower()
@@ -2540,6 +2550,11 @@ class BoardState:
 
         # UNTAP ENGINES: Trigger untap effects on spell cast (Jeskai Ascendancy, Paradox Engine)
         self.trigger_on_spell_cast_untaps(card, verbose=verbose)
+
+        # NONCREATURE SPELL TRIGGERS: Generic triggers for any noncreature spell
+        # Handles: Sokka ally tokens, Kykar spirits, prowess, etc.
+        self.trigger_noncreature_spell_effects(card, verbose=verbose)
+        self.apply_prowess_bonus()
 
         # SPELL COPY: Check for copy effects (Fork, Dualcaster Mage, etc.)
         oracle = getattr(card, "oracle_text", "").lower()
