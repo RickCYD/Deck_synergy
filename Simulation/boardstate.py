@@ -168,6 +168,14 @@ class BoardState:
         self.global_toughness_bonus = 0  # Global +0/+X
         self.tribal_anthems = {}  # {creature_type: (power_bonus, toughness_bonus)}
 
+        # Extra combat tracking (Phase 2)
+        self.extra_combats_this_turn = 0  # Number of extra combats granted
+        self.combats_taken_this_turn = 0  # Number of combats already taken
+
+        # Card draw triggers tracking (Phase 2)
+        self.draw_triggers = []  # List of "when you draw" effects
+        self.cards_drawn_this_turn = 0  # Track draws for Niv-Mizzet, etc.
+
         # Reanimator mechanics tracking
         self.creatures_reanimated = 0  # Total creatures brought back from graveyard
         self.creatures_reanimated_this_turn = 0  # For per-turn tracking
@@ -853,6 +861,77 @@ class BoardState:
             self._execute_triggers("attack", atk, verbose)
         return True
 
+    def grant_extra_combat(self, verbose=False):
+        """
+        Grant an additional combat phase this turn.
+
+        Used by: Combat Celebrant, Aggravated Assault, Relentless Assault, etc.
+        """
+        self.extra_combats_this_turn += 1
+        if verbose:
+            print(f"Granted extra combat phase (total: {self.extra_combats_this_turn})")
+
+        return True
+
+    def has_extra_combats_remaining(self):
+        """Check if there are extra combat phases remaining this turn."""
+        return self.combats_taken_this_turn < (1 + self.extra_combats_this_turn)
+
+    def start_combat_phase(self, verbose=False):
+        """Start a combat phase (tracks combat count for extra combats)."""
+        self.combats_taken_this_turn += 1
+
+        if verbose:
+            combat_num = self.combats_taken_this_turn
+            if combat_num == 1:
+                print(f"=== Combat Phase ===")
+            else:
+                print(f"=== Extra Combat Phase #{combat_num - 1} ===")
+
+    def detect_and_grant_extra_combats(self, verbose=False):
+        """
+        Detect cards that grant extra combats and apply them.
+
+        Called after main combat phase.
+        """
+        extra_combats_granted = 0
+
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Combat Celebrant: Exert to take extra combat (once per turn)
+            if 'combat celebrant' in name:
+                # Check if we can exert (not exerted yet)
+                if not getattr(permanent, 'exerted_this_turn', False):
+                    self.grant_extra_combat(verbose=verbose)
+                    permanent.exerted_this_turn = True
+                    extra_combats_granted += 1
+                    if verbose:
+                        print(f"  → {permanent.name} exerted for extra combat")
+
+            # Aggravated Assault: Pay mana for extra combat (simplified: once per turn if mana available)
+            if 'aggravated assault' in name:
+                # Simplified: If we have 5+ mana, take extra combat once
+                if len(self.mana_pool) >= 5 and not getattr(permanent, 'activated_this_turn', False):
+                    # Pay mana (simplified)
+                    for _ in range(min(5, len(self.mana_pool))):
+                        if self.mana_pool:
+                            self.mana_pool.pop(0)
+                    self.grant_extra_combat(verbose=verbose)
+                    permanent.activated_this_turn = True
+                    extra_combats_granted += 1
+                    if verbose:
+                        print(f"  → {permanent.name} activated for extra combat")
+
+            # Relentless Assault / Seize the Day / World at War: One-shot extra combat
+            if ('relentless assault' in name) or ('seize the day' in name) or ('world at war' in name):
+                # These are instants/sorceries that grant extra combat when cast
+                # This would be handled during spell casting, not here
+                pass
+
+        return extra_combats_granted
+
     def tap_creature(self, creature, verbose=False):
         """Tap a creature and trigger any tap-for-value effects."""
         if creature not in self.creatures:
@@ -934,7 +1013,7 @@ class BoardState:
                 if verbose and count > 0:
                     print(f"  → Paradox Engine: Untapped {count} creatures")
 
-    def draw_card(self,num_cards, verbose=False):
+    def draw_card(self, num_cards, verbose=False):
         """
         Draws ``num_cards`` from the library to the hand and returns the cards
         drawn. If the library is empty, nothing is drawn.
@@ -958,12 +1037,119 @@ class BoardState:
             drawn_card = self.library.pop(0)
             self.hand.append(drawn_card)
             drawn.append(drawn_card)
+
+            # Track draws for this turn
+            self.cards_drawn_this_turn += 1
+
+            # Trigger "when you draw" effects (Niv-Mizzet, etc.)
+            self.trigger_draw_effects(verbose=verbose)
+
         if verbose:
             print(
                 f"Hand now has {len(self.hand)} card(s); Library size: {len(self.library)}"
             )
 
         return drawn
+
+    def trigger_draw_effects(self, verbose=False):
+        """Trigger effects when a card is drawn (Niv-Mizzet, Psychosis Crawler, etc.)."""
+        num_alive_opps = len([o for o in self.opponents if o['is_alive']])
+
+        # Check for draw trigger permanents
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Niv-Mizzet: Deal 1 damage when you draw
+            if ('niv-mizzet' in name) or ('whenever you draw a card' in oracle and 'deals' in oracle and 'damage' in oracle):
+                damage = 1 * num_alive_opps
+                self.spell_damage_this_turn += damage
+                if verbose:
+                    print(f"  → {permanent.name} deals {damage} damage (draw trigger)")
+
+            # Psychosis Crawler: Each opponent loses 1 life when you draw
+            if ('psychosis crawler' in name) or ('whenever you draw a card' in oracle and 'each opponent loses 1 life' in oracle):
+                drain = 1 * num_alive_opps
+                self.drain_damage_this_turn += drain
+                if verbose:
+                    print(f"  → {permanent.name} drains {drain} life (draw trigger)")
+
+            # The Locust God: Create 1/1 Insect with flying when you draw
+            if ('locust god' in name) or ('whenever you draw a card' in oracle and 'create' in oracle and 'insect' in oracle):
+                self.create_token(
+                    token_name="Insect Token",
+                    power=1,
+                    toughness=1,
+                    token_type="Insect",
+                    keywords=['Flying', 'Haste'],
+                    verbose=verbose
+                )
+                if verbose:
+                    print(f"  → {permanent.name} creates 1/1 Insect with flying and haste")
+
+    def wheel_effect(self, num_cards=7, verbose=False):
+        """
+        Wheel effect: Discard hand, then draw cards.
+
+        Used by: Wheel of Fortune, Windfall, Reforge the Soul, etc.
+        """
+        # Count cards discarded
+        hand_size = len(self.hand)
+
+        # Move hand to graveyard
+        for card in list(self.hand):
+            self.hand.remove(card)
+            self.graveyard.append(card)
+
+        if verbose:
+            print(f"Discarded {hand_size} cards from hand")
+
+        # Trigger discard payoffs (Bone Miser, Waste Not, etc.)
+        self.trigger_discard_payoffs(hand_size, verbose=verbose)
+
+        # Draw new hand
+        self.draw_card(num_cards, verbose=verbose)
+
+        if verbose:
+            print(f"Wheeled: Discarded {hand_size}, drew {num_cards}")
+
+        return hand_size
+
+    def trigger_discard_payoffs(self, num_discarded, verbose=False):
+        """Trigger effects when cards are discarded (Bone Miser, Waste Not, etc.)."""
+        for permanent in self.creatures + self.enchantments + self.artifacts:
+            oracle = getattr(permanent, 'oracle_text', '').lower()
+            name = getattr(permanent, 'name', '').lower()
+
+            # Bone Miser: Generate mana/tokens when you discard
+            if 'bone miser' in name:
+                # Simplified: Create treasure tokens equal to cards discarded
+                for _ in range(min(num_discarded, 3)):  # Cap at 3 to avoid infinite
+                    self.create_treasure(verbose=verbose)
+                if verbose:
+                    print(f"  → Bone Miser creates {min(num_discarded, 3)} Treasure tokens")
+
+            # Waste Not: Various effects when opponent discards (simplified to self)
+            if 'waste not' in name:
+                # Simplified: Create 2/2 Zombie for each 2 cards discarded
+                zombies = num_discarded // 2
+                for _ in range(zombies):
+                    self.create_token(
+                        token_name="Zombie Token",
+                        power=2,
+                        toughness=2,
+                        token_type="Zombie",
+                        verbose=verbose
+                    )
+                if verbose and zombies > 0:
+                    print(f"  → Waste Not creates {zombies} Zombie tokens")
+
+            # Glint-Horn Buccaneer: Deal damage when you discard
+            if ('glint-horn buccaneer' in name) or ('whenever you discard' in oracle and 'deals' in oracle and 'damage' in oracle):
+                damage = num_discarded
+                self.spell_damage_this_turn += damage
+                if verbose:
+                    print(f"  → {permanent.name} deals {damage} damage (discard trigger)")
 
     def gain_life(self, amount: int, verbose: bool = False):
         """
@@ -2148,79 +2334,113 @@ class BoardState:
         unblocked_damage = 0
         creatures_died = []
 
-        for attacker in self.creatures[:]:
-            # PRIORITY 3: Use effective power/toughness including anthem bonuses
-            attack_power = self.get_effective_power(attacker)
-            attacker_toughness = self.get_effective_toughness(attacker)
+        # Separate creatures by strike order (Phase 2 improvement)
+        first_strike_creatures = []
+        normal_strike_creatures = []
 
-            # Check for evasion/unblockable
-            is_unblockable = getattr(attacker, 'is_unblockable', False)
-            has_flying = getattr(attacker, 'has_flying', False)
-            has_menace = getattr(attacker, 'has_menace', False)
-            has_lifelink = getattr(attacker, 'is_lifelink', False) or getattr(attacker, 'has_rally_lifelink', False)
-            has_deathtouch = getattr(attacker, 'has_deathtouch', False)
+        for attacker in self.creatures[:]:
+            has_first_strike = getattr(attacker, 'has_first_strike', False)
             has_double_strike = getattr(attacker, 'has_double_strike', False) or getattr(attacker, 'has_rally_double_strike', False)
 
-            # GENERIC: Check for enchantments granting keywords to Allies
-            attacker_type = getattr(attacker, 'type', '').lower()
-            if 'ally' in attacker_type:
-                for enchantment in self.enchantments:
-                    oracle = getattr(enchantment, 'oracle_text', '').lower()
-                    # "Allies you control have double strike and lifelink"
-                    if 'allies you control have' in oracle:
-                        if 'double strike' in oracle:
-                            has_double_strike = True
-                        if 'lifelink' in oracle:
-                            has_lifelink = True
-
-            # Double strike doubles combat damage
-            damage_mult = 2 if has_double_strike else 1
-
-            if not target_opp['creatures'] or is_unblockable:
-                # No blockers or unblockable, damage goes through
-                damage = int(attack_power * self.damage_multiplier * damage_mult)
-                unblocked_damage += damage
-                if has_lifelink:
-                    life_gained += damage
-                continue
-
-            # Calculate block probability based on evasion
-            base_block_prob = min(0.7, 0.3 + len(target_opp['creatures']) * 0.1)
-
-            # Evasion reduces block chance
-            if has_flying:
-                base_block_prob *= 0.5  # Flying is hard to block
-            if has_menace:
-                base_block_prob *= 0.7  # Menace requires 2 blockers
-
-            if random.random() < base_block_prob:
-                # Choose a random blocker
-                blocker = random.choice(target_opp['creatures'])
-                # Simplified: opponents don't get anthem bonuses (would need separate BoardState)
-                blocker_power = blocker.power or 0
-                blocker_toughness = blocker.toughness or 0
-
-                # Combat damage with deathtouch
-                if has_deathtouch or attack_power >= blocker_toughness:
-                    # Blocker dies
-                    target_opp['creatures'].remove(blocker)
-                    if verbose:
-                        death_reason = "deathtouch" if has_deathtouch else "damage"
-                        print(f"{attacker.name} destroyed {blocker.name} ({death_reason})")
-
-                if blocker_power >= attacker_toughness:
-                    # Attacker dies
-                    creatures_died.append(attacker)
-                    if verbose:
-                        print(f"{attacker.name} was destroyed by {blocker.name}")
-
-                blocked_damage += int(attack_power * self.damage_multiplier * damage_mult)
+            # Double strike creatures participate in both phases
+            if has_double_strike:
+                first_strike_creatures.append(attacker)
+                normal_strike_creatures.append(attacker)
+            elif has_first_strike:
+                first_strike_creatures.append(attacker)
             else:
-                # Unblocked
-                damage = int(attack_power * self.damage_multiplier * damage_mult)
-                unblocked_damage += damage
-                if has_lifelink:
-                    life_gained += damage
+                normal_strike_creatures.append(attacker)
+
+        # Process first strike damage first
+        for strike_phase, attackers in [("first strike", first_strike_creatures), ("normal", normal_strike_creatures)]:
+            for attacker in attackers:
+                # PRIORITY 3: Use effective power/toughness including anthem bonuses
+                attack_power = self.get_effective_power(attacker)
+                attacker_toughness = self.get_effective_toughness(attacker)
+
+                # Check for evasion/unblockable
+                is_unblockable = getattr(attacker, 'is_unblockable', False)
+                has_flying = getattr(attacker, 'has_flying', False)
+                has_menace = getattr(attacker, 'has_menace', False)
+                has_trample = getattr(attacker, 'has_trample', False)
+                has_lifelink = getattr(attacker, 'is_lifelink', False) or getattr(attacker, 'has_rally_lifelink', False)
+                has_deathtouch = getattr(attacker, 'has_deathtouch', False)
+                has_double_strike = getattr(attacker, 'has_double_strike', False) or getattr(attacker, 'has_rally_double_strike', False)
+
+                # GENERIC: Check for enchantments granting keywords to Allies
+                attacker_type = getattr(attacker, 'type', '').lower()
+                if 'ally' in attacker_type:
+                    for enchantment in self.enchantments:
+                        oracle = getattr(enchantment, 'oracle_text', '').lower()
+                        # "Allies you control have double strike and lifelink"
+                        if 'allies you control have' in oracle:
+                            if 'double strike' in oracle:
+                                has_double_strike = True
+                            if 'lifelink' in oracle:
+                                has_lifelink = True
+
+                # Double strike: already handled by being in both phases
+                # For damage calculation in each phase, treat as 1x
+                damage_mult = 1
+
+                if not target_opp['creatures'] or is_unblockable:
+                    # No blockers or unblockable, damage goes through
+                    damage = int(attack_power * self.damage_multiplier * damage_mult)
+                    unblocked_damage += damage
+                    if has_lifelink:
+                        life_gained += damage
+                    continue
+
+                # Calculate block probability based on evasion
+                base_block_prob = min(0.7, 0.3 + len(target_opp['creatures']) * 0.1)
+
+                # Evasion reduces block chance
+                if has_flying:
+                    base_block_prob *= 0.5  # Flying is hard to block
+                if has_menace:
+                    base_block_prob *= 0.7  # Menace requires 2 blockers
+
+                if random.random() < base_block_prob:
+                    # Choose a random blocker
+                    blocker = random.choice(target_opp['creatures'])
+                    # Simplified: opponents don't get anthem bonuses (would need separate BoardState)
+                    blocker_power = blocker.power or 0
+                    blocker_toughness = blocker.toughness or 0
+
+                    # Combat damage with deathtouch or trample
+                    if has_deathtouch or attack_power >= blocker_toughness:
+                        # Blocker dies
+                        target_opp['creatures'].remove(blocker)
+                        if verbose:
+                            death_reason = "deathtouch" if has_deathtouch else "damage"
+                            print(f"{attacker.name} destroyed {blocker.name} ({death_reason})")
+
+                        # Trample: Excess damage tramples over
+                        if has_trample:
+                            excess_damage = max(0, attack_power - blocker_toughness)
+                            unblocked_damage += int(excess_damage * self.damage_multiplier)
+                            blocked_damage += int((attack_power - excess_damage) * self.damage_multiplier)
+                            if verbose and excess_damage > 0:
+                                print(f"  → {excess_damage} trample damage to {target_opp['name']}")
+                        else:
+                            blocked_damage += int(attack_power * self.damage_multiplier)
+                    else:
+                        # Blocker survives
+                        blocked_damage += int(attack_power * self.damage_multiplier)
+
+                    # Attacker takes damage from blocker (only in normal strike phase, not first strike)
+                    if strike_phase == "normal" and blocker_power >= attacker_toughness:
+                        # Attacker dies (unless it had first strike and already killed blocker)
+                        if attacker not in creatures_died:
+                            creatures_died.append(attacker)
+                            if verbose:
+                                print(f"{attacker.name} was destroyed by {blocker.name}")
+                else:
+                    # Unblocked
+                    damage = int(attack_power * self.damage_multiplier * damage_mult)
+                    unblocked_damage += damage
+                    if has_lifelink:
+                        life_gained += damage
 
         # Remove dead creatures (handle commander separately)
         for creature in creatures_died:
