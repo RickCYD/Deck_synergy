@@ -327,6 +327,133 @@ def get_effectiveness_figures(results: Dict[str, Any]) -> Dict[str, go.Figure]:
 
             figures['win_breakdown'] = pie_fig
 
+    # 6. Card Draw Over Time (NEW)
+    cards_drawn = dashboard_data.get('avg_cards_drawn_per_turn', [])
+    if cards_drawn:
+        x = list(range(1, len(cards_drawn) + 1))
+
+        card_draw_fig = go.Figure()
+        card_draw_fig.add_trace(go.Scatter(
+            x=x,
+            y=cards_drawn,
+            mode='lines+markers',
+            name='Cards Drawn',
+            line=dict(color='#3498db', width=2),
+            marker=dict(size=6)
+        ))
+
+        card_draw_fig.update_layout(
+            title='Average Cards Drawn Per Turn',
+            xaxis_title='Turn',
+            yaxis_title='Cards Drawn',
+            template='plotly_white'
+        )
+
+        figures['card_draw'] = card_draw_fig
+
+    # 7. Hand Size Over Time (NEW)
+    hand_size = dashboard_data.get('avg_hand_size_per_turn', [])
+    if hand_size:
+        x = list(range(1, len(hand_size) + 1))
+
+        hand_size_fig = go.Figure()
+        hand_size_fig.add_trace(go.Scatter(
+            x=x,
+            y=hand_size,
+            mode='lines+markers',
+            name='Hand Size',
+            line=dict(color='#2ecc71', width=2),
+            marker=dict(size=6),
+            fill='tozeroy'
+        ))
+
+        hand_size_fig.update_layout(
+            title='Average Hand Size Per Turn',
+            xaxis_title='Turn',
+            yaxis_title='Cards in Hand',
+            template='plotly_white'
+        )
+
+        figures['hand_size'] = hand_size_fig
+
+    # 8. Castable vs Uncastable Cards (NEW)
+    castable = dashboard_data.get('avg_castable_non_lands_per_turn', [])
+    uncastable = dashboard_data.get('avg_uncastable_non_lands_per_turn', [])
+    if castable and uncastable:
+        x = list(range(1, len(castable) + 1))
+
+        playability_fig = go.Figure()
+        playability_fig.add_trace(go.Scatter(
+            x=x,
+            y=castable,
+            mode='lines+markers',
+            name='Castable',
+            line=dict(color='#27ae60', width=2),
+            marker=dict(size=6),
+            stackgroup='one'
+        ))
+        playability_fig.add_trace(go.Scatter(
+            x=x,
+            y=uncastable,
+            mode='lines+markers',
+            name='Uncastable (Stuck)',
+            line=dict(color='#e74c3c', width=2),
+            marker=dict(size=6),
+            stackgroup='one'
+        ))
+
+        playability_fig.update_layout(
+            title='Castable vs Uncastable Non-Land Cards',
+            xaxis_title='Turn',
+            yaxis_title='Number of Cards',
+            template='plotly_white',
+            hovermode='x unified'
+        )
+
+        figures['card_playability'] = playability_fig
+
+    # 9. Castable Percentage Over Time (NEW)
+    castable_pct = dashboard_data.get('avg_castable_percentage_per_turn', [])
+    if castable_pct:
+        x = list(range(1, len(castable_pct) + 1))
+
+        castable_pct_fig = go.Figure()
+        castable_pct_fig.add_trace(go.Scatter(
+            x=x,
+            y=castable_pct,
+            mode='lines+markers',
+            name='Castable %',
+            line=dict(color='#9b59b6', width=3),
+            marker=dict(size=8),
+            fill='tozeroy'
+        ))
+
+        # Add reference lines
+        castable_pct_fig.add_hline(
+            y=100,
+            line_dash="dash",
+            line_color="green",
+            annotation_text="100% (Ideal)",
+            annotation_position="right"
+        )
+        castable_pct_fig.add_hline(
+            y=50,
+            line_dash="dot",
+            line_color="orange",
+            annotation_text="50% (Problematic)",
+            annotation_position="right"
+        )
+
+        castable_pct_fig.update_layout(
+            title='Castable Card Percentage Over Time',
+            xaxis_title='Turn',
+            yaxis_title='Castable %',
+            yaxis=dict(range=[0, 105]),
+            template='plotly_white'
+        )
+
+        figures['castable_percentage'] = castable_pct_fig
+
     return figures
 
 
@@ -432,6 +559,42 @@ def create_effectiveness_summary_html(results: Dict[str, Any]) -> str:
                     Synergy: <strong>{effectiveness.synergy_score:.0f}</strong>
                 </div>
             </div>
+        </div>
+
+        <div style="margin-top: 15px;">
+            <h4 style="color: #2c3e50; margin-bottom: 8px; font-size: 14px;">Card Playability (Turn 6)</h4>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">Avg Cards Drawn</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
+                        {dashboard_data.get('avg_cards_drawn_per_turn', [0]*6)[5]:.1f}
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">Avg Hand Size</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
+                        {dashboard_data.get('avg_hand_size_per_turn', [0]*6)[5]:.1f}
+                    </td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">Castable Cards</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
+                        {dashboard_data.get('avg_castable_non_lands_per_turn', [0]*6)[5]:.1f}
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">Uncastable (Stuck)</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right; color: #e74c3c;">
+                        {dashboard_data.get('avg_uncastable_non_lands_per_turn', [0]*6)[5]:.1f}
+                    </td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">Castable %</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right; font-weight: bold; color: {'#27ae60' if dashboard_data.get('avg_castable_percentage_per_turn', [0]*6)[5] >= 75 else '#e67e22' if dashboard_data.get('avg_castable_percentage_per_turn', [0]*6)[5] >= 50 else '#e74c3c'};">
+                        {dashboard_data.get('avg_castable_percentage_per_turn', [0]*6)[5]:.1f}%
+                    </td>
+                </tr>
+            </table>
         </div>
     </div>
     '''

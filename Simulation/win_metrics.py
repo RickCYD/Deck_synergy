@@ -86,6 +86,13 @@ class WinMetrics:
     win_turns: List[int] = field(default_factory=list)
     damage_per_turn_samples: List[List[int]] = field(default_factory=list)
 
+    # Card playability metrics (NEW)
+    avg_cards_drawn_per_turn: List[float] = field(default_factory=list)
+    avg_hand_size_per_turn: List[float] = field(default_factory=list)
+    avg_castable_non_lands_per_turn: List[float] = field(default_factory=list)
+    avg_uncastable_non_lands_per_turn: List[float] = field(default_factory=list)
+    avg_castable_percentage_per_turn: List[float] = field(default_factory=list)
+
 
 @dataclass
 class TurnMetrics:
@@ -511,6 +518,12 @@ def run_goldfish_simulation_with_metrics(
     damage_by_turn = {t: [] for t in range(1, max_turns + 1)}  # Cumulative damage
     per_turn_damage = {t: [] for t in range(1, max_turns + 1)}  # Per-turn damage
 
+    # Track card playability metrics by turn (NEW)
+    cards_drawn_by_turn = {t: [] for t in range(1, max_turns + 1)}
+    hand_size_by_turn = {t: [] for t in range(1, max_turns + 1)}
+    castable_non_lands_by_turn = {t: [] for t in range(1, max_turns + 1)}
+    uncastable_non_lands_by_turn = {t: [] for t in range(1, max_turns + 1)}
+
     for sim in range(num_simulations):
         # Run simulation
         game_metrics = simulate_game(
@@ -530,11 +543,25 @@ def run_goldfish_simulation_with_metrics(
         combat_damage_array = game_metrics.get('combat_damage', [])
         drain_damage_array = game_metrics.get('drain_damage', [])
 
+        # Get card playability arrays with validation (NEW)
+        cards_drawn_array = game_metrics.get('cards_drawn', [])
+        hand_size_array = game_metrics.get('hand_size', [])
+        castable_non_lands_array = game_metrics.get('castable_non_lands', [])
+        uncastable_non_lands_array = game_metrics.get('uncastable_non_lands', [])
+
         # Ensure arrays are properly sized
         if len(combat_damage_array) < max_turns + 1:
             combat_damage_array = combat_damage_array + [0] * (max_turns + 1 - len(combat_damage_array))
         if len(drain_damage_array) < max_turns + 1:
             drain_damage_array = drain_damage_array + [0] * (max_turns + 1 - len(drain_damage_array))
+        if len(cards_drawn_array) < max_turns + 1:
+            cards_drawn_array = cards_drawn_array + [0] * (max_turns + 1 - len(cards_drawn_array))
+        if len(hand_size_array) < max_turns + 1:
+            hand_size_array = hand_size_array + [0] * (max_turns + 1 - len(hand_size_array))
+        if len(castable_non_lands_array) < max_turns + 1:
+            castable_non_lands_array = castable_non_lands_array + [0] * (max_turns + 1 - len(castable_non_lands_array))
+        if len(uncastable_non_lands_array) < max_turns + 1:
+            uncastable_non_lands_array = uncastable_non_lands_array + [0] * (max_turns + 1 - len(uncastable_non_lands_array))
 
         # Calculate cumulative damage per turn
         cumulative = 0
@@ -553,6 +580,12 @@ def run_goldfish_simulation_with_metrics(
             game_damage.append(turn_damage)
             damage_by_turn[turn].append(cumulative)
             per_turn_damage[turn].append(turn_damage)
+
+            # Collect card playability metrics (NEW)
+            cards_drawn_by_turn[turn].append(cards_drawn_array[turn])
+            hand_size_by_turn[turn].append(hand_size_array[turn])
+            castable_non_lands_by_turn[turn].append(castable_non_lands_array[turn])
+            uncastable_non_lands_by_turn[turn].append(uncastable_non_lands_array[turn])
 
             # Check win condition - only record first win turn for this simulation
             if cumulative >= 120 and not game_won:
@@ -602,6 +635,43 @@ def run_goldfish_simulation_with_metrics(
             metrics.cumulative_damage_by_turn.append(statistics.mean(damage_by_turn[turn]))
         else:
             metrics.cumulative_damage_by_turn.append(0.0)
+
+        # Calculate average card playability metrics per turn (NEW)
+        if cards_drawn_by_turn[turn]:
+            metrics.avg_cards_drawn_per_turn.append(statistics.mean(cards_drawn_by_turn[turn]))
+        else:
+            metrics.avg_cards_drawn_per_turn.append(0.0)
+
+        if hand_size_by_turn[turn]:
+            metrics.avg_hand_size_per_turn.append(statistics.mean(hand_size_by_turn[turn]))
+        else:
+            metrics.avg_hand_size_per_turn.append(0.0)
+
+        if castable_non_lands_by_turn[turn]:
+            metrics.avg_castable_non_lands_per_turn.append(statistics.mean(castable_non_lands_by_turn[turn]))
+        else:
+            metrics.avg_castable_non_lands_per_turn.append(0.0)
+
+        if uncastable_non_lands_by_turn[turn]:
+            metrics.avg_uncastable_non_lands_per_turn.append(statistics.mean(uncastable_non_lands_by_turn[turn]))
+        else:
+            metrics.avg_uncastable_non_lands_per_turn.append(0.0)
+
+        # Calculate castable percentage (NEW)
+        if castable_non_lands_by_turn[turn]:
+            # For each game, calculate (castable / (castable + uncastable)) * 100
+            percentages = []
+            for i in range(len(castable_non_lands_by_turn[turn])):
+                castable = castable_non_lands_by_turn[turn][i]
+                uncastable = uncastable_non_lands_by_turn[turn][i]
+                total_non_lands = castable + uncastable
+                if total_non_lands > 0:
+                    percentages.append((castable / total_non_lands) * 100)
+                else:
+                    percentages.append(0.0)
+            metrics.avg_castable_percentage_per_turn.append(statistics.mean(percentages) if percentages else 0.0)
+        else:
+            metrics.avg_castable_percentage_per_turn.append(0.0)
 
     return metrics
 
@@ -713,4 +783,11 @@ def get_dashboard_metrics(metrics: WinMetrics) -> Dict[str, Any]:
         'total_games': metrics.total_games,
         'total_wins': metrics.total_wins,
         'win_rate': metrics.total_wins / metrics.total_games if metrics.total_games > 0 else 0,
+
+        # Card playability metrics (NEW)
+        'avg_cards_drawn_per_turn': metrics.avg_cards_drawn_per_turn,
+        'avg_hand_size_per_turn': metrics.avg_hand_size_per_turn,
+        'avg_castable_non_lands_per_turn': metrics.avg_castable_non_lands_per_turn,
+        'avg_uncastable_non_lands_per_turn': metrics.avg_uncastable_non_lands_per_turn,
+        'avg_castable_percentage_per_turn': metrics.avg_castable_percentage_per_turn,
     }
