@@ -86,6 +86,50 @@ class WinMetrics:
     win_turns: List[int] = field(default_factory=list)
     damage_per_turn_samples: List[List[int]] = field(default_factory=list)
 
+    # =========================================================================
+    # HAND AND CARD DRAW METRICS
+    # =========================================================================
+
+    # Hand size metrics (average cards in hand per turn)
+    avg_hand_size_by_turn: List[float] = field(default_factory=list)
+    avg_hand_size_overall: float = 0.0
+    avg_hand_size_ci: Tuple[float, float] = (0.0, 0.0)
+
+    # Maximum hand size reached across all games
+    max_hand_size: int = 0
+    avg_max_hand_size: float = 0.0
+
+    # Minimum hand size (detecting topdeck mode)
+    min_hand_size: int = 0
+    empty_hand_turns: int = 0  # Total turns spent with 0 cards in hand
+    avg_empty_hand_turns_per_game: float = 0.0
+
+    # Card draw metrics
+    total_cards_drawn: int = 0  # Total cards drawn across all games
+    avg_cards_drawn_per_game: float = 0.0
+    avg_cards_drawn_per_turn: List[float] = field(default_factory=list)
+
+    # Starting hand metrics
+    avg_starting_hand_size: float = 7.0  # Usually 7, but accounts for mulligans
+    avg_starting_hand_quality: float = 0.0
+    mulligan_count: int = 0
+    mulligan_rate: float = 0.0  # Percentage of games that mulligan
+
+    # Hand size when winning
+    avg_hand_size_on_win: float = 0.0
+    hand_sizes_on_win: List[int] = field(default_factory=list)
+
+    # Cards played per turn
+    avg_cards_played_per_turn: List[float] = field(default_factory=list)
+    total_cards_played: int = 0
+
+    # Card velocity (cards drawn - cards played = hand accumulation/depletion)
+    avg_card_velocity_by_turn: List[float] = field(default_factory=list)  # Positive = gaining cards, negative = losing cards
+
+    # Hand samples for statistical analysis
+    hand_size_samples: List[List[int]] = field(default_factory=list)  # Hand size per turn per game
+    cards_drawn_samples: List[List[int]] = field(default_factory=list)  # Cards drawn per turn per game
+
 
 @dataclass
 class TurnMetrics:
@@ -100,6 +144,12 @@ class TurnMetrics:
     cards_drawn: int = 0
     mana_available: int = 0
     creatures_count: int = 0
+
+    # Hand and card draw metrics
+    hand_size: int = 0  # Cards in hand at end of turn
+    cards_drawn_this_turn: int = 0  # Cards drawn this specific turn
+    cards_played_this_turn: int = 0  # Cards played/cast this turn
+    hand_quality_score: float = 0.0  # Quality score of current hand
 
 
 # =============================================================================
@@ -511,6 +561,14 @@ def run_goldfish_simulation_with_metrics(
     damage_by_turn = {t: [] for t in range(1, max_turns + 1)}  # Cumulative damage
     per_turn_damage = {t: [] for t in range(1, max_turns + 1)}  # Per-turn damage
 
+    # Track hand and card draw metrics across all simulations
+    hand_size_by_turn = {t: [] for t in range(1, max_turns + 1)}
+    cards_drawn_by_turn = {t: [] for t in range(1, max_turns + 1)}
+    cards_played_by_turn = {t: [] for t in range(1, max_turns + 1)}
+    starting_hand_sizes = []
+    max_hand_sizes = []
+    empty_hand_turn_counts = []
+
     for sim in range(num_simulations):
         # Run simulation
         game_metrics = simulate_game(
@@ -530,11 +588,22 @@ def run_goldfish_simulation_with_metrics(
         combat_damage_array = game_metrics.get('combat_damage', [])
         drain_damage_array = game_metrics.get('drain_damage', [])
 
+        # Get hand and draw metrics from game_metrics
+        hand_size_array = game_metrics.get('hand_size', [])
+        cards_drawn_array = game_metrics.get('cards_drawn', [])
+        cards_played_array = game_metrics.get('cards_played', [])
+
         # Ensure arrays are properly sized
         if len(combat_damage_array) < max_turns + 1:
             combat_damage_array = combat_damage_array + [0] * (max_turns + 1 - len(combat_damage_array))
         if len(drain_damage_array) < max_turns + 1:
             drain_damage_array = drain_damage_array + [0] * (max_turns + 1 - len(drain_damage_array))
+        if len(hand_size_array) < max_turns + 1:
+            hand_size_array = hand_size_array + [0] * (max_turns + 1 - len(hand_size_array))
+        if len(cards_drawn_array) < max_turns + 1:
+            cards_drawn_array = cards_drawn_array + [0] * (max_turns + 1 - len(cards_drawn_array))
+        if len(cards_played_array) < max_turns + 1:
+            cards_played_array = cards_played_array + [0] * (max_turns + 1 - len(cards_played_array))
 
         # Calculate cumulative damage per turn
         cumulative = 0
@@ -572,6 +641,60 @@ def run_goldfish_simulation_with_metrics(
 
         metrics.damage_per_turn_samples.append(game_damage)
 
+        # =====================================================================
+        # HAND AND CARD DRAW METRICS TRACKING
+        # =====================================================================
+
+        # Track hand size and draw metrics for this game
+        game_hand_sizes = []
+        game_cards_drawn = []
+        game_cards_played = []
+        game_empty_hand_turns = 0
+        game_max_hand_size = 0
+
+        # Starting hand (turn 0 or 1)
+        starting_hand = hand_size_array[0] if len(hand_size_array) > 0 and hand_size_array[0] > 0 else hand_size_array[1] if len(hand_size_array) > 1 else 7
+        starting_hand_sizes.append(starting_hand)
+
+        for turn in range(1, max_turns + 1):
+            hand_size = hand_size_array[turn] if turn < len(hand_size_array) else 0
+            cards_drawn = cards_drawn_array[turn] if turn < len(cards_drawn_array) else 0
+            cards_played = cards_played_array[turn] if turn < len(cards_played_array) else 0
+
+            # Record for this turn across all games
+            hand_size_by_turn[turn].append(hand_size)
+            cards_drawn_by_turn[turn].append(cards_drawn)
+            cards_played_by_turn[turn].append(cards_played)
+
+            # Record for this specific game
+            game_hand_sizes.append(hand_size)
+            game_cards_drawn.append(cards_drawn)
+            game_cards_played.append(cards_played)
+
+            # Track empty hand turns
+            if hand_size == 0:
+                game_empty_hand_turns += 1
+
+            # Track max hand size
+            game_max_hand_size = max(game_max_hand_size, hand_size)
+
+        # Store game-level hand metrics
+        metrics.hand_size_samples.append(game_hand_sizes)
+        metrics.cards_drawn_samples.append(game_cards_drawn)
+        empty_hand_turn_counts.append(game_empty_hand_turns)
+        max_hand_sizes.append(game_max_hand_size)
+
+        # Track hand size when winning
+        if game_won and len(game_hand_sizes) > 0:
+            # Get hand size at the turn they won
+            win_turn_idx = metrics.win_turns[-1] - 1  # Convert to 0-indexed
+            if win_turn_idx < len(game_hand_sizes):
+                metrics.hand_sizes_on_win.append(game_hand_sizes[win_turn_idx])
+
+        # Track total cards drawn and played
+        metrics.total_cards_drawn += sum(game_cards_drawn)
+        metrics.total_cards_played += sum(game_cards_played)
+
     # Calculate statistics
     metrics.win_by_turn_6 = wins_by_turn.get(6, 0) / num_simulations if num_simulations > 0 else 0
     metrics.win_by_turn_8 = wins_by_turn.get(8, 0) / num_simulations if num_simulations > 0 else 0
@@ -602,6 +725,78 @@ def run_goldfish_simulation_with_metrics(
             metrics.cumulative_damage_by_turn.append(statistics.mean(damage_by_turn[turn]))
         else:
             metrics.cumulative_damage_by_turn.append(0.0)
+
+    # =========================================================================
+    # CALCULATE HAND AND CARD DRAW STATISTICS
+    # =========================================================================
+
+    # Average hand size per turn
+    for turn in range(1, max_turns + 1):
+        if hand_size_by_turn[turn]:
+            metrics.avg_hand_size_by_turn.append(statistics.mean(hand_size_by_turn[turn]))
+        else:
+            metrics.avg_hand_size_by_turn.append(0.0)
+
+    # Overall average hand size (across all turns and games)
+    all_hand_sizes = [hs for game_hands in metrics.hand_size_samples for hs in game_hands]
+    if all_hand_sizes:
+        metrics.avg_hand_size_overall = statistics.mean(all_hand_sizes)
+        metrics.avg_hand_size_ci = calculate_confidence_interval(all_hand_sizes)
+    else:
+        metrics.avg_hand_size_overall = 0.0
+        metrics.avg_hand_size_ci = (0.0, 0.0)
+
+    # Average cards drawn per turn
+    for turn in range(1, max_turns + 1):
+        if cards_drawn_by_turn[turn]:
+            metrics.avg_cards_drawn_per_turn.append(statistics.mean(cards_drawn_by_turn[turn]))
+        else:
+            metrics.avg_cards_drawn_per_turn.append(0.0)
+
+    # Average cards played per turn
+    for turn in range(1, max_turns + 1):
+        if cards_played_by_turn[turn]:
+            metrics.avg_cards_played_per_turn.append(statistics.mean(cards_played_by_turn[turn]))
+        else:
+            metrics.avg_cards_played_per_turn.append(0.0)
+
+    # Card velocity per turn (drawn - played)
+    for turn in range(1, max_turns + 1):
+        if cards_drawn_by_turn[turn] and cards_played_by_turn[turn]:
+            avg_drawn = statistics.mean(cards_drawn_by_turn[turn])
+            avg_played = statistics.mean(cards_played_by_turn[turn])
+            metrics.avg_card_velocity_by_turn.append(avg_drawn - avg_played)
+        else:
+            metrics.avg_card_velocity_by_turn.append(0.0)
+
+    # Starting hand metrics
+    if starting_hand_sizes:
+        metrics.avg_starting_hand_size = statistics.mean(starting_hand_sizes)
+        # Mulligan detection: if average starting hand < 7, some mulligans occurred
+        metrics.mulligan_rate = sum(1 for h in starting_hand_sizes if h < 7) / len(starting_hand_sizes) if starting_hand_sizes else 0.0
+        metrics.mulligan_count = sum(1 for h in starting_hand_sizes if h < 7)
+
+    # Maximum hand size metrics
+    if max_hand_sizes:
+        metrics.max_hand_size = max(max_hand_sizes)
+        metrics.avg_max_hand_size = statistics.mean(max_hand_sizes)
+
+    # Minimum hand size (always 0 when running out of cards)
+    metrics.min_hand_size = 0
+
+    # Empty hand turns
+    if empty_hand_turn_counts:
+        metrics.empty_hand_turns = sum(empty_hand_turn_counts)
+        metrics.avg_empty_hand_turns_per_game = statistics.mean(empty_hand_turn_counts)
+
+    # Average cards drawn/played per game
+    if num_simulations > 0:
+        metrics.avg_cards_drawn_per_game = metrics.total_cards_drawn / num_simulations
+        # Note: total_cards_played is already accumulated above
+
+    # Average hand size when winning
+    if metrics.hand_sizes_on_win:
+        metrics.avg_hand_size_on_win = statistics.mean(metrics.hand_sizes_on_win)
 
     return metrics
 
@@ -655,6 +850,42 @@ def format_win_metrics_report(metrics: WinMetrics) -> str:
     for i, dmg in enumerate(metrics.cumulative_damage_by_turn[:10], 1):
         bar = "█" * int(dmg / 10)
         lines.append(f"  Turn {i:2d}: {dmg:6.1f} {bar}")
+
+    # Add hand and card draw metrics section
+    lines.extend([
+        "",
+        "HAND SIZE AND CARD DRAW METRICS",
+        "-" * 40,
+        f"  Average Hand Size:     {metrics.avg_hand_size_overall:.1f} cards ({metrics.avg_hand_size_ci[0]:.1f} - {metrics.avg_hand_size_ci[1]:.1f})",
+        f"  Average Starting Hand: {metrics.avg_starting_hand_size:.1f} cards",
+        f"  Mulligan Rate:         {metrics.mulligan_rate * 100:.1f}%",
+        "",
+        f"  Max Hand Size Reached: {metrics.max_hand_size} cards",
+        f"  Avg Max Hand Size:     {metrics.avg_max_hand_size:.1f} cards",
+        f"  Empty Hand Turns/Game: {metrics.avg_empty_hand_turns_per_game:.1f}",
+        "",
+        f"  Total Cards Drawn:     {metrics.total_cards_drawn}",
+        f"  Avg Cards/Game:        {metrics.avg_cards_drawn_per_game:.1f}",
+        f"  Avg Hand Size on Win:  {metrics.avg_hand_size_on_win:.1f} cards" if metrics.avg_hand_size_on_win > 0 else "  Avg Hand Size on Win:  N/A",
+        "",
+        "AVERAGE HAND SIZE BY TURN",
+        "-" * 40,
+    ])
+
+    for i, hand_size in enumerate(metrics.avg_hand_size_by_turn[:10], 1):
+        bar = "■" * int(hand_size)
+        lines.append(f"  Turn {i:2d}: {hand_size:4.1f} {bar}")
+
+    lines.extend([
+        "",
+        "CARD VELOCITY BY TURN (Drawn - Played)",
+        "-" * 40,
+    ])
+
+    for i, velocity in enumerate(metrics.avg_card_velocity_by_turn[:10], 1):
+        indicator = "+" if velocity >= 0 else ""
+        bar = "▲" * int(abs(velocity)) if velocity >= 0 else "▼" * int(abs(velocity))
+        lines.append(f"  Turn {i:2d}: {indicator}{velocity:+4.1f} {bar}")
 
     lines.append("=" * 60)
 
@@ -713,4 +944,44 @@ def get_dashboard_metrics(metrics: WinMetrics) -> Dict[str, Any]:
         'total_games': metrics.total_games,
         'total_wins': metrics.total_wins,
         'win_rate': metrics.total_wins / metrics.total_games if metrics.total_games > 0 else 0,
+
+        # =====================================================================
+        # HAND AND CARD DRAW METRICS
+        # =====================================================================
+
+        # Hand size metrics
+        'avg_hand_size_by_turn': metrics.avg_hand_size_by_turn,
+        'avg_hand_size_overall': metrics.avg_hand_size_overall,
+        'avg_hand_size_ci': {
+            'lower': metrics.avg_hand_size_ci[0],
+            'upper': metrics.avg_hand_size_ci[1],
+        },
+        'max_hand_size': metrics.max_hand_size,
+        'avg_max_hand_size': metrics.avg_max_hand_size,
+        'min_hand_size': metrics.min_hand_size,
+
+        # Empty hand tracking (topdeck mode)
+        'empty_hand_turns': metrics.empty_hand_turns,
+        'avg_empty_hand_turns_per_game': metrics.avg_empty_hand_turns_per_game,
+
+        # Card draw metrics
+        'total_cards_drawn': metrics.total_cards_drawn,
+        'avg_cards_drawn_per_game': metrics.avg_cards_drawn_per_game,
+        'avg_cards_drawn_per_turn': metrics.avg_cards_drawn_per_turn,
+
+        # Starting hand
+        'avg_starting_hand_size': metrics.avg_starting_hand_size,
+        'avg_starting_hand_quality': metrics.avg_starting_hand_quality,
+        'mulligan_count': metrics.mulligan_count,
+        'mulligan_rate': metrics.mulligan_rate,
+
+        # Hand when winning
+        'avg_hand_size_on_win': metrics.avg_hand_size_on_win,
+
+        # Cards played
+        'avg_cards_played_per_turn': metrics.avg_cards_played_per_turn,
+        'total_cards_played': metrics.total_cards_played,
+
+        # Card velocity (draw rate - play rate)
+        'avg_card_velocity_by_turn': metrics.avg_card_velocity_by_turn,
     }

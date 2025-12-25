@@ -327,6 +327,178 @@ def get_effectiveness_figures(results: Dict[str, Any]) -> Dict[str, go.Figure]:
 
             figures['win_breakdown'] = pie_fig
 
+    # =========================================================================
+    # HAND AND CARD DRAW VISUALIZATIONS
+    # =========================================================================
+
+    # 6. Hand Size Progression Chart
+    hand_size_data = dashboard_data.get('avg_hand_size_by_turn', [])
+    if hand_size_data:
+        hand_fig = go.Figure()
+
+        x = list(range(1, len(hand_size_data) + 1))
+
+        hand_fig.add_trace(go.Scatter(
+            x=x,
+            y=hand_size_data,
+            mode='lines+markers',
+            name='Hand Size',
+            line=dict(color='#9b59b6', width=3),
+            marker=dict(size=8),
+            fill='tozeroy',
+            fillcolor='rgba(155, 89, 182, 0.2)'
+        ))
+
+        # Add reference line for starting hand size
+        starting_hand = dashboard_data.get('avg_starting_hand_size', 7)
+        hand_fig.add_hline(
+            y=starting_hand,
+            line_dash="dash",
+            line_color="gray",
+            annotation_text=f"Starting Hand ({starting_hand:.1f})"
+        )
+
+        hand_fig.update_layout(
+            title='Average Hand Size Progression',
+            xaxis_title='Turn',
+            yaxis_title='Cards in Hand',
+            template='plotly_white',
+            yaxis=dict(range=[0, max(hand_size_data + [7]) * 1.2])
+        )
+
+        figures['hand_size_progression'] = hand_fig
+
+    # 7. Card Draw Per Turn Chart
+    cards_drawn_data = dashboard_data.get('avg_cards_drawn_per_turn', [])
+    if cards_drawn_data:
+        draw_fig = go.Figure()
+
+        x = list(range(1, len(cards_drawn_data) + 1))
+
+        draw_fig.add_trace(go.Bar(
+            x=x,
+            y=cards_drawn_data,
+            name='Cards Drawn',
+            marker_color='#3498db',
+            text=[f'{v:.1f}' for v in cards_drawn_data],
+            textposition='outside'
+        ))
+
+        draw_fig.update_layout(
+            title='Average Cards Drawn Per Turn',
+            xaxis_title='Turn',
+            yaxis_title='Cards Drawn',
+            template='plotly_white',
+            showlegend=False
+        )
+
+        figures['cards_drawn_per_turn'] = draw_fig
+
+    # 8. Card Velocity Chart (Drawn - Played)
+    velocity_data = dashboard_data.get('avg_card_velocity_by_turn', [])
+    if velocity_data:
+        velocity_fig = go.Figure()
+
+        x = list(range(1, len(velocity_data) + 1))
+
+        # Color bars based on positive (gaining cards) or negative (losing cards)
+        colors = ['#27ae60' if v >= 0 else '#e74c3c' for v in velocity_data]
+
+        velocity_fig.add_trace(go.Bar(
+            x=x,
+            y=velocity_data,
+            name='Card Velocity',
+            marker_color=colors,
+            text=[f'{v:+.1f}' for v in velocity_data],
+            textposition='outside'
+        ))
+
+        # Add zero line
+        velocity_fig.add_hline(
+            y=0,
+            line_color="black",
+            line_width=1
+        )
+
+        velocity_fig.update_layout(
+            title='Card Velocity (Cards Drawn - Cards Played)',
+            xaxis_title='Turn',
+            yaxis_title='Net Cards Gained/Lost',
+            template='plotly_white',
+            showlegend=False,
+            annotations=[{
+                'text': 'Positive = Gaining cards | Negative = Losing cards',
+                'xref': 'paper',
+                'yref': 'paper',
+                'x': 0.5,
+                'y': 1.1,
+                'showarrow': False,
+                'font': {'size': 10, 'color': 'gray'}
+            }]
+        )
+
+        figures['card_velocity'] = velocity_fig
+
+    # 9. Hand Metrics Summary (Indicator chart)
+    avg_hand_size = dashboard_data.get('avg_hand_size_overall', 0)
+    max_hand_size = dashboard_data.get('max_hand_size', 0)
+    avg_cards_per_game = dashboard_data.get('avg_cards_drawn_per_game', 0)
+
+    if avg_hand_size > 0 or avg_cards_per_game > 0:
+        hand_summary_fig = go.Figure()
+
+        hand_summary_fig.add_trace(go.Indicator(
+            mode="number+delta",
+            value=avg_hand_size,
+            title={'text': "Avg Hand Size"},
+            delta={'reference': 5, 'relative': False},
+            domain={'row': 0, 'column': 0}
+        ))
+
+        hand_summary_fig.add_trace(go.Indicator(
+            mode="number",
+            value=max_hand_size,
+            title={'text': "Max Hand Size"},
+            domain={'row': 0, 'column': 1}
+        ))
+
+        hand_summary_fig.add_trace(go.Indicator(
+            mode="number",
+            value=avg_cards_per_game,
+            title={'text': "Cards Drawn/Game"},
+            domain={'row': 0, 'column': 2}
+        ))
+
+        hand_summary_fig.update_layout(
+            grid={'rows': 1, 'columns': 3, 'pattern': "independent"},
+            template='plotly_white',
+            height=200
+        )
+
+        figures['hand_summary'] = hand_summary_fig
+
+    # 10. Hand Size vs Damage Correlation (if we have win data)
+    hand_on_win = dashboard_data.get('avg_hand_size_on_win', 0)
+    if hand_on_win > 0 and avg_hand_size > 0:
+        comparison_fig = go.Figure()
+
+        comparison_fig.add_trace(go.Bar(
+            x=['Average Hand Size', 'Hand Size on Win'],
+            y=[avg_hand_size, hand_on_win],
+            marker_color=['#3498db', '#27ae60'],
+            text=[f'{avg_hand_size:.1f}', f'{hand_on_win:.1f}'],
+            textposition='outside'
+        ))
+
+        comparison_fig.update_layout(
+            title='Hand Size: Overall vs When Winning',
+            yaxis_title='Cards in Hand',
+            template='plotly_white',
+            showlegend=False
+        )
+
+        figures['hand_win_comparison'] = comparison_fig
+
     return figures
 
 
@@ -432,6 +604,36 @@ def create_effectiveness_summary_html(results: Dict[str, Any]) -> str:
                     Synergy: <strong>{effectiveness.synergy_score:.0f}</strong>
                 </div>
             </div>
+        </div>
+
+        <div style="margin-top: 15px;">
+            <h4 style="color: #2c3e50; margin-bottom: 8px; font-size: 14px;">Hand & Card Draw</h4>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">Avg Hand Size</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
+                        {dashboard_data.get('avg_hand_size_overall', 0):.1f} cards
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">Max Hand Size</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
+                        {dashboard_data.get('max_hand_size', 0)} cards
+                    </td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">Cards Drawn/Game</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
+                        {dashboard_data.get('avg_cards_drawn_per_game', 0):.1f} cards
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">Hand on Win</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
+                        {dashboard_data.get('avg_hand_size_on_win', 0):.1f} cards
+                    </td>
+                </tr>
+            </table>
         </div>
     </div>
     '''
