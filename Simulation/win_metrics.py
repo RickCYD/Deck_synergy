@@ -348,6 +348,7 @@ class ImprovedAI:
         Evaluate card priority for casting order.
 
         Higher score = cast sooner.
+        PHASE 3: Now integrates real-time metrics for intelligent prioritization.
 
         Args:
             card: Card to evaluate
@@ -358,6 +359,43 @@ class ImprovedAI:
         score = 0.0
         oracle = getattr(card, 'oracle_text', '').lower()
         card_type = getattr(card, 'type', '')
+
+        # PHASE 3: Use real-time metrics to adjust priorities
+        try:
+            scarcity = self.board.detect_resource_scarcity()
+            hand_stats = self.board.analyze_hand_resources()
+            mana_eff = self.board.calculate_mana_efficiency()
+
+            # Boost card draw when resources are scarce
+            draw = getattr(card, 'draw_cards', 0) or 0
+            if draw > 0:
+                if scarcity['prioritize_draw']:
+                    score += draw * 20  # Much higher priority when scarce
+                else:
+                    score += draw * 8  # Normal priority
+
+            # Boost mana rocks when hand is spell-heavy
+            mana_prod = getattr(card, 'mana_production', 0) or 0
+            if mana_prod > 0:
+                turn_factor = max(1, 6 - self.board.turn)
+                if hand_stats['spell_ratio'] > 0.7:
+                    # Hand is spell-heavy, prioritize mana
+                    score += mana_prod * 15 * turn_factor
+                else:
+                    score += mana_prod * 10 * turn_factor
+
+        except (AttributeError, Exception):
+            # Fallback to original logic if metrics not available
+            # Card draw (original)
+            draw = getattr(card, 'draw_cards', 0) or 0
+            if draw > 0:
+                score += draw * 8
+
+            # Mana production priority (original)
+            mana_prod = getattr(card, 'mana_production', 0) or 0
+            if mana_prod > 0:
+                turn_factor = max(1, 6 - self.board.turn)
+                score += mana_prod * 10 * turn_factor
 
         # Base scores by type
         if 'creature' in card_type.lower():
@@ -376,18 +414,6 @@ class ImprovedAI:
                 score += 12
             if getattr(card, 'has_trample', False) or 'trample' in oracle:
                 score += 5
-
-        # Mana production priority (especially early game)
-        mana_prod = getattr(card, 'mana_production', 0) or 0
-        if mana_prod > 0:
-            # Higher priority early, lower late
-            turn_factor = max(1, 6 - self.board.turn)
-            score += mana_prod * 10 * turn_factor
-
-        # Card draw
-        draw = getattr(card, 'draw_cards', 0) or 0
-        if draw > 0:
-            score += draw * 8
 
         # Direct damage
         damage = getattr(card, 'deals_damage', 0) or 0
@@ -461,6 +487,7 @@ class ImprovedAI:
         Determine if we should hold a card for later.
 
         In goldfish, we almost never hold cards - maximize damage.
+        PHASE 3: Now uses real-time metrics for intelligent decisions.
 
         Args:
             card: Card to evaluate
@@ -468,10 +495,33 @@ class ImprovedAI:
         Returns:
             True if card should be held
         """
-        # In goldfish, very rarely hold cards
-        # Only hold if we're about to win anyway
+        # PHASE 3: Use real-time metrics from Phase 1
+        try:
+            # Check opportunity cost
+            opp_cost = self.board.calculate_opportunity_cost(card)
+            if opp_cost['recommendation'] == 'HOLD':
+                return True
 
-        # Check if we're close to winning
+            # Check resource scarcity
+            scarcity = self.board.detect_resource_scarcity()
+
+            # If resources are scarce, hold expensive cards
+            if scarcity['critical_scarcity']:
+                cmc = self._get_cmc(card)
+                if cmc >= 5:
+                    return True
+
+            # Check if we can play it next turn
+            look_ahead = self.board.can_play_next_turn(card, look_ahead_turns=1)
+            if not look_ahead['turn_1']['playable']:
+                # Can't play next turn, might as well hold
+                return True
+
+        except (AttributeError, Exception):
+            # Fallback to original logic if metrics not available
+            pass
+
+        # Original logic: Check if we're close to winning
         cumulative_damage = sum(
             getattr(self.board, f'combat_damage_turn_{t}', 0)
             for t in range(1, self.board.turn + 1)
