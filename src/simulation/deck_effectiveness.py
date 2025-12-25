@@ -433,6 +433,36 @@ def create_effectiveness_summary_html(results: Dict[str, Any]) -> str:
                 </div>
             </div>
         </div>
+
+        <div style="margin-top: 15px;">
+            <h4 style="color: #2c3e50; margin-bottom: 8px; font-size: 14px;">Card Velocity & Draw</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+                <div style="padding: 6px; background: #f0f8ff; border-radius: 4px;">
+                    Card Velocity: <strong>{dashboard_data.get('avg_card_velocity', 0):.2f}</strong> cards/turn
+                </div>
+                <div style="padding: 6px; background: #f0f8ff; border-radius: 4px;">
+                    Avg Cards Drawn: <strong>{dashboard_data.get('avg_cards_drawn_per_game', 0):.1f}</strong> per game
+                </div>
+                <div style="padding: 6px; background: #f0f8ff; border-radius: 4px;">
+                    Total Cards Drawn: <strong>{dashboard_data.get('total_cards_drawn', 0)}</strong>
+                </div>
+                <div style="padding: 6px; background: #f0f8ff; border-radius: 4px;">
+                    Avg % Playable: <strong>{dashboard_data.get('avg_playable_percentage', 0):.1f}%</strong>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 15px;">
+            <h4 style="color: #2c3e50; margin-bottom: 8px; font-size: 14px;">Land Metrics</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+                <div style="padding: 6px; background: #fff4e6; border-radius: 4px;">
+                    Avg % Land Drop: <strong>{dashboard_data.get('avg_land_drop_percentage', 0):.1f}%</strong>
+                </div>
+                <div style="padding: 6px; background: #fff4e6; border-radius: 4px;">
+                    Avg Lands per Turn: <strong>{dashboard_data.get('avg_lands_per_turn', 0):.2f}</strong>
+                </div>
+            </div>
+        </div>
     </div>
     '''
 

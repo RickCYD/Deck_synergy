@@ -86,6 +86,20 @@ class WinMetrics:
     win_turns: List[int] = field(default_factory=list)
     damage_per_turn_samples: List[List[int]] = field(default_factory=list)
 
+    # NEW METRICS - Card velocity and draw metrics
+    avg_card_velocity: float = 0.0  # Average cards played per turn
+    total_cards_drawn: int = 0  # Total cards drawn across all simulations
+    avg_cards_drawn_per_game: float = 0.0  # Average cards drawn per game
+
+    # NEW METRICS - Playability metrics
+    avg_playable_percentage: float = 0.0  # Average % of non-land cards that are playable
+    playable_percentage_by_turn: List[float] = field(default_factory=list)  # Per-turn playable %
+
+    # NEW METRICS - Land metrics
+    avg_land_drop_percentage: float = 0.0  # % of turns where a land was played
+    avg_lands_per_turn: float = 0.0  # Average number of lands played per turn
+    lands_per_turn: List[float] = field(default_factory=list)  # Avg lands played each turn
+
 
 @dataclass
 class TurnMetrics:
@@ -334,6 +348,7 @@ class ImprovedAI:
         Evaluate card priority for casting order.
 
         Higher score = cast sooner.
+        PHASE 3: Now integrates real-time metrics for intelligent prioritization.
 
         Args:
             card: Card to evaluate
@@ -344,6 +359,43 @@ class ImprovedAI:
         score = 0.0
         oracle = getattr(card, 'oracle_text', '').lower()
         card_type = getattr(card, 'type', '')
+
+        # PHASE 3: Use real-time metrics to adjust priorities
+        try:
+            scarcity = self.board.detect_resource_scarcity()
+            hand_stats = self.board.analyze_hand_resources()
+            mana_eff = self.board.calculate_mana_efficiency()
+
+            # Boost card draw when resources are scarce
+            draw = getattr(card, 'draw_cards', 0) or 0
+            if draw > 0:
+                if scarcity['prioritize_draw']:
+                    score += draw * 20  # Much higher priority when scarce
+                else:
+                    score += draw * 8  # Normal priority
+
+            # Boost mana rocks when hand is spell-heavy
+            mana_prod = getattr(card, 'mana_production', 0) or 0
+            if mana_prod > 0:
+                turn_factor = max(1, 6 - self.board.turn)
+                if hand_stats['spell_ratio'] > 0.7:
+                    # Hand is spell-heavy, prioritize mana
+                    score += mana_prod * 15 * turn_factor
+                else:
+                    score += mana_prod * 10 * turn_factor
+
+        except (AttributeError, Exception):
+            # Fallback to original logic if metrics not available
+            # Card draw (original)
+            draw = getattr(card, 'draw_cards', 0) or 0
+            if draw > 0:
+                score += draw * 8
+
+            # Mana production priority (original)
+            mana_prod = getattr(card, 'mana_production', 0) or 0
+            if mana_prod > 0:
+                turn_factor = max(1, 6 - self.board.turn)
+                score += mana_prod * 10 * turn_factor
 
         # Base scores by type
         if 'creature' in card_type.lower():
@@ -362,18 +414,6 @@ class ImprovedAI:
                 score += 12
             if getattr(card, 'has_trample', False) or 'trample' in oracle:
                 score += 5
-
-        # Mana production priority (especially early game)
-        mana_prod = getattr(card, 'mana_production', 0) or 0
-        if mana_prod > 0:
-            # Higher priority early, lower late
-            turn_factor = max(1, 6 - self.board.turn)
-            score += mana_prod * 10 * turn_factor
-
-        # Card draw
-        draw = getattr(card, 'draw_cards', 0) or 0
-        if draw > 0:
-            score += draw * 8
 
         # Direct damage
         damage = getattr(card, 'deals_damage', 0) or 0
@@ -447,6 +487,7 @@ class ImprovedAI:
         Determine if we should hold a card for later.
 
         In goldfish, we almost never hold cards - maximize damage.
+        PHASE 3: Now uses real-time metrics for intelligent decisions.
 
         Args:
             card: Card to evaluate
@@ -454,10 +495,33 @@ class ImprovedAI:
         Returns:
             True if card should be held
         """
-        # In goldfish, very rarely hold cards
-        # Only hold if we're about to win anyway
+        # PHASE 3: Use real-time metrics from Phase 1
+        try:
+            # Check opportunity cost
+            opp_cost = self.board.calculate_opportunity_cost(card)
+            if opp_cost['recommendation'] == 'HOLD':
+                return True
 
-        # Check if we're close to winning
+            # Check resource scarcity
+            scarcity = self.board.detect_resource_scarcity()
+
+            # If resources are scarce, hold expensive cards
+            if scarcity['critical_scarcity']:
+                cmc = self._get_cmc(card)
+                if cmc >= 5:
+                    return True
+
+            # Check if we can play it next turn
+            look_ahead = self.board.can_play_next_turn(card, look_ahead_turns=1)
+            if not look_ahead['turn_1']['playable']:
+                # Can't play next turn, might as well hold
+                return True
+
+        except (AttributeError, Exception):
+            # Fallback to original logic if metrics not available
+            pass
+
+        # Original logic: Check if we're close to winning
         cumulative_damage = sum(
             getattr(self.board, f'combat_damage_turn_{t}', 0)
             for t in range(1, self.board.turn + 1)
@@ -511,6 +575,13 @@ def run_goldfish_simulation_with_metrics(
     damage_by_turn = {t: [] for t in range(1, max_turns + 1)}  # Cumulative damage
     per_turn_damage = {t: [] for t in range(1, max_turns + 1)}  # Per-turn damage
 
+    # NEW: Track card velocity, draw, and playability metrics
+    cards_played_per_game = []  # Total cards played each game
+    cards_drawn_per_game = []  # Total cards drawn each game
+    playable_percentage_by_turn = {t: [] for t in range(1, max_turns + 1)}  # Playable % each turn
+    lands_played_by_turn = {t: [] for t in range(1, max_turns + 1)}  # Lands played each turn
+    land_drops_by_turn = {t: 0 for t in range(1, max_turns + 1)}  # Number of games with land drop
+
     for sim in range(num_simulations):
         # Run simulation
         game_metrics = simulate_game(
@@ -536,12 +607,35 @@ def run_goldfish_simulation_with_metrics(
         if len(drain_damage_array) < max_turns + 1:
             drain_damage_array = drain_damage_array + [0] * (max_turns + 1 - len(drain_damage_array))
 
+        # NEW: Get card tracking arrays with validation
+        cards_played_array = game_metrics.get('cards_played', [])
+        cards_drawn_array = game_metrics.get('cards_drawn', [])
+        lands_played_array = game_metrics.get('lands_played', [])
+        castable_non_lands_array = game_metrics.get('castable_non_lands', [])
+        non_land_cards_array = game_metrics.get('non_land_cards', [])
+
+        # Ensure arrays are properly sized
+        if len(cards_played_array) < max_turns + 1:
+            cards_played_array = cards_played_array + [0] * (max_turns + 1 - len(cards_played_array))
+        if len(cards_drawn_array) < max_turns + 1:
+            cards_drawn_array = cards_drawn_array + [0] * (max_turns + 1 - len(cards_drawn_array))
+        if len(lands_played_array) < max_turns + 1:
+            lands_played_array = lands_played_array + [0] * (max_turns + 1 - len(lands_played_array))
+        if len(castable_non_lands_array) < max_turns + 1:
+            castable_non_lands_array = castable_non_lands_array + [0] * (max_turns + 1 - len(castable_non_lands_array))
+        if len(non_land_cards_array) < max_turns + 1:
+            non_land_cards_array = non_land_cards_array + [0] * (max_turns + 1 - len(non_land_cards_array))
+
         # Calculate cumulative damage per turn
         cumulative = 0
         cumulative_combat = 0  # Track cumulative combat damage
         cumulative_drain = 0   # Track cumulative drain damage
         game_damage = []
         game_won = False  # Track if THIS simulation has won
+
+        # NEW: Track game-level metrics
+        total_cards_played_this_game = 0
+        total_cards_drawn_this_game = 0
 
         for turn in range(1, max_turns + 1):
             combat = combat_damage_array[turn]
@@ -553,6 +647,34 @@ def run_goldfish_simulation_with_metrics(
             game_damage.append(turn_damage)
             damage_by_turn[turn].append(cumulative)
             per_turn_damage[turn].append(turn_damage)
+
+            # NEW: Track card metrics for this turn
+            cards_played_this_turn = cards_played_array[turn]
+            cards_drawn_this_turn = cards_drawn_array[turn]
+            total_cards_played_this_game += cards_played_this_turn
+            total_cards_drawn_this_game += cards_drawn_this_turn
+
+            # NEW: Track playable percentage
+            castable = castable_non_lands_array[turn]
+            non_lands = non_land_cards_array[turn]
+            if non_lands > 0:
+                playable_pct = (castable / non_lands) * 100
+                playable_percentage_by_turn[turn].append(playable_pct)
+            else:
+                playable_percentage_by_turn[turn].append(0.0)
+
+            # NEW: Track lands played
+            # lands_played_array is cumulative, so we need to calculate the difference
+            if turn == 1:
+                lands_this_turn = lands_played_array[turn]
+            else:
+                lands_this_turn = lands_played_array[turn] - lands_played_array[turn - 1]
+
+            lands_played_by_turn[turn].append(lands_this_turn)
+
+            # Track if a land was dropped this turn
+            if lands_this_turn > 0:
+                land_drops_by_turn[turn] += 1
 
             # Check win condition - only record first win turn for this simulation
             if cumulative >= 120 and not game_won:
@@ -571,6 +693,10 @@ def run_goldfish_simulation_with_metrics(
                     metrics.combat_damage_wins += 1
 
         metrics.damage_per_turn_samples.append(game_damage)
+
+        # NEW: Record game-level totals
+        cards_played_per_game.append(total_cards_played_this_game)
+        cards_drawn_per_game.append(total_cards_drawn_this_game)
 
     # Calculate statistics
     metrics.win_by_turn_6 = wins_by_turn.get(6, 0) / num_simulations if num_simulations > 0 else 0
@@ -602,6 +728,59 @@ def run_goldfish_simulation_with_metrics(
             metrics.cumulative_damage_by_turn.append(statistics.mean(damage_by_turn[turn]))
         else:
             metrics.cumulative_damage_by_turn.append(0.0)
+
+    # NEW: Calculate card velocity and draw metrics
+    if cards_played_per_game:
+        # Average cards played per game
+        avg_cards_per_game = statistics.mean(cards_played_per_game)
+        # Card velocity = cards played per turn (average across all games and turns)
+        metrics.avg_card_velocity = avg_cards_per_game / max_turns if max_turns > 0 else 0.0
+    else:
+        metrics.avg_card_velocity = 0.0
+
+    if cards_drawn_per_game:
+        metrics.total_cards_drawn = sum(cards_drawn_per_game)
+        metrics.avg_cards_drawn_per_game = statistics.mean(cards_drawn_per_game)
+    else:
+        metrics.total_cards_drawn = 0
+        metrics.avg_cards_drawn_per_game = 0.0
+
+    # NEW: Calculate playable percentage metrics
+    playable_percentages_all_turns = []
+    for turn in range(1, max_turns + 1):
+        if playable_percentage_by_turn[turn]:
+            avg_playable_this_turn = statistics.mean(playable_percentage_by_turn[turn])
+            metrics.playable_percentage_by_turn.append(avg_playable_this_turn)
+            playable_percentages_all_turns.extend(playable_percentage_by_turn[turn])
+        else:
+            metrics.playable_percentage_by_turn.append(0.0)
+
+    if playable_percentages_all_turns:
+        metrics.avg_playable_percentage = statistics.mean(playable_percentages_all_turns)
+    else:
+        metrics.avg_playable_percentage = 0.0
+
+    # NEW: Calculate land drop metrics
+    total_turns_across_all_games = num_simulations * max_turns
+    total_land_drops = sum(land_drops_by_turn.values())
+    if total_turns_across_all_games > 0:
+        metrics.avg_land_drop_percentage = (total_land_drops / total_turns_across_all_games) * 100
+    else:
+        metrics.avg_land_drop_percentage = 0.0
+
+    # Calculate average lands per turn (across all turns and games)
+    for turn in range(1, max_turns + 1):
+        if lands_played_by_turn[turn]:
+            avg_lands_this_turn = statistics.mean(lands_played_by_turn[turn])
+            metrics.lands_per_turn.append(avg_lands_this_turn)
+        else:
+            metrics.lands_per_turn.append(0.0)
+
+    # Overall average lands per turn
+    if metrics.lands_per_turn:
+        metrics.avg_lands_per_turn = statistics.mean(metrics.lands_per_turn)
+    else:
+        metrics.avg_lands_per_turn = 0.0
 
     return metrics
 
@@ -655,6 +834,25 @@ def format_win_metrics_report(metrics: WinMetrics) -> str:
     for i, dmg in enumerate(metrics.cumulative_damage_by_turn[:10], 1):
         bar = "█" * int(dmg / 10)
         lines.append(f"  Turn {i:2d}: {dmg:6.1f} {bar}")
+
+    # NEW: Add card velocity and draw metrics
+    lines.extend([
+        "",
+        "CARD VELOCITY & DRAW METRICS",
+        "-" * 40,
+        f"  Avg Card Velocity:        {metrics.avg_card_velocity:.2f} cards/turn",
+        f"  Total Cards Drawn:        {metrics.total_cards_drawn}",
+        f"  Avg Cards Drawn per Game: {metrics.avg_cards_drawn_per_game:.1f}",
+        "",
+        "PLAYABILITY METRICS",
+        "-" * 40,
+        f"  Avg % Non-Land Playable:  {metrics.avg_playable_percentage:.1f}%",
+        "",
+        "LAND METRICS",
+        "-" * 40,
+        f"  Avg % Land Drop:          {metrics.avg_land_drop_percentage:.1f}%",
+        f"  Avg Lands per Turn:       {metrics.avg_lands_per_turn:.2f}",
+    ])
 
     lines.append("=" * 60)
 
@@ -713,4 +911,18 @@ def get_dashboard_metrics(metrics: WinMetrics) -> Dict[str, Any]:
         'total_games': metrics.total_games,
         'total_wins': metrics.total_wins,
         'win_rate': metrics.total_wins / metrics.total_games if metrics.total_games > 0 else 0,
+
+        # NEW METRICS - Card velocity and draw
+        'avg_card_velocity': metrics.avg_card_velocity,
+        'total_cards_drawn': metrics.total_cards_drawn,
+        'avg_cards_drawn_per_game': metrics.avg_cards_drawn_per_game,
+
+        # NEW METRICS - Playability
+        'avg_playable_percentage': metrics.avg_playable_percentage,
+        'playable_percentage_by_turn': metrics.playable_percentage_by_turn,
+
+        # NEW METRICS - Land metrics
+        'avg_land_drop_percentage': metrics.avg_land_drop_percentage,
+        'avg_lands_per_turn': metrics.avg_lands_per_turn,
+        'lands_per_turn': metrics.lands_per_turn,
     }

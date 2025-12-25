@@ -15,6 +15,17 @@ from turn_phases import (
     end_phase,
 )
 
+# Import ImprovedAI for intelligent decision-making (Phase 3)
+try:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from win_metrics import ImprovedAI
+    IMPROVED_AI_AVAILABLE = True
+except ImportError:
+    IMPROVED_AI_AVAILABLE = False
+    print("Warning: ImprovedAI not available, using greedy AI")
+
 
 # ───────────────────────────────────────────────────────── Card ──
 class Card:
@@ -246,6 +257,16 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
     random.shuffle(board.library)
     board.hand, board.library = draw_starting_hand(board.library, commander_card)
+
+    # PHASE 3: Initialize ImprovedAI for intelligent decision-making
+    ai = None
+    if IMPROVED_AI_AVAILABLE:
+        try:
+            ai = ImprovedAI(board)
+        except Exception as e:
+            if verbose:
+                print(f"Warning: Failed to initialize ImprovedAI: {e}")
+            ai = None
 
     crits = []
     commander_done = False
@@ -588,11 +609,32 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                     continue
 
             # 4) play best castable creature (with strategic AI decision-making)
-            creature = board.get_best_creature_to_cast(verbose=verbose)
+            # PHASE 3: Use ImprovedAI for intelligent creature selection
+            if ai:
+                # Get all castable creatures
+                castable_creatures = [
+                    c for c in board.hand
+                    if 'Creature' in c.type and Mana_utils.can_pay(c.mana_cost, board.mana_pool)
+                ]
+
+                if castable_creatures:
+                    # Use ImprovedAI to get optimal play sequence
+                    optimal_sequence = ai.get_optimal_play_sequence(castable_creatures)
+                    creature = optimal_sequence[0] if optimal_sequence else None
+                else:
+                    creature = None
+            else:
+                # Fallback to greedy AI
+                creature = board.get_best_creature_to_cast(verbose=verbose)
 
             if creature:
-                # AI: Check if we should hold back this creature
-                if board.should_hold_back_creature(creature, verbose=verbose):
+                # PHASE 3: Use ImprovedAI to check if we should hold back
+                if ai:
+                    should_hold = ai.should_hold_card(creature)
+                else:
+                    should_hold = board.should_hold_back_creature(creature, verbose=verbose)
+
+                if should_hold:
                     did_action = False
                     break  # Don't play this creature, move to next phase
 
