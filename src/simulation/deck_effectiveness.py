@@ -199,9 +199,9 @@ def get_effectiveness_figures(results: Dict[str, Any]) -> Dict[str, go.Figure]:
     ))
 
     win_fig.update_layout(
-        title='Win Probability by Turn (95% CI)',
+        title='Cumulative Win Probability by Turn (95% CI)',
         xaxis_title='Turn',
-        yaxis_title='Probability (%)',
+        yaxis_title='Probability of Winning By This Turn (%)',
         yaxis=dict(range=[0, 100]),
         showlegend=False,
         template='plotly_white'
@@ -390,22 +390,25 @@ def create_effectiveness_summary_html(results: Dict[str, Any]) -> str:
         </div>
 
         <div style="margin-bottom: 15px;">
-            <h4 style="color: #2c3e50; margin-bottom: 8px; font-size: 14px;">Win Probability (95% CI)</h4>
+            <h4 style="color: #2c3e50; margin-bottom: 8px; font-size: 14px;">Cumulative Win Probability (95% CI)</h4>
+            <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-style: italic;">
+                Probability of winning by or before the specified turn
+            </div>
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <tr style="background: #f8f9fa;">
-                    <td style="padding: 6px; border: 1px solid #dee2e6;">Turn 6</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">By Turn 6</td>
                     <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
                         {dashboard_data.get('win_probability_turn_6', 0) * 100:.1f}%
                     </td>
                 </tr>
                 <tr>
-                    <td style="padding: 6px; border: 1px solid #dee2e6;">Turn 8</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">By Turn 8</td>
                     <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
                         {dashboard_data.get('win_probability_turn_8', 0) * 100:.1f}%
                     </td>
                 </tr>
                 <tr style="background: #f8f9fa;">
-                    <td style="padding: 6px; border: 1px solid #dee2e6;">Turn 10</td>
+                    <td style="padding: 6px; border: 1px solid #dee2e6;">By Turn 10</td>
                     <td style="padding: 6px; border: 1px solid #dee2e6; text-align: right;">
                         {dashboard_data.get('win_probability_turn_10', 0) * 100:.1f}%
                     </td>

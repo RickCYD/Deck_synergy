@@ -118,14 +118,28 @@ def calculate_deck_effectiveness(metrics: WinMetrics,
         score.speed_score = 0
         score.avg_win_turn = float('inf')
 
-    # Consistency score: Based on win rate variance
-    if metrics.win_turns and len(metrics.win_turns) > 1:
+    # MODERATE FIX: Consistency score - Based on win rate variance and actual win rate
+    # A deck that never wins should score 0, not 50
+    if not metrics.win_turns:
+        # No wins at all = 0 consistency
+        score.consistency_score = 0
+    elif len(metrics.win_turns) == 1:
+        # Single win: score based on win rate (low win rate = low consistency)
+        win_rate = metrics.total_wins / metrics.total_games if metrics.total_games > 0 else 0
+        # Scale from 0-50 based on win rate (winning 100% of games = 50, 1% = 0.5)
+        score.consistency_score = min(50, win_rate * 50)
+    else:
+        # Multiple wins: calculate variance-based consistency
         variance = statistics.stdev(metrics.win_turns)
         # Lower variance = higher consistency
-        consistency_raw = max(0, 100 - variance * 10)
-        score.consistency_score = min(100, consistency_raw)
-    else:
-        score.consistency_score = 50  # Default
+        consistency_base = max(0, 100 - variance * 10)
+
+        # Scale by win rate: deck needs reasonable win rate to be "consistent"
+        # At 25% win rate or higher, use full score; below that, scale down
+        win_rate = metrics.total_wins / metrics.total_games if metrics.total_games > 0 else 0
+        win_rate_factor = min(1.0, win_rate / 0.25)  # 25% = 1.0x, 12.5% = 0.5x, etc.
+
+        score.consistency_score = min(100, consistency_base * win_rate_factor)
 
     # Power score: Based on damage output
     if metrics.cumulative_damage_by_turn:

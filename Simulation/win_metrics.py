@@ -49,13 +49,19 @@ POISON_THRESHOLD = 10
 
 @dataclass
 class WinMetrics:
-    """Statistical metrics for deck win potential."""
-    # Turn-based win probabilities
+    """Statistical metrics for deck win potential.
+
+    Note: All win probabilities are CUMULATIVE. For example:
+    - win_by_turn_6 = Probability of winning ON OR BEFORE turn 6
+    - win_by_turn_8 = Probability of winning ON OR BEFORE turn 8
+    This means win_by_turn_8 >= win_by_turn_6 always.
+    """
+    # Turn-based win probabilities (CUMULATIVE)
     win_by_turn_6: float = 0.0
     win_by_turn_8: float = 0.0
     win_by_turn_10: float = 0.0
 
-    # Confidence intervals (95%)
+    # Confidence intervals (95%) for cumulative probabilities
     win_by_turn_6_ci: Tuple[float, float] = (0.0, 0.0)
     win_by_turn_8_ci: Tuple[float, float] = (0.0, 0.0)
     win_by_turn_10_ci: Tuple[float, float] = (0.0, 0.0)
@@ -514,16 +520,36 @@ def run_goldfish_simulation_with_metrics(
             verbose=False
         )
 
+        # CRITICAL FIX: Validate game_metrics structure before use
+        if not game_metrics or not isinstance(game_metrics, dict):
+            if verbose:
+                print(f"Warning: Simulation {sim} returned invalid metrics, skipping")
+            continue
+
+        # Get damage arrays with validation
+        combat_damage_array = game_metrics.get('combat_damage', [])
+        drain_damage_array = game_metrics.get('drain_damage', [])
+
+        # Ensure arrays are properly sized
+        if len(combat_damage_array) < max_turns + 1:
+            combat_damage_array = combat_damage_array + [0] * (max_turns + 1 - len(combat_damage_array))
+        if len(drain_damage_array) < max_turns + 1:
+            drain_damage_array = drain_damage_array + [0] * (max_turns + 1 - len(drain_damage_array))
+
         # Calculate cumulative damage per turn
         cumulative = 0
+        cumulative_combat = 0  # Track cumulative combat damage
+        cumulative_drain = 0   # Track cumulative drain damage
         game_damage = []
         game_won = False  # Track if THIS simulation has won
 
         for turn in range(1, max_turns + 1):
-            combat = game_metrics.get('combat_damage', [0] * (max_turns + 1))[turn]
-            drain = game_metrics.get('drain_damage', [0] * (max_turns + 1))[turn]
+            combat = combat_damage_array[turn]
+            drain = drain_damage_array[turn]
             turn_damage = combat + drain
             cumulative += turn_damage
+            cumulative_combat += combat
+            cumulative_drain += drain
             game_damage.append(turn_damage)
             damage_by_turn[turn].append(cumulative)
             per_turn_damage[turn].append(turn_damage)
@@ -537,8 +563,9 @@ def run_goldfish_simulation_with_metrics(
                 metrics.win_turns.append(turn)
                 metrics.total_wins += 1
 
-                # Track win type based on damage sources
-                if drain > combat * 0.5:
+                # CRITICAL FIX: Track win type based on CUMULATIVE damage sources
+                # Compare total drain damage to total combat damage across all turns
+                if cumulative_drain > cumulative_combat * 0.5:
                     metrics.drain_damage_wins += 1
                 else:
                     metrics.combat_damage_wins += 1
@@ -563,12 +590,18 @@ def run_goldfish_simulation_with_metrics(
         metrics.avg_win_turn = float('inf')
         metrics.avg_win_turn_ci = (float('inf'), float('inf'))
 
-    # Calculate average damage per turn
+    # CRITICAL FIX: Calculate average damage per turn
+    # Always append values to maintain index alignment (turn 1 = index 0, etc.)
     for turn in range(1, max_turns + 1):
         if per_turn_damage[turn]:
             metrics.avg_damage_per_turn.append(statistics.mean(per_turn_damage[turn]))
+        else:
+            metrics.avg_damage_per_turn.append(0.0)
+
         if damage_by_turn[turn]:
             metrics.cumulative_damage_by_turn.append(statistics.mean(damage_by_turn[turn]))
+        else:
+            metrics.cumulative_damage_by_turn.append(0.0)
 
     return metrics
 
