@@ -6529,8 +6529,245 @@ class BoardState:
                                 print(f"     Dealt {damage} damage")
 
 
+    # ═══════════════════════════════════════════════════════════════════════
+    # REAL-TIME AI DECISION METRICS (Phase 1: Intelligent Decision Making)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def get_library_stats(self) -> dict:
+        """
+        Get real-time library statistics for intelligent decision-making.
+
+        Returns:
+            Dict with library count, draw probability, and scarcity metrics
+        """
+        cards_remaining = len(self.library)
+        initial_deck_size = 99  # Commander deck size
+
+        return {
+            'cards_remaining': cards_remaining,
+            'draw_probability': cards_remaining / initial_deck_size if initial_deck_size > 0 else 0,
+            'scarcity_level': 1.0 - (cards_remaining / initial_deck_size) if initial_deck_size > 0 else 1.0,
+            'turns_until_empty': cards_remaining if cards_remaining > 0 else 0,
+        }
+
+    def analyze_hand_resources(self) -> dict:
+        """
+        Analyze current hand composition for resource management.
+
+        Returns:
+            Dict with land count, spell count, playable count, and diversity score
+        """
+        hand_lands = sum(1 for c in self.hand if 'Land' in c.type)
+        hand_spells = len(self.hand) - hand_lands
+
+        # Count unique card types in hand
+        card_types = set()
+        for card in self.hand:
+            if 'Creature' in card.type:
+                card_types.add('creature')
+            elif 'Instant' in card.type or 'Sorcery' in card.type:
+                card_types.add('spell')
+            elif 'Artifact' in card.type:
+                card_types.add('artifact')
+            elif 'Enchantment' in card.type:
+                card_types.add('enchantment')
+            elif 'Land' in card.type:
+                card_types.add('land')
+
+        diversity_score = len(card_types) / 5.0  # Normalize to 0-1 (5 major types)
+
+        return {
+            'hand_size': len(self.hand),
+            'hand_lands': hand_lands,
+            'hand_spells': hand_spells,
+            'land_ratio': hand_lands / len(self.hand) if len(self.hand) > 0 else 0,
+            'spell_ratio': hand_spells / len(self.hand) if len(self.hand) > 0 else 0,
+            'diversity_score': diversity_score,
+            'types_in_hand': list(card_types),
+        }
+
+    def calculate_mana_efficiency(self) -> dict:
+        """
+        Calculate mana efficiency for optimal resource usage.
+
+        Returns:
+            Dict with mana available, optimal usage, wasted mana estimate
+        """
+        mana_available = len(self.mana_pool)
+
+        # Calculate how much mana we could optimally use
+        castable_costs = []
+        for card in self.hand:
+            if 'Land' not in card.type:
+                from convert_dataframe_deck import parse_mana_cost
+                cost = parse_mana_cost(card.mana_cost)
+                if Mana_utils.can_pay(card.mana_cost, self.mana_pool):
+                    castable_costs.append(cost)
+
+        # Optimal usage = maximize mana spent without going over
+        # Use dynamic programming knapsack algorithm
+        optimal_mana_usage = 0
+        if castable_costs:
+            # Simple greedy: sort by cost descending and take what fits
+            castable_costs.sort(reverse=True)
+            remaining = mana_available
+            for cost in castable_costs:
+                if cost <= remaining:
+                    optimal_mana_usage += cost
+                    remaining -= cost
+
+        wasted_mana = mana_available - optimal_mana_usage
+        efficiency_score = (optimal_mana_usage / mana_available) if mana_available > 0 else 1.0
+
+        return {
+            'mana_available': mana_available,
+            'optimal_mana_usage': optimal_mana_usage,
+            'wasted_mana': wasted_mana,
+            'efficiency_score': efficiency_score,  # 0-1, higher is better
+            'castable_count': len(castable_costs),
+        }
+
+    def can_play_next_turn(self, card, look_ahead_turns: int = 1) -> dict:
+        """
+        Determine if a card will be playable in future turns (look-ahead).
+
+        Args:
+            card: Card to evaluate
+            look_ahead_turns: How many turns to look ahead (default 1)
+
+        Returns:
+            Dict with playability forecast
+        """
+        from convert_dataframe_deck import parse_mana_cost
+
+        current_lands = len(self.lands_untapped) + len(self.lands_tapped)
+        card_cost = parse_mana_cost(card.mana_cost)
+
+        results = {}
+        for turns_ahead in range(1, look_ahead_turns + 1):
+            expected_lands = current_lands + turns_ahead  # Assume 1 land/turn
+            expected_mana_sources = expected_lands + len(self.artifacts)  # Rocks stay
+            expected_mana = expected_mana_sources  # Simplified
+
+            playable = card_cost <= expected_mana
+
+            results[f'turn_{turns_ahead}'] = {
+                'playable': playable,
+                'expected_mana': expected_mana,
+                'card_cost': card_cost,
+                'mana_short': max(0, card_cost - expected_mana),
+            }
+
+        return results
+
+    def detect_resource_scarcity(self) -> dict:
+        """
+        Detect resource scarcity to prioritize card draw.
+
+        Returns:
+            Dict with scarcity indicators and priority signals
+        """
+        lib_stats = self.get_library_stats()
+        hand_stats = self.analyze_hand_resources()
+
+        # Calculate turns until resources run out
+        avg_cards_drawn_per_turn = 1.5  # Estimate (1 draw + triggers)
+        turns_until_empty = lib_stats['cards_remaining'] / avg_cards_drawn_per_turn if avg_cards_drawn_per_turn > 0 else float('inf')
+
+        # Scarcity score: 0 = abundant, 1 = critical
+        scarcity_score = 0.0
+
+        # Factor 1: Library running low
+        if turns_until_empty < 10:
+            scarcity_score += 0.4
+        elif turns_until_empty < 20:
+            scarcity_score += 0.2
+
+        # Factor 2: Hand running low
+        if hand_stats['hand_size'] < 3:
+            scarcity_score += 0.3
+        elif hand_stats['hand_size'] < 5:
+            scarcity_score += 0.1
+
+        # Factor 3: No playable cards
+        mana_eff = self.calculate_mana_efficiency()
+        if mana_eff['castable_count'] == 0:
+            scarcity_score += 0.3
+
+        scarcity_score = min(1.0, scarcity_score)
+
+        return {
+            'scarcity_score': scarcity_score,  # 0-1, higher = more scarce
+            'turns_until_empty': turns_until_empty,
+            'prioritize_draw': scarcity_score > 0.5,
+            'critical_scarcity': scarcity_score > 0.7,
+            'hand_size': hand_stats['hand_size'],
+            'library_size': lib_stats['cards_remaining'],
+        }
+
+    def calculate_opportunity_cost(self, card) -> dict:
+        """
+        Calculate opportunity cost of playing a card now vs later.
+
+        Args:
+            card: Card to evaluate
+
+        Returns:
+            Dict with immediate value, future value, and recommendation
+        """
+        from convert_dataframe_deck import parse_mana_cost
+
+        # Immediate value factors
+        immediate_value = 0.0
+
+        # Creatures with haste = high immediate value
+        if 'Creature' in card.type:
+            if getattr(card, 'has_haste', False):
+                immediate_value += 0.5
+            power = getattr(card, 'power', 0) or 0
+            immediate_value += power * 0.1
+
+        # Card draw = high immediate value if scarce
+        scarcity = self.detect_resource_scarcity()
+        draw_value = getattr(card, 'draw_cards', 0) or 0
+        if draw_value > 0 and scarcity['prioritize_draw']:
+            immediate_value += draw_value * 0.3
+
+        # Mana rocks = higher value early game
+        mana_prod = getattr(card, 'mana_production', 0) or 0
+        if mana_prod > 0:
+            turns_left = 10 - self.turn  # Assume 10 turn games
+            immediate_value += mana_prod * 0.1 * max(1, turns_left / 10)
+
+        # Future value factors
+        future_value = 0.0
+
+        # Can we play better cards next turn if we wait?
+        look_ahead = self.can_play_next_turn(card, look_ahead_turns=1)
+        if not look_ahead['turn_1']['playable']:
+            # Can't play next turn anyway, might as well wait
+            future_value += 0.2
+
+        # Will we have better options later?
+        hand_stats = self.analyze_hand_resources()
+        if hand_stats['hand_size'] > 5:
+            # Full hand = more options = holding might be better
+            future_value += 0.1
+
+        # Calculate recommendation
+        net_value = immediate_value - future_value
+
+        return {
+            'immediate_value': immediate_value,
+            'future_value': future_value,
+            'net_value': net_value,
+            'recommendation': 'PLAY_NOW' if net_value > 0.3 else ('HOLD' if net_value < -0.3 else 'NEUTRAL'),
+            'confidence': abs(net_value),  # Higher = more confident
+        }
+
+
 class Mana_utils:
-    
+
     def parse_req(cost_str):
         colours, generic, buf = [], 0, ''
         for ch in cost_str:
