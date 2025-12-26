@@ -100,6 +100,10 @@ class WinMetrics:
     avg_lands_per_turn: float = 0.0  # Average number of lands played per turn
     lands_per_turn: List[float] = field(default_factory=list)  # Avg lands played each turn
 
+    # NEW METRICS - Game details for fastest/slowest visualization
+    fastest_games: List[Tuple[int, Dict]] = field(default_factory=list)  # (win_turn, game_metrics)
+    slowest_games: List[Tuple[int, Dict]] = field(default_factory=list)  # (win_turn, game_metrics)
+
 
 @dataclass
 class TurnMetrics:
@@ -740,6 +744,9 @@ def run_goldfish_simulation_with_metrics(
     lands_played_by_turn = {t: [] for t in range(1, max_turns + 1)}  # Lands played each turn
     land_drops_by_turn = {t: 0 for t in range(1, max_turns + 1)}  # Number of games with land drop
 
+    # NEW: Track detailed game data for fastest and slowest games
+    all_game_details = []  # Store (win_turn, game_metrics) for all games
+
     for sim in range(num_simulations):
         # Run simulation
         game_metrics = simulate_game(
@@ -856,6 +863,21 @@ def run_goldfish_simulation_with_metrics(
         cards_played_per_game.append(total_cards_played_this_game)
         cards_drawn_per_game.append(total_cards_drawn_this_game)
 
+        # NEW: Store detailed game data (win turn + full metrics)
+        # Determine win turn for this game
+        this_game_win_turn = None
+        for turn in range(1, max_turns + 1):
+            cumulative_dmg = sum(damage_by_turn[turn])
+            if cumulative_dmg >= 120:
+                this_game_win_turn = turn
+                break
+
+        # Use max_turns + 1 as sentinel for "didn't win"
+        if this_game_win_turn is None:
+            this_game_win_turn = max_turns + 1
+
+        all_game_details.append((this_game_win_turn, game_metrics))
+
     # Calculate statistics
     metrics.win_by_turn_6 = wins_by_turn.get(6, 0) / num_simulations if num_simulations > 0 else 0
     metrics.win_by_turn_8 = wins_by_turn.get(8, 0) / num_simulations if num_simulations > 0 else 0
@@ -939,6 +961,18 @@ def run_goldfish_simulation_with_metrics(
         metrics.avg_lands_per_turn = statistics.mean(metrics.lands_per_turn)
     else:
         metrics.avg_lands_per_turn = 0.0
+
+    # NEW: Extract fastest and slowest games
+    # Sort games by win turn (fastest first)
+    all_game_details.sort(key=lambda x: x[0])
+
+    # Get fastest 5 and slowest 5 games
+    fastest_5 = all_game_details[:5] if len(all_game_details) >= 5 else all_game_details
+    slowest_5 = all_game_details[-5:] if len(all_game_details) >= 5 else []
+
+    # Store in metrics object
+    metrics.fastest_games = fastest_5
+    metrics.slowest_games = slowest_5
 
     return metrics
 

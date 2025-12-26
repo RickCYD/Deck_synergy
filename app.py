@@ -690,7 +690,11 @@ app.layout = html.Div([
 
                 html.Hr(),
                 html.H4('Per-card castability by turn', style={'marginTop': '8px'}),
-                html.Div(id='per-card-result-table', style={'marginTop': '8px'})
+                html.Div(id='per-card-result-table', style={'marginTop': '8px'}),
+
+                html.Hr(),
+                html.H4('Game-by-Game Analysis: Fastest vs Slowest Games', style={'marginTop': '16px'}),
+                html.Div(id='fastest-slowest-games-viz', style={'marginTop': '8px'})
             ], style={'padding': '20px'})
         ])
     ]),
@@ -1572,7 +1576,8 @@ def handle_card_name_click(n_clicks_list, ids_list):
      Output('simulation-opening-hand-hist', 'figure'),
      Output('simulation-summary', 'children'),
      Output('per-card-result-table', 'children'),
-     Output('simulation-lands-in-hand-cdf', 'figure')],
+     Output('simulation-lands-in-hand-cdf', 'figure'),
+     Output('fastest-slowest-games-viz', 'children')],
     Input('run-simulation-button', 'n_clicks'),
     [State('current-deck-file-store', 'data'),
      State('simulation-iterations-input', 'value'),
