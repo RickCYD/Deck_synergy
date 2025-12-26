@@ -318,11 +318,23 @@ class ImprovedAI:
     2. Sequence plays for maximum impact
     3. Track combo pieces
     4. Optimize mana usage
+    5. Multi-turn planning (3-turn lookahead)
+    6. Combo-aware prioritization
     """
 
-    def __init__(self, board: 'BoardState'):
+    def __init__(self, board: 'BoardState', deck_combos: List[Any] = None):
         self.board = board
         self.game_plan = self._determine_game_plan()
+        self.combos = deck_combos or []
+
+        # Build combo piece mapping for fast lookup
+        self.combo_pieces = {}  # card_name -> list of combos
+        for combo in self.combos:
+            for card_name in combo.card_names:
+                card_lower = card_name.lower()
+                if card_lower not in self.combo_pieces:
+                    self.combo_pieces[card_lower] = []
+                self.combo_pieces[card_lower].append(combo)
 
     def _determine_game_plan(self) -> str:
         """
@@ -428,7 +440,42 @@ class ImprovedAI:
         if 'cascade' in oracle:
             score += 20
 
-        # Combo pieces
+        # COMBO RECOGNITION: Check if this card is part of a known combo
+        card_name = getattr(card, 'name', '').lower()
+        if card_name in self.combo_pieces:
+            combos_for_this_card = self.combo_pieces[card_name]
+
+            for combo in combos_for_this_card:
+                # Check which other pieces are already on board
+                on_board_cards = [
+                    c.name.lower()
+                    for c in (self.board.creatures + self.board.artifacts +
+                              self.board.enchantments + self.board.planeswalkers)
+                ]
+
+                # Count how many pieces we already have
+                pieces_on_board = sum(
+                    1 for piece in combo.card_names
+                    if piece.lower() in on_board_cards
+                )
+
+                # Calculate combo completion percentage
+                total_pieces = len(combo.card_names)
+                pieces_needed = total_pieces - pieces_on_board  # Not counting this card yet
+
+                # MASSIVE bonus if this completes the combo
+                if pieces_needed == 1:
+                    score += 150  # This wins the game!
+                    # print(f"  → COMBO COMPLETE: {card.name} completes {combo.card_names}")
+                # Large bonus if this gets us closer to combo
+                elif pieces_needed == 2:
+                    score += 75  # Second-to-last piece
+                elif pieces_needed == 3:
+                    score += 35  # Third-to-last piece
+                else:
+                    score += 15  # Any combo piece has some value
+
+        # Legacy combo detection (keep for backwards compatibility)
         if 'infinite' in oracle or 'combo' in str(getattr(card, 'tags', [])):
             score += 25
 
@@ -486,8 +533,7 @@ class ImprovedAI:
         """
         Determine if we should hold a card for later.
 
-        In goldfish, we almost never hold cards - maximize damage.
-        PHASE 3: Now uses real-time metrics for intelligent decisions.
+        Uses deterministic logic based on game state (NO random probabilities).
 
         Args:
             card: Card to evaluate
@@ -495,45 +541,157 @@ class ImprovedAI:
         Returns:
             True if card should be held
         """
-        # PHASE 3: Use real-time metrics from Phase 1
+        cmc = self._get_cmc(card)
+
+        # Check if this card is a combo piece
+        card_name = getattr(card, 'name', '').lower()
+        is_combo_piece = card_name in self.combo_pieces
+
+        # NEVER hold combo pieces if we're close to completing a combo
+        if is_combo_piece:
+            for combo in self.combo_pieces[card_name]:
+                on_board_cards = [
+                    c.name.lower()
+                    for c in (self.board.creatures + self.board.artifacts +
+                              self.board.enchantments + self.board.planeswalkers)
+                ]
+                pieces_on_board = sum(
+                    1 for piece in combo.card_names
+                    if piece.lower() in on_board_cards
+                )
+                pieces_needed = len(combo.card_names) - pieces_on_board
+
+                if pieces_needed <= 2:
+                    return False  # Play it! We're close to combo
+
+        # Use multi-turn planning to determine if we should hold
         try:
-            # Check opportunity cost
-            opp_cost = self.board.calculate_opportunity_cost(card)
-            if opp_cost['recommendation'] == 'HOLD':
-                return True
+            plan = self.plan_next_turns(num_turns=3)
 
-            # Check resource scarcity
-            scarcity = self.board.detect_resource_scarcity()
-
-            # If resources are scarce, hold expensive cards
-            if scarcity['critical_scarcity']:
-                cmc = self._get_cmc(card)
-                if cmc >= 5:
-                    return True
-
-            # Check if we can play it next turn
-            look_ahead = self.board.can_play_next_turn(card, look_ahead_turns=1)
-            if not look_ahead['turn_1']['playable']:
-                # Can't play next turn, might as well hold
-                return True
+            # If this card isn't in the optimal 3-turn plan, consider holding
+            planned_cards = [card_name for turn_plan in plan for card_name in turn_plan['cards_to_play']]
+            if getattr(card, 'name', '') not in planned_cards:
+                return True  # Not optimal to play now
 
         except (AttributeError, Exception):
-            # Fallback to original logic if metrics not available
+            # Fallback to deterministic logic without planning
             pass
 
-        # Original logic: Check if we're close to winning
-        cumulative_damage = sum(
-            getattr(self.board, f'combat_damage_turn_{t}', 0)
-            for t in range(1, self.board.turn + 1)
-        )
+        # Resource scarcity: Hold expensive cards when resources low
+        try:
+            scarcity = self.board.detect_resource_scarcity()
 
-        # If we're about to win, hold expensive cards
-        if cumulative_damage >= 100:
-            cmc = self._get_cmc(card)
-            if cmc >= 6:
-                return True
+            if scarcity['critical_scarcity'] and cmc >= 5:
+                return True  # Save expensive cards when desperate
 
+            # Mana efficiency: Only hold if we can't afford it anyway
+            if not self.board.can_play_next_turn(card, look_ahead_turns=1)['turn_1']['playable']:
+                return True  # Can't play next turn anyway
+
+        except (AttributeError, Exception):
+            pass
+
+        # Deterministic winning condition check
+        # If we've dealt 100+ damage, hold expensive cards (we're winning already)
+        try:
+            cumulative_damage = sum(
+                getattr(self.board, f'combat_damage_turn_{t}', 0)
+                for t in range(1, self.board.turn + 1)
+            )
+
+            if cumulative_damage >= 100 and cmc >= 6:
+                return True  # Already winning, conserve expensive cards
+
+        except (AttributeError, Exception):
+            pass
+
+        # Default: PLAY the card (goldfish mode prioritizes speed)
         return False
+
+    def plan_next_turns(self, num_turns: int = 3) -> List[Dict]:
+        """
+        Plan the next N turns to find optimal play sequence.
+
+        Uses a simplified greedy algorithm with lookahead instead of full
+        game tree search (which would be exponentially expensive).
+
+        Args:
+            num_turns: Number of turns to plan ahead (default 3)
+
+        Returns:
+            List of dictionaries, one per turn, with:
+                - turn: Turn number
+                - expected_mana: Mana available
+                - cards_to_play: List of card names to play
+                - expected_damage: Damage output for this turn
+        """
+        plan = []
+
+        # Simulate future game state
+        current_lands = len(self.board.lands_untapped) + len(self.board.lands_tapped)
+        current_artifacts = len(self.board.artifacts)
+        available_hand = list(self.board.hand)
+
+        for turn_offset in range(1, num_turns + 1):
+            turn_num = self.board.turn + turn_offset
+
+            # Estimate mana available (assume 1 land/turn)
+            expected_lands = current_lands + turn_offset
+            expected_mana = expected_lands + current_artifacts  # Simplified
+
+            # Filter castable cards
+            castable = []
+            for card in available_hand:
+                if 'Land' in getattr(card, 'type', ''):
+                    continue  # Don't count lands as "cards to play"
+
+                cmc = self._get_cmc(card)
+                if cmc <= expected_mana:
+                    castable.append(card)
+
+            # Score and sort cards
+            scored_cards = [(self.evaluate_card_priority(c), c) for c in castable]
+            scored_cards.sort(reverse=True, key=lambda x: x[0])
+
+            # Select cards to play this turn (greedy knapsack)
+            cards_to_play = []
+            mana_spent = 0
+
+            for score, card in scored_cards:
+                cmc = self._get_cmc(card)
+                if mana_spent + cmc <= expected_mana:
+                    cards_to_play.append(card.name)
+                    mana_spent += cmc
+
+                    # Remove from available hand for next turn
+                    available_hand = [c for c in available_hand if c.name != card.name]
+
+                    # Update artifacts count if this is a mana rock
+                    mana_prod = getattr(card, 'mana_production', 0) or 0
+                    if mana_prod > 0:
+                        current_artifacts += 1
+
+            # Estimate damage (creatures with power + haste)
+            expected_damage = 0
+            for score, card in scored_cards:
+                if card.name in cards_to_play:
+                    if 'Creature' in getattr(card, 'type', ''):
+                        power = getattr(card, 'power', 0) or 0
+                        has_haste = getattr(card, 'has_haste', False)
+
+                        if has_haste:
+                            expected_damage += power  # Attacks this turn
+                        # Otherwise attacks next turn
+
+            plan.append({
+                'turn': turn_num,
+                'expected_mana': expected_mana,
+                'cards_to_play': cards_to_play,
+                'expected_damage': expected_damage,
+                'mana_spent': mana_spent,
+            })
+
+        return plan
 
     def _get_cmc(self, card: 'Card') -> int:
         """Get converted mana cost of a card."""
