@@ -196,8 +196,6 @@ class BoardState:
         # Counter manipulation mechanics tracking
         self.proliferate_count = 0  # Total proliferate triggers
         self.proliferate_this_turn = 0  # Proliferate triggers this turn
-        self.ozolith_counters = {}  # Stored counters from dead creatures (The Ozolith)
-        self.counters_moved_to_ozolith = 0  # Total counters moved to Ozolith
         self.total_counters_on_creatures = 0  # Total +1/+1 counters on all creatures
 
         # Syr Konrad, the Grim tracking (PRIORITY FIX: +100-150 damage)
@@ -218,9 +216,6 @@ class BoardState:
         self.meren_on_board = False  # Is Meren on the battlefield?
         self.experience_counters = 0  # Experience counters for Meren
         self.meren_triggered_this_turn = False  # Has Meren's end step triggered this turn?
-
-        # Y'shtola, Night's Blessed tracking
-        self.yshtola_on_board = False  # Is Y'shtola, Night's Blessed on the battlefield?
 
 
     def _apply_equipped_keywords(self, creature):
@@ -1799,12 +1794,6 @@ class BoardState:
                     if verbose:
                         print("♻️  Meren of Clan Nel Toth enables end-step reanimation!")
 
-                # Detect Y'shtola, Night's Blessed entering battlefield
-                if 'creature' in card.type.lower() and "y'shtola" in card.name.lower() and "night's blessed" in card.name.lower():
-                    self.yshtola_on_board = True
-                    if verbose:
-                        print("🌙 Y'shtola, Night's Blessed is on the battlefield!")
-
                 self._execute_triggers("etb", card, verbose)
 
                 # GENERIC: Check for "Whenever another Ally enters" triggers (like Wartime Protestors)
@@ -2103,21 +2092,6 @@ class BoardState:
         self.artifacts.append(card)
         Mana_utils.pay(card.mana_cost, self.mana_pool)
 
-        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
-        if self.yshtola_on_board:
-            from convert_dataframe_deck import parse_mana_cost
-            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
-            if cmc >= 3:
-                alive_opps = [o for o in self.opponents if o['is_alive']]
-                for opp in alive_opps:
-                    opp['life_total'] -= 2
-                    if opp['life_total'] <= 0:
-                        opp['is_alive'] = False
-                self.gain_life(2, verbose=False)
-                if verbose:
-                    damage_dealt = 2 * len(alive_opps)
-                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
-
         # Trigger noncreature spell effects (Sokka, Bria, etc.)
         self.trigger_noncreature_spell_effects(card, verbose=verbose)
         self.apply_prowess_bonus()
@@ -2210,21 +2184,6 @@ class BoardState:
         if card in self.hand:
             self.hand.remove(card)
         self.enchantments.append(card)
-
-        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
-        if self.yshtola_on_board:
-            from convert_dataframe_deck import parse_mana_cost
-            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
-            if cmc >= 3:
-                alive_opps = [o for o in self.opponents if o['is_alive']]
-                for opp in alive_opps:
-                    opp['life_total'] -= 2
-                    if opp['life_total'] <= 0:
-                        opp['is_alive'] = False
-                self.gain_life(2, verbose=False)
-                if verbose:
-                    damage_dealt = 2 * len(alive_opps)
-                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
 
         # NONCREATURE SPELL TRIGGERS: Generic triggers for any noncreature spell
         # Handles: Sokka ally tokens, Kykar spirits, prowess, etc.
@@ -4497,16 +4456,12 @@ class BoardState:
         - Cruel Celebrant
         - Bastion of Remembrance
         - Mirkwood Bats
-        - The Ozolith (counter preservation)
         - Teysa Karlov (doubles death triggers!)
         """
         drain_total = 0
 
         # PRIORITY 2: Track creature deaths for Mahadi
         self.creatures_died_this_turn += 1
-
-        # COUNTER MANIPULATION: The Ozolith - preserve counters
-        self.handle_ozolith_on_death(creature, verbose=verbose)
 
         # PRIORITY FIX: Syr Konrad triggers on death
         self.trigger_syr_konrad_on_death(creature, verbose=verbose)
@@ -4693,79 +4648,6 @@ class BoardState:
                     creature.has_rally_double_strike = True
                 if verbose:
                     print(f"  → Rally: {ally.name} grants double strike to all creatures")
-
-    def handle_ozolith_on_death(self, creature, verbose: bool = False):
-        """
-        Handle The Ozolith when a creature dies.
-
-        The Ozolith: "Whenever a creature you control leaves the battlefield,
-        if it had counters on it, put those counters on The Ozolith."
-
-        When creature dies, move its counters to self.ozolith_counters storage.
-        """
-        # Check if The Ozolith is on battlefield
-        has_ozolith = False
-        ozolith_card = None
-
-        for artifact in self.artifacts:
-            name = getattr(artifact, 'name', '').lower()
-            oracle = getattr(artifact, 'oracle_text', '').lower()
-
-            if 'ozolith' in name or 'the ozolith' in name:
-                has_ozolith = True
-                ozolith_card = artifact
-                break
-
-        if not has_ozolith:
-            return
-
-        # Get counters from dying creature
-        creature_counters = getattr(creature, 'counters', {})
-
-        if not creature_counters or sum(creature_counters.values()) == 0:
-            return
-
-        # Move counters to Ozolith storage
-        for counter_type, amount in creature_counters.items():
-            if amount > 0:
-                self.ozolith_counters[counter_type] = self.ozolith_counters.get(counter_type, 0) + amount
-                self.counters_moved_to_ozolith += amount
-
-                if verbose:
-                    print(f"  → The Ozolith: Stored {amount} {counter_type} counter(s) from {creature.name}")
-
-    def move_ozolith_counters_to_creature(self, target_creature, verbose: bool = False):
-        """
-        Move counters from The Ozolith storage to a creature.
-
-        At the beginning of combat, can move all Ozolith counters to target creature.
-        """
-        if not self.ozolith_counters:
-            return False
-
-        # Check if The Ozolith is still on battlefield
-        has_ozolith = any(
-            'ozolith' in getattr(artifact, 'name', '').lower()
-            for artifact in self.artifacts
-        )
-
-        if not has_ozolith:
-            return False
-
-        # Move all counters to target
-        for counter_type, amount in self.ozolith_counters.items():
-            if amount > 0:
-                # Use counter doubling if applicable
-                actual_added = self.add_counters_with_doubling(
-                    target_creature, counter_type, amount, verbose=verbose
-                )
-
-                if verbose:
-                    print(f"  → The Ozolith: Moved {actual_added} {counter_type} counter(s) to {target_creature.name}")
-
-        # Clear Ozolith storage
-        self.ozolith_counters = {}
-        return True
 
     def check_for_proliferate_triggers(self, verbose: bool = False):
         """
@@ -5013,23 +4895,6 @@ class BoardState:
                 # Simplified: Just note we're getting cost reduction
                 if verbose:
                     print(f"  → {permanent.name} adds charge counter")
-
-        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+,
-        # deal 2 damage to each opponent and gain 2 life
-        # NOTE: This only handles instants/sorceries; artifacts/enchantments/planeswalkers are handled in their respective play_* functions
-        if self.yshtola_on_board:
-            from convert_dataframe_deck import parse_mana_cost
-            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
-            if cmc >= 3:
-                alive_opps = [o for o in self.opponents if o['is_alive']]
-                for opp in alive_opps:
-                    opp['life_total'] -= 2
-                    if opp['life_total'] <= 0:
-                        opp['is_alive'] = False
-                self.gain_life(2, verbose=False)
-                if verbose:
-                    damage_dealt = 2 * len(alive_opps)
-                    print(f"  🌙 Y'shtola, Night's Blessed triggers: dealt {damage_dealt} damage (2 to each opponent), gained 2 life")
 
         # Apply prowess/magecraft to all creatures
         self.apply_prowess_bonus()

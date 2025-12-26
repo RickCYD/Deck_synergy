@@ -307,7 +307,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             "cards_discarded",  # REANIMATOR: Cards discarded for value
             "proliferate_triggers",  # COUNTERS: Proliferate triggers this turn
             "total_counters_on_creatures",  # COUNTERS: Total +1/+1 counters on creatures
-            "ozolith_stored_counters",  # COUNTERS: Counters stored on The Ozolith
             "cards_drawn",  # DECK POTENTIAL: Total cards drawn this turn
             "life_gained",  # DECK POTENTIAL: Life gained this turn
             "life_lost",  # DECK POTENTIAL: Life lost/paid this turn
@@ -881,30 +880,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         if board.meren_on_board:
             board.meren_end_step_trigger(verbose=verbose)
 
-        # Y'SHTOLA: End step card draw trigger
-        # "At the beginning of each end step, if a player lost 4 or more life this turn, you draw a card"
-        if board.yshtola_on_board:
-            # Check if ANY player (including opponents) lost 4+ life this turn
-            # In goldfish mode, we check:
-            # 1. Player's own life loss (paying life, etc.)
-            # 2. Damage dealt to opponents (combat + drain + spell damage)
-            total_life_lost = board.life_lost_this_turn
-            damage_to_opponents = (
-                total_combat_damage +
-                board.drain_damage_this_turn +
-                board.spell_damage_this_turn
-            )
-
-            if total_life_lost >= 4 or damage_to_opponents >= 4:
-                board.draw_card(1, verbose=verbose)
-                if verbose:
-                    life_sources = []
-                    if total_life_lost >= 4:
-                        life_sources.append(f"player lost {total_life_lost} life")
-                    if damage_to_opponents >= 4:
-                        life_sources.append(f"opponents lost {damage_to_opponents} life")
-                    print(f"  🌙 Y'shtola, Night's Blessed triggers: {' and '.join(life_sources)}, draw a card")
-
         board.check_end_of_turn_treasures(board.creatures_died_this_turn, verbose=verbose)
 
         # MOBILIZE: Sacrifice mobilize warrior tokens at end of turn
@@ -913,12 +888,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
         # COUNTER MANIPULATION: Check for proliferate triggers
         board.check_for_proliferate_triggers(verbose=verbose)
-
-        # COUNTER MANIPULATION: Try to move Ozolith counters to a creature
-        if board.ozolith_counters and board.creatures:
-            # Move Ozolith counters to the biggest creature
-            best_target = max(board.creatures, key=lambda c: (c.power or 0) + (c.toughness or 0))
-            board.move_ozolith_counters_to_creature(best_target, verbose=verbose)
 
         # COUNTER MANIPULATION: Track counter metrics
         metrics["proliferate_triggers"][turn] = board.proliferate_this_turn
@@ -929,10 +898,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             for c in board.creatures
         )
         metrics["total_counters_on_creatures"][turn] = total_counters
-
-        # Track Ozolith stored counters
-        ozolith_total = sum(board.ozolith_counters.values())
-        metrics["ozolith_stored_counters"][turn] = ozolith_total
 
         # Reset proliferate counter for next turn
         board.proliferate_this_turn = 0
