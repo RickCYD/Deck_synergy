@@ -31,6 +31,106 @@ def _safe_int(value) -> int:
         return 0
 
 
+def parse_equip_cost(oracle_text: str) -> str:
+    """
+    Extract equip cost from oracle text.
+
+    Handles patterns like:
+    - "Equip {2}"
+    - "Equip {1}{W}"
+    - "Equip—{2}, Pay 2 life." (alternative costs)
+    - "Equip legendary creature {1}" (conditional equip)
+
+    Returns:
+        str: The equip cost (e.g., "{2}") or empty string if not found
+    """
+    if not oracle_text:
+        return ""
+
+    lower = oracle_text.lower()
+
+    # Standard equip cost: "Equip {X}" or "Equip {X}{Y}"
+    match = re.search(r'equip\s+({[^}]+}(?:{[^}]+})*)', lower)
+    if match:
+        return match.group(1).upper()
+
+    # Alternative equip with em-dash: "Equip—{X}"
+    match = re.search(r'equip[—\-]\s*({[^}]+})', lower)
+    if match:
+        return match.group(1).upper()
+
+    # Conditional equip (take the first cost): "Equip creature you control {X}"
+    match = re.search(r'equip\s+[^{]*({[^}]+})', lower)
+    if match:
+        return match.group(1).upper()
+
+    return ""
+
+
+def parse_power_buff(oracle_text: str) -> int:
+    """
+    Extract power/toughness buff from equipment oracle text.
+
+    Handles patterns like:
+    - "Equipped creature gets +2/+2"
+    - "gets +3/+0"
+    - "+1/+1 for each..."
+
+    Returns:
+        int: The power buff value, or 0 if not found
+    """
+    if not oracle_text:
+        return 0
+
+    lower = oracle_text.lower()
+
+    # Pattern: "gets +X/+Y" or "has +X/+Y"
+    match = re.search(r'(?:gets?|has)\s+\+(\d+)/\+(\d+)', lower)
+    if match:
+        return int(match.group(1))
+
+    # Pattern: just "+X/+Y" at start of clause
+    match = re.search(r'(?:^|[.,])\s*\+(\d+)/\+(\d+)', lower)
+    if match:
+        return int(match.group(1))
+
+    return 0
+
+
+def parse_keywords_when_equipped(oracle_text: str) -> list:
+    """
+    Extract keywords granted to equipped creature from oracle text.
+
+    Handles patterns like:
+    - "Equipped creature has haste"
+    - "Equipped creature has flying and first strike"
+    - "has hexproof and haste"
+
+    Returns:
+        list: Keywords granted (e.g., ["haste", "hexproof"])
+    """
+    if not oracle_text:
+        return []
+
+    lower = oracle_text.lower()
+    keywords = []
+
+    keyword_list = [
+        'haste', 'hexproof', 'shroud', 'flying', 'first strike', 'double strike',
+        'vigilance', 'trample', 'lifelink', 'deathtouch', 'menace', 'reach',
+        'indestructible', 'protection from'
+    ]
+
+    # Look for "equipped creature has X" or "has X and Y"
+    has_match = re.search(r'(?:equipped creature|has)\s+([^.]+)', lower)
+    if has_match:
+        clause = has_match.group(1)
+        for kw in keyword_list:
+            if kw in clause:
+                keywords.append(kw)
+
+    return keywords
+
 
 def parse_fetch_land_ability(text: str) -> dict:
     """Parse fetch land characteristics from oracle text."""
@@ -269,6 +369,11 @@ def fetch_cards_from_scryfall_bulk(names: list[str]) -> list[dict]:
             conditions = parse_etb_conditions_from_oracle(oracle_text)
             death_trigger_value = parse_death_triggers_from_oracle(oracle_text)
             sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
+            # Parse equipment data from oracle text
+            equip_cost = parse_equip_cost(oracle_text)
+            power_buff = parse_power_buff(oracle_text)
+            keywords_equipped = parse_keywords_when_equipped(oracle_text)
+
             rows.append(
                 {
                     "Name": card.get("name", ""),
@@ -282,8 +387,9 @@ def fetch_cards_from_scryfall_bulk(names: list[str]) -> list[dict]:
                     "HasFlash": "flash" in oracle_text.lower(),
                     "ETBTapped": "enters the battlefield tapped" in oracle_text.lower(),
                     "ETBTappedConditions": conditions,
-                    "EquipCost": "",
-                    "PowerBuff": 0,
+                    "EquipCost": equip_cost,
+                    "PowerBuff": power_buff,
+                    "KeywordsWhenEquipped": keywords_equipped,
                     "DrawCards": 0,
                     "PutsLand": 0,
                     "OracleText": oracle_text,
@@ -325,7 +431,12 @@ def fetch_card_from_scryfall(name: str) -> dict:
     conditions = parse_etb_conditions_from_oracle(oracle_text)
     death_trigger_value = parse_death_triggers_from_oracle(oracle_text)
     sacrifice_outlet = parse_sacrifice_outlet_from_oracle(oracle_text)
-    # print(f"Parsed conditions for {name}: {conditions}")
+
+    # Parse equipment data from oracle text
+    equip_cost = parse_equip_cost(oracle_text)
+    power_buff = parse_power_buff(oracle_text)
+    keywords_equipped = parse_keywords_when_equipped(oracle_text)
+
     info = {
         "Name": data.get("name", name),
         "Type": type_line.split(" — ")[0],
@@ -338,8 +449,9 @@ def fetch_card_from_scryfall(name: str) -> dict:
         "HasFlash": "flash" in oracle_text.lower(),
         "ETBTapped": "enters the battlefield tapped" in oracle_text.lower(),
         "ETBTappedConditions": conditions,
-        "EquipCost": "",
-        "PowerBuff": 0,
+        "EquipCost": equip_cost,
+        "PowerBuff": power_buff,
+        "KeywordsWhenEquipped": keywords_equipped,
         "DrawCards": 0,
         "PutsLand": 0,
         "OracleText": oracle_text,
