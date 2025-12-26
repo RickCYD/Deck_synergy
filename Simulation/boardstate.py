@@ -216,6 +216,20 @@ class BoardState:
                         creature.has_vigilance = True
                     if 'trample' in oracle:
                         creature.has_trample = True
+                    if 'haste' in oracle:
+                        creature.has_haste = True
+                    if 'hexproof' in oracle:
+                        creature.has_hexproof = True
+                    if 'lifelink' in oracle:
+                        creature.has_lifelink = True
+                    if 'flying' in oracle:
+                        creature.has_flying = True
+                    if 'menace' in oracle:
+                        creature.has_menace = True
+                    if 'deathtouch' in oracle:
+                        creature.has_deathtouch = True
+                    if 'indestructible' in oracle:
+                        creature.has_indestructible = True
 
         # Apply keywords_when_equipped (legacy support)
         for kw in getattr(creature, "keywords_when_equipped", []):
@@ -223,6 +237,18 @@ class BoardState:
                 creature.has_first_strike = bool(equipped)
             elif kw.lower() == "double strike":
                 creature.has_double_strike = bool(equipped)
+            elif kw.lower() == "haste":
+                creature.has_haste = bool(equipped)
+            elif kw.lower() == "hexproof":
+                creature.has_hexproof = bool(equipped)
+            elif kw.lower() == "lifelink":
+                creature.has_lifelink = bool(equipped)
+            elif kw.lower() == "flying":
+                creature.has_flying = bool(equipped)
+            elif kw.lower() == "vigilance":
+                creature.has_vigilance = bool(equipped)
+            elif kw.lower() == "trample":
+                creature.has_trample = bool(equipped)
 
     def _analyze_deck_strategy(self, deck):
         """
