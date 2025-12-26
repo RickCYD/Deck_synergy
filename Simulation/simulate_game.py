@@ -26,6 +26,13 @@ except ImportError:
     IMPROVED_AI_AVAILABLE = False
     print("Warning: ImprovedAI not available, using greedy AI")
 
+# Import combo integration
+try:
+    from combo_integration import prepare_deck_for_simulation
+    COMBO_INTEGRATION_AVAILABLE = True
+except ImportError:
+    COMBO_INTEGRATION_AVAILABLE = False
+
 
 # ───────────────────────────────────────────────────────── Card ──
 class Card:
@@ -249,6 +256,15 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
     if commander_card:
         commander_card.reset_game_state()
 
+    # Detect combos and attach to cards (BEFORE creating board state)
+    deck_combos = []
+    if COMBO_INTEGRATION_AVAILABLE:
+        try:
+            deck_combos = prepare_deck_for_simulation(deck_cards, commander_card)
+        except Exception as e:
+            if verbose:
+                print(f"Warning: Combo detection failed: {e}")
+
     # Initialize board state
     board = BoardState(deck_cards, commander_card)
     board.lands_untapped, board.lands_tapped = [], []  # type: ignore
@@ -262,7 +278,14 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
     ai = None
     if IMPROVED_AI_AVAILABLE:
         try:
-            ai = ImprovedAI(board)
+            # Use detected combos from earlier
+            ai = ImprovedAI(board, deck_combos=deck_combos)
+
+            if verbose and deck_combos:
+                print(f"\n🎯 ImprovedAI initialized with {len(deck_combos)} combos:")
+                for combo in deck_combos:
+                    print(f"   → {', '.join(combo.card_names)}: {combo.primary_result}")
+
         except Exception as e:
             if verbose:
                 print(f"Warning: Failed to initialize ImprovedAI: {e}")

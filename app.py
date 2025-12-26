@@ -28,6 +28,7 @@ from src.utils.card_roles import (
     summarize_roles
 )
 from src.simulation.mana_simulator import ManaSimulator, SimulationParams
+from game_viz_helper import create_fastest_slowest_viz
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -690,7 +691,11 @@ app.layout = html.Div([
 
                 html.Hr(),
                 html.H4('Per-card castability by turn', style={'marginTop': '8px'}),
-                html.Div(id='per-card-result-table', style={'marginTop': '8px'})
+                html.Div(id='per-card-result-table', style={'marginTop': '8px'}),
+
+                html.Hr(),
+                html.H4('Game-by-Game Analysis: Fastest vs Slowest Games', style={'marginTop': '16px'}),
+                html.Div(id='fastest-slowest-games-viz', style={'marginTop': '8px'})
             ], style={'padding': '20px'})
         ])
     ]),
@@ -1572,7 +1577,8 @@ def handle_card_name_click(n_clicks_list, ids_list):
      Output('simulation-opening-hand-hist', 'figure'),
      Output('simulation-summary', 'children'),
      Output('per-card-result-table', 'children'),
-     Output('simulation-lands-in-hand-cdf', 'figure')],
+     Output('simulation-lands-in-hand-cdf', 'figure'),
+     Output('fastest-slowest-games-viz', 'children')],
     Input('run-simulation-button', 'n_clicks'),
     [State('current-deck-file-store', 'data'),
      State('simulation-iterations-input', 'value'),
@@ -1595,13 +1601,15 @@ def run_mana_simulation(n_clicks, deck_file, iterations, turns, play_or_draw, re
             dash.no_update,
             dash.no_update,
             dash.no_update,
+            dash.no_update,  # fastest-slowest-games-viz
         )
 
     try:
         with open(deck_file, 'r') as f:
             deck_data = json.load(f)
     except Exception as e:
-        return dash.no_update, html.Span(f'Failed to read deck file: {e}', style={'color': '#e74c3c'}), dash.no_update
+        return (dash.no_update, html.Span(f'Failed to read deck file: {e}', style={'color': '#e74c3c'}), dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update)
 
     try:
         deck = Deck.from_dict(deck_data)
@@ -1767,10 +1775,15 @@ def run_mana_simulation(n_clicks, deck_file, iterations, turns, play_or_draw, re
         cdf_fig = go.Figure(data=[go.Scatter(x=xs, y=cdf_y, mode='lines+markers', line=dict(shape='hv'))])
         cdf_fig.update_layout(title=f'Lands in Hand CDF (turn {t_focus})', xaxis_title='Lands in hand', yaxis_title='Cumulative probability', yaxis=dict(range=[0,1]))
 
-        return fig, status, table, heatmap_fig, opening_fig, summary, card_table, cdf_fig
+        # Create fastest/slowest games visualization (placeholder for now - will integrate with goldfish sim)
+        fastest_slowest_viz = html.Div("Fastest/slowest game visualization requires goldfish simulation integration.",
+                                       style={'color': '#7f8c8d', 'padding': '20px', 'fontStyle': 'italic'})
+
+        return fig, status, table, heatmap_fig, opening_fig, summary, card_table, cdf_fig, fastest_slowest_viz
     except Exception as e:
         return (dash.no_update,
                 html.Span(f'Simulation error: {e}', style={'color': '#e74c3c'}),
+                dash.no_update,
                 dash.no_update,
                 dash.no_update,
                 dash.no_update,

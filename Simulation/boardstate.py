@@ -3912,28 +3912,43 @@ class BoardState:
         return best_creature
 
     def should_hold_back_creature(self, creature, verbose: bool = False):
-        """Decide if we should hold back a creature to avoid overextending."""
-        import random
+        """
+        Decide if we should hold back a creature to avoid overextending.
 
+        Uses DETERMINISTIC logic based on board state (NO random probabilities).
+        """
         # Calculate total opponent threat
         total_opp_power = sum(
             sum(c.power or 0 for c in opp['creatures'])
             for opp in self.opponents if opp['is_alive']
         )
 
-        # If opponents have a lot of power, we might be facing a board wipe soon
-        # Hold back our best creatures
-        if total_opp_power > self.threat_threshold:
-            # PRIORITY 3: Use effective power including anthems
-            creature_power = self.get_effective_power(creature)
-            our_power = sum(self.get_effective_power(c) for c in self.creatures)
+        # PRIORITY 3: Use effective power including anthems
+        creature_power = self.get_effective_power(creature)
+        our_power = sum(self.get_effective_power(c) for c in self.creatures)
 
-            # Hold back if this is one of our best creatures and we already have board presence
+        # Deterministic overextension logic:
+        # Hold back high-value creatures when we already have strong board presence
+        # and opponents have significant threat
+
+        if total_opp_power > self.threat_threshold:
+            # We have board advantage already + this is a strong creature
             if creature_power >= 4 and our_power >= 8:
-                if random.random() < 0.3:  # 30% chance to hold back
+                # Deterministic: Hold if our power is more than 2x creature power
+                # (we have plenty of threats already)
+                if our_power >= creature_power * 2:
                     if verbose:
                         print(f"AI: Holding back {creature.name} to avoid overextending")
+                        print(f"    (Our power: {our_power}, Creature power: {creature_power})")
                     return True
+
+        # Also hold back if opponents collectively have way more power than us
+        # (likely board wipe incoming or we're way behind)
+        if total_opp_power >= our_power * 3 and creature_power >= 3:
+            if verbose:
+                print(f"AI: Holding back {creature.name} - opponents too threatening")
+                print(f"    (Opponent power: {total_opp_power}, Our power: {our_power})")
+            return True
 
         return False
 
@@ -3985,28 +4000,64 @@ class BoardState:
         return max_threat
 
     def optimize_mana_usage(self, verbose: bool = False):
-        """Try to use floating mana for activated abilities or instants."""
-        import random
+        """
+        Try to use floating mana for activated abilities or instants.
 
+        Uses DETERMINISTIC logic based on mana value (NO random probabilities).
+        """
         # If we have leftover mana at end of turn, try to use it
         if len(self.mana_pool) == 0:
             return False
 
-        # Try to activate abilities
+        # Calculate how much mana we're about to waste
+        mana_available = len(self.mana_pool)
+
+        # Try to activate abilities (deterministic: use if cost <= floating mana)
+        best_ability = None
+        best_ability_cost = 0
+
         for ability in self.available_abilities:
             if ability.usable and Mana_utils.can_pay(ability.cost, self.mana_pool):
-                # Use it with some probability
-                if random.random() < 0.7:
-                    card = ability.source
-                    self.activate_ability(card, ability, verbose=verbose)
-                    return True
+                from convert_dataframe_deck import parse_mana_cost
+                cost = parse_mana_cost(ability.cost)
 
-        # Try to cast instant-speed spells
+                # Prefer abilities that use more mana (minimize waste)
+                if cost > best_ability_cost and cost <= mana_available:
+                    best_ability = ability
+                    best_ability_cost = cost
+
+        if best_ability:
+            card = best_ability.source
+            self.activate_ability(card, best_ability, verbose=verbose)
+            return True
+
+        # Try to cast instant-speed spells (deterministic: cast highest-value instant)
+        best_instant = None
+        best_instant_value = 0
+
         for instant in [c for c in self.hand if 'Instant' in c.type]:
             if Mana_utils.can_pay(instant.mana_cost, self.mana_pool):
-                if random.random() < 0.5:  # 50% chance to cast
-                    self.play_instant(instant, verbose=verbose)
-                    return True
+                # Calculate instant value (draw > damage > other)
+                value = 0
+
+                draw = getattr(instant, 'draw_cards', 0) or 0
+                damage = getattr(instant, 'deals_damage', 0) or 0
+                oracle = getattr(instant, 'oracle_text', '').lower()
+
+                if draw > 0:
+                    value += draw * 10  # Draw is highest priority
+                if damage > 0:
+                    value += damage * 5  # Damage is good
+                if 'destroy' in oracle or 'exile' in oracle:
+                    value += 8  # Removal is useful
+
+                if value > best_instant_value:
+                    best_instant = instant
+                    best_instant_value = value
+
+        if best_instant:
+            self.play_instant(best_instant, verbose=verbose)
+            return True
 
         return False
 
