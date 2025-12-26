@@ -307,7 +307,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             "cards_discarded",  # REANIMATOR: Cards discarded for value
             "proliferate_triggers",  # COUNTERS: Proliferate triggers this turn
             "total_counters_on_creatures",  # COUNTERS: Total +1/+1 counters on creatures
-            "ozolith_stored_counters",  # COUNTERS: Counters stored on The Ozolith
             "cards_drawn",  # DECK POTENTIAL: Total cards drawn this turn
             "life_gained",  # DECK POTENTIAL: Life gained this turn
             "life_lost",  # DECK POTENTIAL: Life lost/paid this turn
@@ -370,18 +369,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         board.creatures_died_this_turn = 0
         board.life_gained_this_turn = 0
         board.life_lost_this_turn = 0
-
-        # PRIORITY FIX P1: Reset Muldrotha graveyard casts for new turn
-        board.muldrotha_casts_this_turn = {
-            'creature': False,
-            'artifact': False,
-            'enchantment': False,
-            'land': False,
-            'planeswalker': False
-        }
-
-        # PRIORITY FIX P2: Reset Meren end-step trigger for new turn
-        board.meren_triggered_this_turn = False
 
         if verbose:
             print(f"\n=== Turn {turn} ===")
@@ -661,20 +648,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
                     did_action = True
                     continue
 
-            # PRIORITY FIX P1: Try Muldrotha graveyard casting if on board
-            if board.muldrotha_on_board:
-                muldrotha_casts = board.attempt_muldrotha_casts(verbose=verbose)
-                if muldrotha_casts > 0:
-                    if verbose:
-                        print(f"♻️  Muldrotha enabled {muldrotha_casts} casts from graveyard")
-                    did_action = True
-                    continue
-
-            # PRIORITY FIX P2: Try Gravecrawler recursion if we have a zombie
-            if board.attempt_gravecrawler_cast(verbose=verbose):
-                did_action = True
-                continue
-
             # 4) play a piece of equipment and attach to best creature
             equipment = next(
                 (
@@ -876,35 +849,7 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
         # Goldfish mode: No opponents, no board wipes
         # board.simulate_board_wipe(verbose=verbose)
 
-        # PRIORITY 2: End-of-turn treasure generation (Mahadi, etc.)
-        # PRIORITY FIX P2: Meren end-step reanimation trigger
-        if board.meren_on_board:
-            board.meren_end_step_trigger(verbose=verbose)
-
-        # Y'SHTOLA: End step card draw trigger
-        # "At the beginning of each end step, if a player lost 4 or more life this turn, you draw a card"
-        if board.yshtola_on_board:
-            # Check if ANY player (including opponents) lost 4+ life this turn
-            # In goldfish mode, we check:
-            # 1. Player's own life loss (paying life, etc.)
-            # 2. Damage dealt to opponents (combat + drain + spell damage)
-            total_life_lost = board.life_lost_this_turn
-            damage_to_opponents = (
-                total_combat_damage +
-                board.drain_damage_this_turn +
-                board.spell_damage_this_turn
-            )
-
-            if total_life_lost >= 4 or damage_to_opponents >= 4:
-                board.draw_card(1, verbose=verbose)
-                if verbose:
-                    life_sources = []
-                    if total_life_lost >= 4:
-                        life_sources.append(f"player lost {total_life_lost} life")
-                    if damage_to_opponents >= 4:
-                        life_sources.append(f"opponents lost {damage_to_opponents} life")
-                    print(f"  🌙 Y'shtola, Night's Blessed triggers: {' and '.join(life_sources)}, draw a card")
-
+        # PRIORITY 2: End-of-turn treasure generation
         board.check_end_of_turn_treasures(board.creatures_died_this_turn, verbose=verbose)
 
         # MOBILIZE: Sacrifice mobilize warrior tokens at end of turn
@@ -913,12 +858,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
 
         # COUNTER MANIPULATION: Check for proliferate triggers
         board.check_for_proliferate_triggers(verbose=verbose)
-
-        # COUNTER MANIPULATION: Try to move Ozolith counters to a creature
-        if board.ozolith_counters and board.creatures:
-            # Move Ozolith counters to the biggest creature
-            best_target = max(board.creatures, key=lambda c: (c.power or 0) + (c.toughness or 0))
-            board.move_ozolith_counters_to_creature(best_target, verbose=verbose)
 
         # COUNTER MANIPULATION: Track counter metrics
         metrics["proliferate_triggers"][turn] = board.proliferate_this_turn
@@ -929,10 +868,6 @@ def simulate_game(deck_cards, commander_card, max_turns=10, verbose=True):
             for c in board.creatures
         )
         metrics["total_counters_on_creatures"][turn] = total_counters
-
-        # Track Ozolith stored counters
-        ozolith_total = sum(board.ozolith_counters.values())
-        metrics["ozolith_stored_counters"][turn] = ozolith_total
 
         # Reset proliferate counter for next turn
         board.proliferate_this_turn = 0

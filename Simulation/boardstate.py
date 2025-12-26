@@ -137,7 +137,7 @@ class BoardState:
         # Aristocrats mechanics tracking
         self.drain_damage_this_turn = 0  # Track drain separate from combat
         self.tokens_created_this_turn = 0  # Track token generation
-        self.creatures_died_this_turn = 0  # PRIORITY 2: For Mahadi treasure generation
+        self.creatures_died_this_turn = 0  # PRIORITY 2: For treasure generation
 
         # Life tracking for deck potential metrics
         self.life_gained_this_turn = 0  # Life gained this turn
@@ -196,31 +196,7 @@ class BoardState:
         # Counter manipulation mechanics tracking
         self.proliferate_count = 0  # Total proliferate triggers
         self.proliferate_this_turn = 0  # Proliferate triggers this turn
-        self.ozolith_counters = {}  # Stored counters from dead creatures (The Ozolith)
-        self.counters_moved_to_ozolith = 0  # Total counters moved to Ozolith
         self.total_counters_on_creatures = 0  # Total +1/+1 counters on all creatures
-
-        # Syr Konrad, the Grim tracking (PRIORITY FIX: +100-150 damage)
-        self.syr_konrad_on_board = False  # Is Syr Konrad on the battlefield?
-        self.syr_konrad_triggers_this_turn = 0  # Number of triggers this turn
-
-        # Muldrotha, the Gravetide tracking (PRIORITY FIX P1: +10-15 casts)
-        self.muldrotha_on_board = False  # Is Muldrotha on the battlefield?
-        self.muldrotha_casts_this_turn = {
-            'creature': False,
-            'artifact': False,
-            'enchantment': False,
-            'land': False,
-            'planeswalker': False
-        }
-
-        # Meren of Clan Nel Toth tracking (PRIORITY FIX P2: +5-7 reanimates)
-        self.meren_on_board = False  # Is Meren on the battlefield?
-        self.experience_counters = 0  # Experience counters for Meren
-        self.meren_triggered_this_turn = False  # Has Meren's end step triggered this turn?
-
-        # Y'shtola, Night's Blessed tracking
-        self.yshtola_on_board = False  # Is Y'shtola, Night's Blessed on the battlefield?
 
 
     def _apply_equipped_keywords(self, creature):
@@ -1781,30 +1757,6 @@ class BoardState:
                 # Process specific ETB effects for landfall cards
                 self._process_special_etb_effects(card, verbose)
 
-                # PRIORITY FIX: Detect Syr Konrad entering battlefield
-                if 'creature' in card.type.lower() and 'syr konrad' in card.name.lower():
-                    self.syr_konrad_on_board = True
-                    if verbose:
-                        print("⚡ Syr Konrad, the Grim is on the battlefield!")
-
-                # PRIORITY FIX P1: Detect Muldrotha entering battlefield
-                if 'creature' in card.type.lower() and 'muldrotha' in card.name.lower():
-                    self.muldrotha_on_board = True
-                    if verbose:
-                        print("♻️  Muldrotha, the Gravetide enables graveyard casting!")
-
-                # PRIORITY FIX P2: Detect Meren entering battlefield
-                if 'creature' in card.type.lower() and 'meren' in card.name.lower():
-                    self.meren_on_board = True
-                    if verbose:
-                        print("♻️  Meren of Clan Nel Toth enables end-step reanimation!")
-
-                # Detect Y'shtola, Night's Blessed entering battlefield
-                if 'creature' in card.type.lower() and "y'shtola" in card.name.lower() and "night's blessed" in card.name.lower():
-                    self.yshtola_on_board = True
-                    if verbose:
-                        print("🌙 Y'shtola, Night's Blessed is on the battlefield!")
-
                 self._execute_triggers("etb", card, verbose)
 
                 # GENERIC: Check for "Whenever another Ally enters" triggers (like Wartime Protestors)
@@ -2103,21 +2055,6 @@ class BoardState:
         self.artifacts.append(card)
         Mana_utils.pay(card.mana_cost, self.mana_pool)
 
-        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
-        if self.yshtola_on_board:
-            from convert_dataframe_deck import parse_mana_cost
-            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
-            if cmc >= 3:
-                alive_opps = [o for o in self.opponents if o['is_alive']]
-                for opp in alive_opps:
-                    opp['life_total'] -= 2
-                    if opp['life_total'] <= 0:
-                        opp['is_alive'] = False
-                self.gain_life(2, verbose=False)
-                if verbose:
-                    damage_dealt = 2 * len(alive_opps)
-                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
-
         # Trigger noncreature spell effects (Sokka, Bria, etc.)
         self.trigger_noncreature_spell_effects(card, verbose=verbose)
         self.apply_prowess_bonus()
@@ -2210,21 +2147,6 @@ class BoardState:
         if card in self.hand:
             self.hand.remove(card)
         self.enchantments.append(card)
-
-        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+
-        if self.yshtola_on_board:
-            from convert_dataframe_deck import parse_mana_cost
-            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
-            if cmc >= 3:
-                alive_opps = [o for o in self.opponents if o['is_alive']]
-                for opp in alive_opps:
-                    opp['life_total'] -= 2
-                    if opp['life_total'] <= 0:
-                        opp['is_alive'] = False
-                self.gain_life(2, verbose=False)
-                if verbose:
-                    damage_dealt = 2 * len(alive_opps)
-                    print(f"  🌙 Y'shtola triggers: {damage_dealt} damage to opponents, gained 2 life")
 
         # NONCREATURE SPELL TRIGGERS: Generic triggers for any noncreature spell
         # Handles: Sokka ally tokens, Kykar spirits, prowess, etc.
@@ -2441,7 +2363,7 @@ class BoardState:
                     if creature in self.graveyard:
                         self.graveyard.remove(creature)
 
-                # Sacrifice all creatures on battlefield (trigger death effects including Syr Konrad)
+                # Sacrifice all creatures on battlefield (trigger death effects)
                 for creature in creatures_to_sacrifice:
                     self.trigger_death_effects(creature, verbose=verbose)
                 self.creatures.clear()
@@ -2450,9 +2372,6 @@ class BoardState:
                 for creature in creatures_in_graveyard:
                     self.creatures.append(creature)
                     creature._turns_on_board = 0  # Reset summoning sickness
-
-                    # Trigger Syr Konrad on leaving graveyard
-                    self.trigger_syr_konrad_on_leave_graveyard(creature, verbose=verbose)
 
                     # Trigger ETB effects
                     self._execute_triggers("etb", creature, verbose)
@@ -3192,9 +3111,6 @@ class BoardState:
         if target in self.graveyard:
             self.graveyard.remove(target)
 
-        # PRIORITY FIX: Syr Konrad triggers when creature leaves graveyard
-        self.trigger_syr_konrad_on_leave_graveyard(target, verbose=verbose)
-
         self.creatures.append(target)
         target.tapped = False
 
@@ -3259,7 +3175,7 @@ class BoardState:
         # Step 2: Sacrifice all creatures currently on battlefield
         creatures_to_sacrifice = self.creatures[:]
         for creature in creatures_to_sacrifice:
-            # Trigger death effects (including Syr Konrad)
+            # Trigger death effects
             self.trigger_death_effects(creature, verbose=verbose)
 
         self.creatures.clear()
@@ -3271,9 +3187,6 @@ class BoardState:
         for creature in creatures_in_graveyard:
             self.creatures.append(creature)
 
-            # Trigger Syr Konrad on leaving graveyard (even though they were exiled first)
-            self.trigger_syr_konrad_on_leave_graveyard(creature, verbose=verbose)
-
             # Trigger ETB effects
             self._execute_triggers("etb", creature, verbose)
 
@@ -3284,71 +3197,12 @@ class BoardState:
 
         if verbose:
             print(f"  → Returned {len(creatures_in_graveyard)} creatures ({total_power} total power)")
-            if self.syr_konrad_on_board:
-                print(f"  → Syr Konrad dealt {self.syr_konrad_triggers_this_turn * self.num_opponents} damage this turn")
 
         return True
 
-    def attempt_muldrotha_casts(self, verbose: bool = False):
-        """
-        Try to cast permanents from graveyard with Muldrotha, the Gravetide.
-
-        PRIORITY FIX P1: Muldrotha allows casting one permanent of each type
-        from graveyard each turn. This is critical for graveyard value decks.
-
-        Muldrotha ability: "During each of your turns, you may play up to one
-        permanent card of each permanent type from your graveyard."
-
-        Returns:
-            int: Number of permanents cast from graveyard this attempt
-        """
-        if not self.muldrotha_on_board:
-            return 0
-
-        casts = 0
-        permanent_types = ['creature', 'artifact', 'enchantment', 'land', 'planeswalker']
-
-        for perm_type in permanent_types:
-            # Skip if already cast this type this turn
-            if self.muldrotha_casts_this_turn.get(perm_type, False):
-                continue
-
-            # Find best permanent of this type in graveyard
-            candidates = [
-                c for c in self.graveyard
-                if perm_type in c.type.lower()
-                and Mana_utils.can_pay(c.mana_cost, self.mana_pool)
-            ]
-
-            if not candidates:
-                continue
-
-            # Choose highest value card
-            if perm_type == 'creature':
-                best = max(candidates, key=lambda c: (c.power or 0) + (c.toughness or 0))
-            elif perm_type == 'land':
-                # For lands, prefer ones that produce colored mana
-                colored_lands = [c for c in candidates if c.produces_colors and c.produces_colors != ['C']]
-                best = colored_lands[0] if colored_lands else candidates[0]
-            else:
-                # For artifacts/enchantments, prefer higher mana cost (usually more powerful)
-                from convert_dataframe_deck import parse_mana_cost
-                best = max(candidates, key=lambda c: parse_mana_cost(c.mana_cost))
-
-            # Cast from graveyard
-            if self.play_card_from_graveyard(best, verbose):
-                self.muldrotha_casts_this_turn[perm_type] = True
-                casts += 1
-                if verbose:
-                    print(f"♻️  Muldrotha: Cast {best.name} from graveyard")
-
-        return casts
-
     def play_card_from_graveyard(self, card, verbose: bool = False):
         """
-        Cast a permanent from graveyard (Muldrotha, Conduit of Worlds, etc.).
-
-        PRIORITY FIX P1: Allows casting from graveyard as if from hand.
+        Cast a permanent from graveyard.
 
         Args:
             card: Card object to cast from graveyard
@@ -3365,10 +3219,6 @@ class BoardState:
 
         # Remove from graveyard
         self.graveyard.remove(card)
-
-        # Trigger Syr Konrad leaving graveyard
-        if 'creature' in card.type.lower():
-            self.trigger_syr_konrad_on_leave_graveyard(card, verbose=verbose)
 
         # Pay mana cost
         Mana_utils.pay(card.mana_cost, self.mana_pool)
@@ -3398,127 +3248,6 @@ class BoardState:
             print(f"♻️  Cast {card.name} from graveyard")
 
         return True
-
-    def has_zombie_on_board(self) -> bool:
-        """
-        Check if there's a Zombie creature on the battlefield.
-
-        PRIORITY FIX P2: Needed for Gravecrawler recursion.
-        """
-        for creature in self.creatures:
-            creature_type = getattr(creature, 'type', '').lower()
-            oracle_text = getattr(creature, 'oracle_text', '').lower()
-            name = getattr(creature, 'name', '').lower()
-
-            # Check if it's a Zombie
-            if 'zombie' in creature_type or 'zombie' in oracle_text:
-                return True
-
-            # Some creatures that create zombies or are zombies
-            if any(z in name for z in ['gravecrawler', 'diregraf', 'undead', 'lich']):
-                return True
-
-        return False
-
-    def attempt_gravecrawler_cast(self, verbose: bool = False):
-        """
-        Try to cast Gravecrawler from graveyard.
-
-        PRIORITY FIX P2: Gravecrawler can be cast from graveyard if you control
-        a Zombie. This provides infinite recursion value.
-
-        Gravecrawler ability: "You may cast Gravecrawler from your graveyard
-        as long as you control a Zombie."
-
-        Returns:
-            bool: True if Gravecrawler was cast, False otherwise
-        """
-        # Check if we control a Zombie
-        if not self.has_zombie_on_board():
-            return False
-
-        # Find Gravecrawler in graveyard
-        gravecrawler = None
-        for card in self.graveyard:
-            if 'gravecrawler' in card.name.lower():
-                gravecrawler = card
-                break
-
-        if not gravecrawler:
-            return False
-
-        # Check if we can pay {B} (one black mana)
-        if not Mana_utils.can_pay("{B}", self.mana_pool):
-            return False
-
-        # Cast from graveyard
-        if self.play_card_from_graveyard(gravecrawler, verbose):
-            if verbose:
-                print(f"♻️  Gravecrawler cast from graveyard (zombie recursion)")
-            return True
-
-        return False
-
-    def meren_end_step_trigger(self, verbose: bool = False):
-        """
-        Trigger Meren's end-step reanimation ability.
-
-        PRIORITY FIX P2: Meren of Clan Nel Toth triggers at beginning of your
-        end step to reanimate a creature from graveyard.
-
-        Meren ability: "At the beginning of your end step, choose target creature
-        card in your graveyard. If that card's mana value is less than or equal to
-        the number of experience counters you have, return it to the battlefield.
-        Otherwise, put it into your hand."
-
-        Returns:
-            bool: True if a creature was reanimated, False otherwise
-        """
-        if not self.meren_on_board:
-            return False
-
-        if self.meren_triggered_this_turn:
-            return False
-
-        # Find creatures in graveyard
-        creatures_in_yard = [c for c in self.graveyard if 'creature' in c.type.lower()]
-
-        if not creatures_in_yard:
-            return False
-
-        # Find best creature we can reanimate (CMC <= experience counters)
-        from convert_dataframe_deck import parse_mana_cost
-
-        reanimatable = []
-        for creature in creatures_in_yard:
-            cmc = parse_mana_cost(creature.mana_cost)
-            if cmc <= self.experience_counters:
-                reanimatable.append((creature, cmc))
-
-        if not reanimatable:
-            # If no creature fits, put highest value one in hand
-            if creatures_in_yard:
-                best = max(creatures_in_yard, key=lambda c: (c.power or 0) + (c.toughness or 0))
-                if best in self.graveyard:
-                    self.graveyard.remove(best)
-                    self.hand.append(best)
-                    self.meren_triggered_this_turn = True
-                    if verbose:
-                        print(f"♻️  Meren: Returned {best.name} to hand (CMC too high)")
-                    return False
-            return False
-
-        # Choose best creature to reanimate (highest power + toughness)
-        best_creature, cmc = max(reanimatable, key=lambda x: (x[0].power or 0) + (x[0].toughness or 0))
-
-        # Reanimate it
-        if self.reanimate_creature(target_creature=best_creature, verbose=False):
-            self.meren_triggered_this_turn = True
-            if verbose:
-                print(f"♻️  Meren: Reanimated {best_creature.name} (CMC {cmc} <= {self.experience_counters} experience)")
-            return True
-
-        return False
 
     def tutor_to_graveyard(self, card_name: str = None, verbose: bool = False):
         """
@@ -4406,7 +4135,6 @@ class BoardState:
         Mill cards from library to graveyard.
 
         PRIORITY FIX (P1): Aggressive mill to fill graveyard for recursion strategies.
-        Also triggers Syr Konrad for each creature milled.
 
         Args:
             num_cards: Number of cards to mill
@@ -4426,67 +4154,7 @@ class BoardState:
         if verbose and milled:
             print(f"  → Milled {len(milled)} cards: {', '.join(c.name for c in milled[:3])}{' ...' if len(milled) > 3 else ''}")
 
-        # Trigger Syr Konrad on mill
-        self.trigger_syr_konrad_on_mill(milled, verbose)
-
         return milled
-
-    def trigger_syr_konrad_on_mill(self, cards_milled: list, verbose: bool = False):
-        """
-        Trigger Syr Konrad when creatures are milled from library to graveyard.
-
-        PRIORITY FIX: Syr Konrad, the Grim deals 1 damage to each opponent whenever
-        a creature card is put into your graveyard from anywhere.
-        """
-        if not self.syr_konrad_on_board:
-            return 0
-
-        creature_count = sum(1 for card in cards_milled if 'creature' in card.type.lower())
-        if creature_count > 0:
-            # 1 damage per creature × 3 opponents in goldfish mode
-            damage = creature_count * self.num_opponents
-            self.drain_damage_this_turn += damage
-            self.syr_konrad_triggers_this_turn += creature_count
-            if verbose:
-                print(f"⚡ Syr Konrad triggers {creature_count} times for {damage} damage (mill)")
-            return damage
-        return 0
-
-    def trigger_syr_konrad_on_death(self, creature, verbose: bool = False):
-        """
-        Trigger Syr Konrad when a creature dies (goes from battlefield to graveyard).
-
-        PRIORITY FIX: Syr Konrad deals damage when creatures die.
-        """
-        if not self.syr_konrad_on_board:
-            return 0
-
-        if 'creature' in creature.type.lower():
-            damage = self.num_opponents  # 1 damage × number of opponents
-            self.drain_damage_this_turn += damage
-            self.syr_konrad_triggers_this_turn += 1
-            if verbose:
-                print(f"⚡ Syr Konrad triggers on {creature.name} death: {damage} damage")
-            return damage
-        return 0
-
-    def trigger_syr_konrad_on_leave_graveyard(self, creature, verbose: bool = False):
-        """
-        Trigger Syr Konrad when a creature leaves the graveyard (reanimation/exile).
-
-        PRIORITY FIX: Syr Konrad triggers when creatures leave graveyard.
-        """
-        if not self.syr_konrad_on_board:
-            return 0
-
-        if 'creature' in creature.type.lower():
-            damage = self.num_opponents  # 1 damage × number of opponents
-            self.drain_damage_this_turn += damage
-            self.syr_konrad_triggers_this_turn += 1
-            if verbose:
-                print(f"⚡ Syr Konrad triggers on {creature.name} leaving graveyard: {damage} damage")
-            return damage
-        return 0
 
     def trigger_death_effects(self, creature, verbose: bool = False):
         """
@@ -4497,25 +4165,12 @@ class BoardState:
         - Cruel Celebrant
         - Bastion of Remembrance
         - Mirkwood Bats
-        - The Ozolith (counter preservation)
         - Teysa Karlov (doubles death triggers!)
         """
         drain_total = 0
 
-        # PRIORITY 2: Track creature deaths for Mahadi
+        # PRIORITY 2: Track creature deaths for treasure generation
         self.creatures_died_this_turn += 1
-
-        # COUNTER MANIPULATION: The Ozolith - preserve counters
-        self.handle_ozolith_on_death(creature, verbose=verbose)
-
-        # PRIORITY FIX: Syr Konrad triggers on death
-        self.trigger_syr_konrad_on_death(creature, verbose=verbose)
-
-        # PRIORITY FIX P2: Meren experience counter gain
-        if self.meren_on_board:
-            self.experience_counters += 1
-            if verbose:
-                print(f"  → Meren: Gained experience counter (now {self.experience_counters})")
 
         # Check for death trigger doublers (Teysa Karlov, Parallel Lives for tokens, etc.)
         death_trigger_multiplier = 1
@@ -4693,79 +4348,6 @@ class BoardState:
                     creature.has_rally_double_strike = True
                 if verbose:
                     print(f"  → Rally: {ally.name} grants double strike to all creatures")
-
-    def handle_ozolith_on_death(self, creature, verbose: bool = False):
-        """
-        Handle The Ozolith when a creature dies.
-
-        The Ozolith: "Whenever a creature you control leaves the battlefield,
-        if it had counters on it, put those counters on The Ozolith."
-
-        When creature dies, move its counters to self.ozolith_counters storage.
-        """
-        # Check if The Ozolith is on battlefield
-        has_ozolith = False
-        ozolith_card = None
-
-        for artifact in self.artifacts:
-            name = getattr(artifact, 'name', '').lower()
-            oracle = getattr(artifact, 'oracle_text', '').lower()
-
-            if 'ozolith' in name or 'the ozolith' in name:
-                has_ozolith = True
-                ozolith_card = artifact
-                break
-
-        if not has_ozolith:
-            return
-
-        # Get counters from dying creature
-        creature_counters = getattr(creature, 'counters', {})
-
-        if not creature_counters or sum(creature_counters.values()) == 0:
-            return
-
-        # Move counters to Ozolith storage
-        for counter_type, amount in creature_counters.items():
-            if amount > 0:
-                self.ozolith_counters[counter_type] = self.ozolith_counters.get(counter_type, 0) + amount
-                self.counters_moved_to_ozolith += amount
-
-                if verbose:
-                    print(f"  → The Ozolith: Stored {amount} {counter_type} counter(s) from {creature.name}")
-
-    def move_ozolith_counters_to_creature(self, target_creature, verbose: bool = False):
-        """
-        Move counters from The Ozolith storage to a creature.
-
-        At the beginning of combat, can move all Ozolith counters to target creature.
-        """
-        if not self.ozolith_counters:
-            return False
-
-        # Check if The Ozolith is still on battlefield
-        has_ozolith = any(
-            'ozolith' in getattr(artifact, 'name', '').lower()
-            for artifact in self.artifacts
-        )
-
-        if not has_ozolith:
-            return False
-
-        # Move all counters to target
-        for counter_type, amount in self.ozolith_counters.items():
-            if amount > 0:
-                # Use counter doubling if applicable
-                actual_added = self.add_counters_with_doubling(
-                    target_creature, counter_type, amount, verbose=verbose
-                )
-
-                if verbose:
-                    print(f"  → The Ozolith: Moved {actual_added} {counter_type} counter(s) to {target_creature.name}")
-
-        # Clear Ozolith storage
-        self.ozolith_counters = {}
-        return True
 
     def check_for_proliferate_triggers(self, verbose: bool = False):
         """
@@ -5013,23 +4595,6 @@ class BoardState:
                 # Simplified: Just note we're getting cost reduction
                 if verbose:
                     print(f"  → {permanent.name} adds charge counter")
-
-        # Y'shtola, Night's Blessed: Whenever you cast a noncreature spell with MV 3+,
-        # deal 2 damage to each opponent and gain 2 life
-        # NOTE: This only handles instants/sorceries; artifacts/enchantments/planeswalkers are handled in their respective play_* functions
-        if self.yshtola_on_board:
-            from convert_dataframe_deck import parse_mana_cost
-            cmc = parse_mana_cost(getattr(card, 'mana_cost', ''))
-            if cmc >= 3:
-                alive_opps = [o for o in self.opponents if o['is_alive']]
-                for opp in alive_opps:
-                    opp['life_total'] -= 2
-                    if opp['life_total'] <= 0:
-                        opp['is_alive'] = False
-                self.gain_life(2, verbose=False)
-                if verbose:
-                    damage_dealt = 2 * len(alive_opps)
-                    print(f"  🌙 Y'shtola, Night's Blessed triggers: dealt {damage_dealt} damage (2 to each opponent), gained 2 life")
 
         # Apply prowess/magecraft to all creatures
         self.apply_prowess_bonus()
@@ -5557,7 +5122,7 @@ class BoardState:
 
     def check_end_of_turn_treasures(self, creatures_died_this_turn: int, verbose: bool = False):
         """
-        PRIORITY 2: Check for end-of-turn treasure generation (Mahadi, Smothering Tithe, etc.)
+        PRIORITY 2: Check for end-of-turn treasure generation (Smothering Tithe, etc.)
 
         Returns number of treasures created.
         """
@@ -5570,8 +5135,8 @@ class BoardState:
             oracle = getattr(permanent, 'oracle_text', '').lower()
             name = getattr(permanent, 'name', '').lower()
 
-            # Mahadi, Emporium Master: "At beginning of end step, if creature died this turn, create treasures"
-            if 'mahadi' in name or ('end' in oracle and 'creature died' in oracle and 'treasure' in oracle):
+            # Generic: "At beginning of end step, if creature died this turn, create treasures"
+            if 'end' in oracle and 'creature died' in oracle and 'treasure' in oracle:
                 # Create treasures equal to number of creatures that died (capped)
                 num_treasures = min(creatures_died_this_turn, 5)  # Cap at 5
                 for _ in range(num_treasures):
