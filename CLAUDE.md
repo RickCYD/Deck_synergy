@@ -2,8 +2,8 @@
 
 > **Purpose:** This guide is specifically designed for Claude Code and other AI assistants working on the MTG Commander Deck Synergy Analyzer. It provides essential context, workflows, and conventions to ensure effective contributions.
 
-**Last Updated:** 2025-12-24
-**Version:** 3.0
+**Last Updated:** 2025-12-26
+**Version:** 3.1
 **Repository:** Deck_synergy
 
 ---
@@ -26,7 +26,7 @@
 ## Quick Start
 
 ### Essential Context
-- **Language:** Python 3.9+
+- **Language:** Python 3.11 (see `.python-version`)
 - **Framework:** Dash (Flask-based), Plotly, Cytoscape.js
 - **Domain:** Magic: The Gathering (MTG) card game mechanics
 - **Main Purpose:** Analyze Commander decks for synergies and simulate gameplay
@@ -85,7 +85,7 @@ pytest tests/test_synergy_rules.py -v
 The **MTG Commander Deck Synergy Analyzer** is a sophisticated web application that:
 
 1. **Imports** Commander decks from Archidekt URLs
-2. **Analyzes** card interactions using 69+ synergy detection rules
+2. **Analyzes** card interactions using 100+ synergy detection rules
 3. **Visualizes** synergies as an interactive graph network
 4. **Simulates** deck performance with statistical game simulations
 5. **Recommends** card additions/removals to optimize deck synergy
@@ -103,7 +103,7 @@ The **MTG Commander Deck Synergy Analyzer** is a sophisticated web application t
 **How it works:**
 ```python
 For each card pair (card1, card2) in deck:
-    For each rule in 69+ synergy rules:
+    For each rule in 100+ synergy rules:
         If rule.detect(card1, card2):
             Add synergy with strength score (1.0 - 50.0)
 ```
@@ -116,19 +116,19 @@ For each card pair (card1, card2) in deck:
 - **Output:** Statistical deck performance metrics
 
 **Core Files:**
-- `boardstate.py` (5,548 lines) - ALL MTG game mechanics
-- `simulate_game.py` - Game loop and turn phases
+- `boardstate.py` (6,375 lines) - ALL MTG game mechanics
+- `simulate_game.py` (914 lines) - Game loop and turn phases
 - `oracle_text_parser.py` - Parse card abilities
-- `extended_mechanics.py` - Extended mechanic support (NEW)
-- `win_metrics.py` - Win condition tracking (NEW)
+- `extended_mechanics.py` (1,444 lines) - Extended mechanic support
+- `win_metrics.py` (928 lines) - Win condition tracking
 
 #### 3. Web Dashboard
-- **Location:** `app.py` (3,591 lines)
+- **Location:** `app.py` (3,601 lines)
 - **Framework:** Dash (React-based Python framework)
 - **Visualization:** Cytoscape.js for graphs, Plotly for charts
 - **Pattern:** Callback-based reactive updates
 
-### Recent Major Updates (v3.0 - December 2024)
+### Recent Major Updates (v3.1 - December 2024)
 
 Since the last major update (v2.0 in November 2024), the following significant enhancements have been made:
 
@@ -137,11 +137,19 @@ Since the last major update (v2.0 in November 2024), the following significant e
 - **Ally/Prowess Tribal Synergies**: Specialized detection for Rally triggers, Ally tribal interactions, and Prowess mechanics (`ally_prowess_synergies.py`)
 - **Extended Synergy Rules**: Rules.py expanded from ~900 lines to 5,933 lines with 100+ distinct synergy patterns
 
-**Simulation Enhancements:**
-- **Win Metrics Tracking**: New `win_metrics.py` module tracks average win turn and win conditions
+**Simulation Enhancements (v3.1):**
+- **ImprovedAI Integration**: Real-time AI decision metrics with priority-based action selection
+- **Win Metrics Tracking**: `win_metrics.py` module (928 lines) tracks average win turn and win conditions
 - **Deck Effectiveness Analysis**: Dashboard integration for goldfish simulation results with win probability charts
-- **Extended Mechanics**: Support for complex triggered abilities and tribal interactions
-- **Damage Calculation Fixes**: Corrected 5 critical bugs in damage value calculations
+- **Extended Mechanics**: `extended_mechanics.py` expanded to 1,444 lines supporting complex triggered abilities
+- **Generic Card Handling**: Removed card-specific hardcoded effects (Y'shtola, Ozolith, etc.) in favor of generic oracle text parsing
+- **Phase 3 & 4 Features**: Spell copy, storm, cost reduction, topdeck manipulation, and library mechanics
+
+**Recent Bug Fixes (Dec 2024):**
+- Corrected 5 critical bugs in damage value calculations
+- Fixed deck effectiveness metrics calculation
+- Added noncreature spell triggers for instant/sorcery/enchantment casting
+- Corrected Top Impact Cards display and Consistency Score extraction
 
 **New Extractors:**
 - `spellslinger_extractors.py`: Detects untap engines, trigger doublers, spell copy abilities
@@ -151,6 +159,7 @@ Since the last major update (v2.0 in November 2024), the following significant e
 - Oracle text parsing now handles 6+ complex cards with generic parsing
 - Improved trigger detection for attack, ETB, and spell cast events
 - Better error handling in simulation integration
+- Removed all card-specific hardcoded behavior in simulation
 
 ### Key Technologies
 
@@ -174,7 +183,7 @@ Since the last major update (v2.0 in November 2024), the following significant e
 ```
 /home/user/Deck_synergy/
 │
-├── app.py (3,591 lines)              # MAIN ENTRY: Web dashboard
+├── app.py (3,601 lines)              # MAIN ENTRY: Web dashboard
 ├── requirements.txt                   # Python dependencies
 ├── Procfile                           # Heroku deployment config
 ├── shared_mechanics.py                # Shared detection logic
@@ -206,7 +215,7 @@ Since the last major update (v2.0 in November 2024), the following significant e
 │   │   ├── embedding_analyzer.py    # ML-based semantic analysis
 │   │   └── ... (4 more files)
 │   │
-│   ├── utils/                        # Mechanic extractors (25+ files)
+│   ├── utils/                        # Mechanic extractors (23 files)
 │   │   ├── aristocrats_extractors.py    # Sacrifice/death triggers
 │   │   ├── token_extractors.py          # Token generation
 │   │   ├── graveyard_extractors.py      # Graveyard mechanics
@@ -237,16 +246,16 @@ Since the last major update (v2.0 in November 2024), the following significant e
 │       └── mana_simulator.py        # Mana curve analysis
 │
 ├── Simulation/                        # Game simulation engine
-│   ├── boardstate.py (5,548 lines)   # CORE: All MTG mechanics
-│   ├── simulate_game.py (35KB)       # MAIN LOOP: Game simulation
-│   ├── oracle_text_parser.py (27KB)  # Parse card abilities
-│   ├── extended_mechanics.py         # Extended mechanic support (NEW)
-│   ├── win_metrics.py                # Win condition tracking (NEW)
+│   ├── boardstate.py (6,375 lines)   # CORE: All MTG mechanics
+│   ├── simulate_game.py (914 lines)  # MAIN LOOP: Game simulation
+│   ├── oracle_text_parser.py         # Parse card abilities
+│   ├── extended_mechanics.py (1,444 lines)  # Extended mechanic support
+│   ├── win_metrics.py (928 lines)    # Win condition tracking
 │   ├── turn_phases.py                # MTG turn structure
 │   ├── mtg_abilities.py              # Ability data structures
-│   └── tests/ (32 files)             # Comprehensive test coverage
+│   └── tests/ (31 files)             # Comprehensive test coverage
 │
-├── tests/                             # Synergy engine tests (10 files)
+├── tests/                             # Synergy engine tests (15 files)
 ├── scripts/                           # Utility scripts (8 files)
 ├── data/                              # Card databases
 │   └── cards/
@@ -349,7 +358,7 @@ src/models/deck.py: create Deck object
   ↓
 src/synergy_engine/analyzer.py: analyze_deck_synergies(deck)
   ├─ For each card pair:
-  │   ├─ Run 69+ rules from rules.py
+  │   ├─ Run 100+ rules from rules.py
   │   ├─ Calculate synergy strength (1.0 - 50.0)
   │   └─ Categorize synergy type
   ├─ Detect three-way synergies
@@ -1108,15 +1117,15 @@ def test_regression_issue_123_food_tokens():
 
 | File | Lines | Purpose | Modify When... |
 |------|-------|---------|----------------|
-| `app.py` | 3,591 | **Main web dashboard** | Adding UI features, callbacks, layout changes |
+| `app.py` | 3,601 | **Main web dashboard** | Adding UI features, callbacks, layout changes |
 | `src/synergy_engine/analyzer.py` | ~500 | **Synergy orchestrator** | Changing analysis pipeline, adding global features |
 | `src/synergy_engine/rules.py` | 5,933 | **100+ synergy rules** | Adding new synergy types |
 | `src/synergy_engine/spellslinger_engine_synergies.py` | ~400 | **Spellslinger synergies** | Adding spellslinger-specific synergies |
 | `src/synergy_engine/ally_prowess_synergies.py` | ~300 | **Tribal synergies** | Adding tribal-specific synergies |
-| `Simulation/boardstate.py` | 5,548 | **ALL MTG mechanics** | Adding game mechanics for simulation |
-| `Simulation/simulate_game.py` | ~900 | **Game loop** | Changing simulation behavior |
-| `Simulation/extended_mechanics.py` | ~400 | **Extended mechanics** | Adding complex mechanic implementations |
-| `Simulation/win_metrics.py` | ~300 | **Win tracking** | Modifying win condition detection |
+| `Simulation/boardstate.py` | 6,375 | **ALL MTG mechanics** | Adding game mechanics for simulation |
+| `Simulation/simulate_game.py` | 914 | **Game loop** | Changing simulation behavior |
+| `Simulation/extended_mechanics.py` | 1,444 | **Extended mechanics** | Adding complex mechanic implementations |
+| `Simulation/win_metrics.py` | 928 | **Win tracking** | Modifying win condition detection |
 
 ### Configuration Files
 
@@ -1378,9 +1387,19 @@ def update_component(n_clicks, data):
 
 ---
 
-**Last Updated:** 2025-12-24
-**Version:** 3.0
+**Last Updated:** 2025-12-26
+**Version:** 3.1
 **Maintained by:** AI-assisted development team
+
+**Major Changes in v3.1:**
+- ImprovedAI integration with real-time decision metrics
+- Removed all card-specific hardcoded effects (generic oracle parsing)
+- Phase 3 & 4 simulation features (spell copy, storm, topdeck manipulation)
+- boardstate.py expanded to 6,375 lines
+- extended_mechanics.py expanded to 1,444 lines
+- win_metrics.py expanded to 928 lines
+- Fixed deck effectiveness calculation bugs
+- Added noncreature spell triggers
 
 **Major Changes in v3.0:**
 - 100+ synergy detection rules (up from 69+)
@@ -1394,4 +1413,4 @@ def update_component(n_clicks, data):
 
 ---
 
-*Happy coding! May your synergies be strong and your combos infinite!* ⚡🃏
+*Happy coding! May your synergies be strong and your combos infinite!*
