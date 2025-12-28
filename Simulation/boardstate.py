@@ -4067,11 +4067,24 @@ class BoardState:
 
     def create_token(self, token_name: str, power: int, toughness: int, has_haste: bool = False,
                      token_type: str = None, keywords: list = None, verbose: bool = False,
-                     apply_counters: bool = True):
+                     apply_counters: bool = True, enters_tapped: bool = False,
+                     enters_attacking: bool = False):
         """
         Create a creature token and add it to the battlefield.
 
         PRIORITY 2: Now supports token doublers (Mondrak, Doubling Season, etc.)
+
+        Args:
+            token_name: Name of the token
+            power: Power value
+            toughness: Toughness value
+            has_haste: Whether token has haste
+            token_type: Creature type (e.g., "Soldier", "Goblin")
+            keywords: List of keyword abilities
+            verbose: Print debug output
+            apply_counters: Apply counter effects like Cathars' Crusade
+            enters_tapped: Token enters tapped (generic support)
+            enters_attacking: Token enters tapped and attacking (generic support)
 
         Returns the created token Card object(s) - may be a list if doubled!
         """
@@ -4140,9 +4153,30 @@ class BoardState:
                     elif 'lifelink' in kw_lower:
                         token.has_lifelink = True
 
-            # Add to battlefield
-            self.creatures.append(token)
-            created_tokens.append(token)
+            # Handle enters_tapped and enters_attacking
+            # Generic support for "tapped and attacking" tokens (e.g., Caesar, Legion's Emperor)
+            if enters_attacking:
+                # Token enters tapped and attacking
+                token.tapped = True
+                # Add to battlefield first
+                self.creatures.append(token)
+                created_tokens.append(token)
+                # Add to current attackers list
+                if hasattr(self, 'current_attackers'):
+                    self.current_attackers.append(token)
+                if verbose:
+                    print(f"  → {token_name} enters tapped and attacking")
+            elif enters_tapped:
+                # Token just enters tapped
+                token.tapped = True
+                self.creatures.append(token)
+                created_tokens.append(token)
+                if verbose:
+                    print(f"  → {token_name} enters tapped")
+            else:
+                # Normal token entry
+                self.creatures.append(token)
+                created_tokens.append(token)
 
             # Trigger ETB effects
             self._execute_triggers("etb", token, verbose=verbose)
@@ -5150,6 +5184,29 @@ class BoardState:
 
                 if verbose and num_tokens > 0:
                     print(f"  → {creature.name} created {num_tokens} {token_power}/{token_toughness} token(s)")
+
+            # === GENERIC: Reflexive Triggers ("whenever you attack, you may X. When you do, Y") ===
+            # Handle cards like Caesar, Legion's Emperor generically
+            try:
+                from Simulation.extended_mechanics import (
+                    detect_reflexive_trigger,
+                    execute_reflexive_trigger
+                )
+
+                reflexive_info = detect_reflexive_trigger(oracle)
+                if reflexive_info['has_reflexive']:
+                    # Check if the trigger condition is "you attack" or similar
+                    trigger_cond = reflexive_info['trigger_condition'].lower()
+                    if 'you attack' in trigger_cond or 'attack' in trigger_cond:
+                        # Execute the reflexive trigger (includes AI decision and modal choice if applicable)
+                        executed = execute_reflexive_trigger(self, creature, reflexive_info, verbose=verbose)
+                        if verbose and executed:
+                            print(f"  → {creature.name} triggered reflexive effect")
+            except (ImportError, Exception) as e:
+                # Fail gracefully if extended_mechanics not available
+                if verbose:
+                    print(f"  → Could not process reflexive trigger: {e}")
+                pass
 
         return tokens_created
 
