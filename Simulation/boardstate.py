@@ -129,6 +129,7 @@ class BoardState:
         self.affinity_count = 0  # Artifacts for affinity
         self.spell_cost_reduction = 0  # Instant/sorcery cost reduction
         self.creature_cost_reduction = 0  # Creature cost reduction
+        self.noncreature_cost_reduction = 0  # Noncreature spell cost reduction (e.g., from Class enchantments)
 
         # Sacrifice tracking
         self.creatures_sacrificed = 0
@@ -197,6 +198,11 @@ class BoardState:
         self.proliferate_count = 0  # Total proliferate triggers
         self.proliferate_this_turn = 0  # Proliferate triggers this turn
         self.total_counters_on_creatures = 0  # Total +1/+1 counters on all creatures
+
+        # Class enchantment mechanics
+        self.class_levels = {}  # Map of class enchantment name -> current level
+        self.class_modal_triggers = []  # List of modal trigger effects from Classes
+        self.noncombat_damage_bonus = 0  # Additional damage from Class abilities (e.g., Artist's Talent Level 3)
 
 
     def _apply_equipped_keywords(self, creature):
@@ -1154,9 +1160,23 @@ class BoardState:
         - Jace's Sanctum (instant/sorcery cost {1} less)
         - Animar (creature cost {1} less per counter)
         - Affinity (artifacts reduce cost)
+        - Class enchantments (noncreature spells cost less)
         """
         reduction = 0
         card_type = getattr(card, 'type', '').lower()
+
+        # Class enchantment cost reduction (from boardstate tracking)
+        is_noncreature = not ('creature' in card_type and 'instant' not in card_type and 'sorcery' not in card_type)
+        if is_noncreature and self.noncreature_cost_reduction > 0:
+            reduction += self.noncreature_cost_reduction
+            if verbose:
+                print(f"  → Noncreature spell reduction: -{self.noncreature_cost_reduction}")
+
+        # Instant/sorcery specific cost reduction
+        if ('instant' in card_type or 'sorcery' in card_type) and self.spell_cost_reduction > 0:
+            reduction += self.spell_cost_reduction
+            if verbose:
+                print(f"  → Instant/sorcery reduction: -{self.spell_cost_reduction}")
 
         for permanent in self.creatures + self.enchantments + self.artifacts:
             oracle = getattr(permanent, 'oracle_text', '').lower()
@@ -1329,10 +1349,16 @@ class BoardState:
 
             # Niv-Mizzet: Deal 1 damage when you draw
             if ('niv-mizzet' in name) or ('whenever you draw a card' in oracle and 'deals' in oracle and 'damage' in oracle):
-                damage = 1 * num_alive_opps
-                self.spell_damage_this_turn += damage
+                base_damage = 1
+                # Apply noncombat damage amplification (e.g., from Artist's Talent Level 3)
+                amplified_damage = base_damage + self.noncombat_damage_bonus
+                total_damage = amplified_damage * num_alive_opps
+                self.spell_damage_this_turn += total_damage
                 if verbose:
-                    print(f"  → {permanent.name} deals {damage} damage (draw trigger)")
+                    if self.noncombat_damage_bonus > 0:
+                        print(f"  → {permanent.name} deals {total_damage} damage ({base_damage}+{self.noncombat_damage_bonus} per opponent, draw trigger)")
+                    else:
+                        print(f"  → {permanent.name} deals {total_damage} damage (draw trigger)")
 
             # Psychosis Crawler: Each opponent loses 1 life when you draw
             if ('psychosis crawler' in name) or ('whenever you draw a card' in oracle and 'each opponent loses 1 life' in oracle):
@@ -2178,6 +2204,15 @@ class BoardState:
         # Handles: Sokka ally tokens, Kykar spirits, prowess, etc.
         self.trigger_noncreature_spell_effects(card, verbose=verbose)
         self.apply_prowess_bonus()
+
+        # CLASS ENCHANTMENTS: Apply Class effects on ETB
+        type_line = getattr(card, 'type_line', '')
+        if 'class' in type_line.lower():
+            # Import here to avoid circular dependency
+            from extended_mechanics import apply_class_effects
+            # Initialize to level 1
+            self.class_levels[card.name] = 1
+            apply_class_effects(self, card, verbose=verbose)
 
         if verbose:
             print(f"Played enchantment: {card.name}")
@@ -4857,6 +4892,7 @@ class BoardState:
         - "Whenever you cast a noncreature spell, create a 1/1 [color] Ally creature token"
         - "Whenever you cast a noncreature spell, target creature you control can't be blocked this turn"
         - Prowess triggers for all creatures
+        - Class enchantment modal triggers (e.g., Artist's Talent)
         """
         card_type = getattr(card, 'type', '').lower()
 
@@ -4891,6 +4927,14 @@ class BoardState:
                     best_attacker.is_unblockable = True
                     if verbose:
                         print(f"  → {creature.name}: {best_attacker.name} can't be blocked this turn")
+
+        # CLASS ENCHANTMENTS: Check for modal triggers
+        for enchantment in self.enchantments:
+            type_line = getattr(enchantment, 'type_line', '')
+            if 'class' in type_line.lower():
+                # Import here to avoid circular dependency
+                from extended_mechanics import trigger_class_modal_ability
+                trigger_class_modal_ability(self, enchantment, 'cast_noncreature', verbose=verbose)
 
         return {'tokens': tokens_created}
 
