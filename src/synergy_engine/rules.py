@@ -5828,6 +5828,108 @@ def detect_miracle_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     return None
 
 
+def detect_reflexive_trigger_synergies(card1: Dict, card2: Dict, deck_info: Optional[Dict] = None) -> List[Dict]:
+    """
+    Detect synergies with reflexive triggers ("whenever X, you may Y. When you do, Z").
+
+    Generic detection for cards like:
+    - Caesar, Legion's Emperor (attack → sacrifice → modal effects)
+    - Cards with optional sacrifice costs that trigger effects
+    - Cards that enable or enhance reflexive triggers
+
+    Returns synergies between reflexive trigger cards and enablers/payoffs.
+    """
+    synergies = []
+    oracle1 = card1.get('oracle_text', '').lower()
+    oracle2 = card2.get('oracle_text', '').lower()
+
+    # Pattern: "whenever X, you may Y. when you do, Z"
+    reflexive_pattern = re.compile(
+        r'(whenever|when)\s+([^.]+?),\s+you may\s+([^.]+?)\.\s+when you do',
+        re.IGNORECASE
+    )
+
+    # Check which card has the reflexive trigger
+    card_with_trigger = None
+    other_card = None
+
+    if reflexive_pattern.search(oracle1):
+        card_with_trigger = card1
+        other_card = card2
+        trigger_oracle = oracle1
+        other_oracle = oracle2
+    elif reflexive_pattern.search(oracle2):
+        card_with_trigger = card2
+        other_card = card1
+        trigger_oracle = oracle2
+        other_oracle = oracle1
+    else:
+        return synergies
+
+    # Reflexive trigger detected - check for synergies with the other card
+
+    # Synergy 1: Attack triggers + token generators
+    if 'whenever you attack' in trigger_oracle and 'sacrifice' in trigger_oracle:
+        # Check if other card creates tokens (fodder for sacrifice)
+        if ('create' in other_oracle and 'token' in other_oracle):
+            synergies.append({
+                'name': 'Attack Trigger + Token Fodder',
+                'description': f"{card_with_trigger['name']} can sacrifice tokens from {other_card['name']}",
+                'value': 8.0,
+                'category': 'tokens',
+                'subcategory': 'sacrifice_synergy'
+            })
+
+    # Synergy 2: Reflexive triggers + sacrifice outlets (extra value)
+    if 'sacrifice' in trigger_oracle and 'you may sacrifice' in trigger_oracle:
+        # Check if other card cares about sacrifices
+        if ('whenever' in other_oracle and 'sacrifice' in other_oracle and 'creature' in other_oracle):
+            synergies.append({
+                'name': 'Reflexive Sacrifice + Sacrifice Payoff',
+                'description': f"{card_with_trigger['name']}'s optional sacrifice triggers {other_card['name']}",
+                'value': 7.0,
+                'category': 'aristocrats',
+                'subcategory': 'sacrifice_triggers'
+            })
+
+    # Synergy 3: Attack triggers + attack enablers
+    if 'whenever you attack' in trigger_oracle:
+        # Check if other card grants extra combats or enables attacks
+        if ('additional combat' in other_oracle or 'extra combat' in other_oracle or
+            'attack again' in other_oracle):
+            synergies.append({
+                'name': 'Attack Trigger + Extra Combat',
+                'description': f"{other_card['name']} enables multiple triggers of {card_with_trigger['name']}",
+                'value': 9.0,
+                'category': 'combat',
+                'subcategory': 'extra_combats'
+            })
+
+        # Check if other card gives haste (enables immediate attacks)
+        if 'haste' in other_oracle and ('creature' in other_oracle or 'gain haste' in other_oracle):
+            synergies.append({
+                'name': 'Attack Trigger + Haste Enabler',
+                'description': f"{other_card['name']} enables {card_with_trigger['name']} to attack immediately",
+                'value': 6.0,
+                'category': 'combat',
+                'subcategory': 'haste'
+            })
+
+    # Synergy 4: Modal reflexive effects + draw/selection
+    if 'choose' in trigger_oracle and '•' in card_with_trigger.get('oracle_text', ''):
+        # Check if other card provides card selection/draw
+        if ('draw' in other_oracle or 'scry' in other_oracle or 'surveil' in other_oracle):
+            synergies.append({
+                'name': 'Modal Trigger + Card Selection',
+                'description': f"{other_card['name']} helps find optimal modes for {card_with_trigger['name']}",
+                'value': 5.0,
+                'category': 'card_advantage',
+                'subcategory': 'selection'
+            })
+
+    return synergies
+
+
 # List of all detection functions
 ALL_RULES = [
     detect_etb_triggers,
@@ -5848,6 +5950,7 @@ ALL_RULES = [
     detect_deathtouch_pingers,
     detect_indestructible_board_wipe,
     detect_extra_combat_synergy,
+    detect_reflexive_trigger_synergies,  # Generic reflexive trigger detection (e.g., Caesar)
     detect_wheel_and_deal,
     detect_tap_untap_engines,
     detect_cheat_big_spells,

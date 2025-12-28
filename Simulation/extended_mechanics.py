@@ -598,22 +598,80 @@ def _execute_mode_effect(board: 'BoardState', mode_text: str, verbose: bool = Fa
         if verbose:
             print(f"  → Mode: Dealt {damage} damage")
 
+    # Deal damage equal to creature/token count (e.g., Caesar's third mode)
+    damage_count_match = re.search(r'deal[s]? damage equal to (?:the number of )?(\w+)', text)
+    if damage_count_match and not damage_match:  # Don't double-count
+        count_type = damage_count_match.group(1)
+        damage = 0
+
+        if 'creature token' in count_type or 'token' in count_type:
+            # Count tokens you control
+            damage = sum(1 for c in board.creatures if hasattr(c, 'token_type') and c.token_type)
+        elif 'creature' in count_type:
+            # Count all creatures you control
+            damage = len(board.creatures)
+
+        if damage > 0:
+            board.drain_damage_this_turn += damage
+            if verbose:
+                print(f"  → Mode: Dealt {damage} damage (based on {count_type} count)")
+
     # Gain life
     life_match = re.search(r'gain (\d+) life', text)
     if life_match:
         life = int(life_match.group(1))
         board.gain_life(life, verbose=verbose)
 
-    # Create tokens
+    # Lose life (e.g., "you draw a card and you lose 1 life")
+    lose_life_match = re.search(r'you lose (\d+) life', text)
+    if lose_life_match:
+        life_loss = int(lose_life_match.group(1))
+        board.life -= life_loss
+        if verbose:
+            print(f"  → Mode: Lost {life_loss} life")
+
+    # Create tokens (enhanced to handle "tapped and attacking" tokens)
     token_match = re.search(r'create (\w+) (\d+)/(\d+)', text)
     if token_match:
         num_str = token_match.group(1)
         power = int(token_match.group(2))
         toughness = int(token_match.group(3))
-        num_map = {'a': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4}
+        num_map = {'a': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}
         num = num_map.get(num_str, 1)
+
+        # Check for special token properties
+        has_haste = 'haste' in text
+        enters_tapped = 'tapped' in text and 'attacking' not in text
+        enters_attacking = 'tapped and attacking' in text or 'that are tapped and attacking' in text
+
+        # Parse creature type if present
+        token_type = None
+        type_match = re.search(r'(\w+)\s+creature token', text)
+        if type_match:
+            token_type = type_match.group(1).title()
+
+        # Parse color keywords
+        colors = []
+        for color_word in ['red', 'white', 'blue', 'black', 'green']:
+            if color_word in text:
+                colors.append(color_word)
+
+        color_str = ' and '.join(colors) if colors else ''
+
         for _ in range(num):
-            board.create_token("Modal Token", power, toughness, verbose=verbose)
+            board.create_token(
+                f"{color_str.title()} {token_type or 'Token'}".strip(),
+                power,
+                toughness,
+                has_haste=has_haste,
+                token_type=token_type,
+                enters_tapped=enters_tapped,
+                enters_attacking=enters_attacking,
+                verbose=verbose
+            )
+        if verbose:
+            attacking_str = " (tapped and attacking)" if enters_attacking else (" (tapped)" if enters_tapped else "")
+            print(f"  → Mode: Created {num} {power}/{toughness} token(s){attacking_str}")
 
     # Add counters
     counter_match = re.search(r'put (\w+) \+1/\+1 counter', text)
@@ -1410,6 +1468,227 @@ def integrate_extended_mechanics(board_class):
         evaluate_modal_choice(self, modes, num_to_choose)
     board_class.execute_modal_spell = lambda self, card, chosen_modes, verbose=False: \
         execute_modal_spell(self, card, chosen_modes, verbose)
+
+
+# =============================================================================
+# REFLEXIVE TRIGGERS ("When you do" mechanics)
+# =============================================================================
+
+def detect_reflexive_trigger(oracle_text: str) -> Dict[str, Any]:
+    """
+    Detect reflexive triggers - triggers that occur "when you do" an optional action.
+
+    Generic detection for patterns like:
+    - "Whenever you attack, you may sacrifice a creature. When you do, ..."
+    - "You may pay {X}. When you do, ..."
+    - "You may exile a card. When you do, ..."
+
+    Returns dict with:
+        - has_reflexive: bool
+        - trigger_condition: str (e.g., "whenever you attack")
+        - optional_cost: str (e.g., "sacrifice a creature")
+        - reflexive_effect: str (what happens "when you do")
+        - is_modal: bool (if the reflexive effect is modal)
+    """
+    text = oracle_text.lower()
+    result = {
+        'has_reflexive': False,
+        'trigger_condition': None,
+        'optional_cost': None,
+        'reflexive_effect': None,
+        'is_modal': False,
+    }
+
+    # Pattern: "whenever/when X, you may Y. when you do, Z"
+    reflexive_pattern = re.compile(
+        r'(whenever|when)\s+([^.]+?),\s+you may\s+([^.]+?)\.\s+when you do,?\s+(.+?)(?:\.|$)',
+        re.IGNORECASE | re.DOTALL
+    )
+
+    match = reflexive_pattern.search(text)
+    if match:
+        result['has_reflexive'] = True
+        result['trigger_condition'] = match.group(2).strip()
+        result['optional_cost'] = match.group(3).strip()
+        result['reflexive_effect'] = match.group(4).strip()
+
+        # Check if reflexive effect is modal
+        if 'choose' in result['reflexive_effect'] and '•' in oracle_text:
+            result['is_modal'] = True
+
+    return result
+
+
+def parse_optional_cost(cost_text: str) -> Dict[str, Any]:
+    """
+    Parse optional cost from text like "sacrifice another creature" or "pay {X}".
+
+    Returns dict with:
+        - cost_type: 'sacrifice', 'pay_mana', 'discard', 'exile', etc.
+        - target: what is sacrificed/paid/etc.
+        - quantity: how many (if specified)
+    """
+    text = cost_text.lower()
+    result = {
+        'cost_type': None,
+        'target': None,
+        'quantity': 1,
+    }
+
+    # Sacrifice costs
+    if 'sacrifice' in text:
+        result['cost_type'] = 'sacrifice'
+        if 'another creature' in text:
+            result['target'] = 'another_creature'
+        elif 'a creature' in text or 'creature' in text:
+            result['target'] = 'creature'
+        elif 'a permanent' in text:
+            result['target'] = 'permanent'
+        elif 'artifact' in text:
+            result['target'] = 'artifact'
+
+    # Mana costs
+    elif 'pay' in text:
+        result['cost_type'] = 'pay_mana'
+        # Extract mana amount if specified
+        mana_match = re.search(r'\{(\d+)\}', text)
+        if mana_match:
+            result['quantity'] = int(mana_match.group(1))
+
+    # Discard costs
+    elif 'discard' in text:
+        result['cost_type'] = 'discard'
+        result['target'] = 'card'
+
+    # Exile costs
+    elif 'exile' in text:
+        result['cost_type'] = 'exile'
+        if 'card' in text:
+            result['target'] = 'card'
+
+    return result
+
+
+def detect_modal_triggered_ability(oracle_text: str) -> Dict[str, Any]:
+    """
+    Extend modal detection to work with triggered abilities, not just spells.
+
+    Detects patterns like:
+    - "Whenever X, choose two — • A • B • C"
+    - "When Y, choose one or more — • A • B"
+
+    Returns same format as detect_modal_spell but for triggered abilities.
+    """
+    text = oracle_text.lower()
+    result = {
+        'is_modal_trigger': False,
+        'trigger_event': None,
+        'num_modes': 0,
+        'modes_to_choose': 1,
+        'modes': [],
+    }
+
+    # Check for triggered ability with modal choice
+    trigger_modal_pattern = re.compile(
+        r'(whenever|when|at)\s+([^,]+),\s+(choose\s+(?:one|two|three|one or more))\s*—?',
+        re.IGNORECASE
+    )
+
+    match = trigger_modal_pattern.search(text)
+    if match:
+        result['is_modal_trigger'] = True
+        result['trigger_event'] = match.group(2).strip()
+        choice_text = match.group(3).strip()
+
+        # Determine number of modes to choose
+        if 'choose two' in choice_text:
+            result['modes_to_choose'] = 2
+        elif 'choose three' in choice_text:
+            result['modes_to_choose'] = 3
+        elif 'choose one or more' in choice_text:
+            result['modes_to_choose'] = -1  # Variable
+        else:
+            result['modes_to_choose'] = 1
+
+        # Parse individual modes (bullet points)
+        mode_matches = re.findall(r'•\s*([^•]+?)(?=•|$)', oracle_text, re.DOTALL)
+        if mode_matches:
+            result['modes'] = [m.strip() for m in mode_matches]
+            result['num_modes'] = len(result['modes'])
+
+    return result
+
+
+def execute_reflexive_trigger(board: 'BoardState', card: 'Card',
+                              reflexive_info: Dict[str, Any], verbose: bool = False) -> bool:
+    """
+    Execute a reflexive trigger generically.
+
+    Args:
+        board: Current board state
+        card: The card with the reflexive trigger
+        reflexive_info: Output from detect_reflexive_trigger()
+        verbose: Print debug output
+
+    Returns:
+        True if trigger executed successfully
+    """
+    if not reflexive_info['has_reflexive']:
+        return False
+
+    # Parse and evaluate optional cost
+    cost_info = parse_optional_cost(reflexive_info['optional_cost'])
+
+    # Decide whether to pay the cost (AI decision)
+    should_pay_cost = False
+
+    if cost_info['cost_type'] == 'sacrifice':
+        # Check if we have something to sacrifice
+        if cost_info['target'] == 'another_creature':
+            # Need at least 2 creatures (one being the trigger source)
+            sacrificeable = [c for c in board.creatures if c != card]
+            if sacrificeable:
+                should_pay_cost = True
+                # Choose least valuable creature to sacrifice
+                # For now, sacrifice smallest creature
+                sacrifice_target = min(sacrificeable, key=lambda c: (getattr(c, 'power', 0) or 0))
+        elif cost_info['target'] == 'creature':
+            if len(board.creatures) > 0:
+                should_pay_cost = True
+                sacrifice_target = min(board.creatures, key=lambda c: (getattr(c, 'power', 0) or 0))
+
+    # If we decided to pay the cost, execute it and the reflexive effect
+    if should_pay_cost:
+        # Pay the cost
+        if cost_info['cost_type'] == 'sacrifice' and sacrifice_target:
+            board.sacrifice_creature(sacrifice_target, verbose=verbose)
+            if verbose:
+                print(f"  → Paid optional cost: sacrificed {sacrifice_target.name}")
+
+            # Execute the reflexive effect
+            if reflexive_info['is_modal']:
+                # The effect is modal - parse and execute
+                modal_info = detect_modal_triggered_ability(card.oracle_text)
+                if modal_info['is_modal_trigger']:
+                    # Use existing modal choice evaluation
+                    chosen_modes = evaluate_modal_choice(board, modal_info['modes'],
+                                                        modal_info['modes_to_choose'])
+                    if verbose:
+                        print(f"  → Reflexive modal effect: choosing modes {chosen_modes}")
+
+                    # Execute each chosen mode
+                    for mode_idx in chosen_modes:
+                        if mode_idx < len(modal_info['modes']):
+                            mode_text = modal_info['modes'][mode_idx]
+                            _execute_mode_effect(board, mode_text, verbose)
+            else:
+                # Non-modal reflexive effect - execute generically
+                effect_text = reflexive_info['reflexive_effect']
+                _execute_mode_effect(board, effect_text, verbose)
+
+            return True
+
+    return False
 
 
 # =============================================================================
