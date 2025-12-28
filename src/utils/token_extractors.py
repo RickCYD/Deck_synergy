@@ -539,6 +539,130 @@ def extract_token_type_preferences(card: Dict) -> Dict:
     return result
 
 
+def extract_token_copy_effects(card: Dict) -> Dict:
+    """
+    Extract effects that create token copies of creatures.
+
+    Examples:
+    - Irenicus's Vile Duplication: "Create a token that's a copy of target creature you control, except the token has flying and it isn't legendary."
+    - Cackling Counterpart: "Create a token that's a copy of target creature you control."
+    - Rite of Replication: "Create five tokens that are copies of target creature."
+
+    Returns:
+        {
+            'creates_token_copies': bool,
+            'copy_target': str,  # 'your_creature', 'any_creature', 'target_creature'
+            'copy_count': int or str,  # Number of copies or 'X'
+            'modifications': List[str],  # ['flying', 'not_legendary', 'haste', etc.]
+            'trigger_type': str,  # 'spell', 'etb', 'activated', 'triggered'
+            'repeatable': bool,
+            'examples': List[str]
+        }
+    """
+    text = card.get('oracle_text', '').lower()
+    type_line = card.get('type_line', '').lower()
+
+    result = {
+        'creates_token_copies': False,
+        'copy_target': None,
+        'copy_count': 1,
+        'modifications': [],
+        'trigger_type': None,
+        'repeatable': False,
+        'examples': []
+    }
+
+    if not text:
+        return result
+
+    # Token copy patterns
+    token_copy_patterns = [
+        r'creates?\s+(?:a\s+|an\s+|(\d+|[xX]|two|three|four|five|six|seven|eight|nine|ten)\s+)?tokens?\s+(?:that\'s|that\s+are|that\s+is)\s+(?:a\s+)?cop(?:y|ies)\s+of',
+        r'creates?\s+(?:a\s+)?token.*?copy\s+of',
+        r'token.*enters.*as\s+a\s+copy\s+of',
+    ]
+
+    match_found = None
+    for pattern in token_copy_patterns:
+        match = re.search(pattern, text)
+        if match:
+            match_found = match
+            break
+
+    if not match_found:
+        return result
+
+    result['creates_token_copies'] = True
+    result['examples'].append(match_found.group(0))
+
+    # Parse copy count
+    count_match = match_found.group(1) if match_found.lastindex and match_found.lastindex >= 1 else None
+    if count_match:
+        number_words = {
+            'two': 2, 'three': 3, 'four': 4, 'five': 5,
+            'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+        }
+        if count_match in ['x', 'X']:
+            result['copy_count'] = 'X'
+        elif count_match in number_words:
+            result['copy_count'] = number_words[count_match]
+        elif count_match.isdigit():
+            result['copy_count'] = int(count_match)
+
+    # Determine copy target
+    if 'creature you control' in text:
+        result['copy_target'] = 'your_creature'
+    elif 'target creature' in text:
+        result['copy_target'] = 'target_creature'
+    elif 'creature' in text:
+        result['copy_target'] = 'any_creature'
+    else:
+        result['copy_target'] = 'permanent'
+
+    # Check for modifications to the token
+    modification_patterns = [
+        (r'except.*(?:has|have)\s+flying', 'flying'),
+        (r'except.*(?:has|have)\s+haste', 'haste'),
+        (r'except.*isn\'t\s+legendary', 'not_legendary'),
+        (r'except.*not\s+legendary', 'not_legendary'),
+        (r'except.*(?:has|have)\s+(\w+)', None),  # Generic keyword grant
+        (r'and\s+(?:has|have)\s+flying', 'flying'),
+        (r'and\s+(?:has|have)\s+haste', 'haste'),
+        (r'with\s+flying', 'flying'),
+        (r'with\s+haste', 'haste'),
+    ]
+
+    for pattern, modification in modification_patterns:
+        match = re.search(pattern, text)
+        if match:
+            if modification:
+                if modification not in result['modifications']:
+                    result['modifications'].append(modification)
+            elif match.lastindex and match.lastindex >= 1:
+                # Generic keyword from "except it has X"
+                keyword = match.group(1)
+                if keyword not in ['the', 'a', 'an'] and keyword not in result['modifications']:
+                    result['modifications'].append(keyword)
+
+    # Determine trigger type
+    if 'instant' in type_line or 'sorcery' in type_line:
+        result['trigger_type'] = 'spell'
+    elif re.search(r'when.*enters.*battlefield', text):
+        result['trigger_type'] = 'etb'
+    elif re.search(r'\{.*\}:', text):
+        result['trigger_type'] = 'activated'
+    elif re.search(r'whenever', text):
+        result['trigger_type'] = 'triggered'
+    else:
+        result['trigger_type'] = 'static'
+
+    # Check if repeatable
+    repeatable_keywords = ['whenever', 'at the beginning', '{t}:', '{tap}:']
+    result['repeatable'] = any(keyword in text for keyword in repeatable_keywords)
+
+    return result
+
+
 def classify_token_mechanics(card: Dict) -> Dict:
     """
     Main classification function that extracts all token mechanics.
@@ -550,5 +674,6 @@ def classify_token_mechanics(card: Dict) -> Dict:
         'token_doublers': extract_token_doublers(card),
         'anthems': extract_anthems(card),
         'token_synergies': extract_token_synergies(card),
-        'token_type_preferences': extract_token_type_preferences(card)
+        'token_type_preferences': extract_token_type_preferences(card),
+        'token_copy_effects': extract_token_copy_effects(card)
     }

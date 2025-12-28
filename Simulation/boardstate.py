@@ -4198,6 +4198,116 @@ class BoardState:
 
         return created_tokens if len(created_tokens) > 1 else created_tokens[0]
 
+    def create_token_copy(self, source_creature, modifications: dict = None, verbose: bool = False):
+        """
+        Create a token that's a copy of a creature.
+
+        Implements effects like:
+        - Irenicus's Vile Duplication: "Create a token that's a copy of target creature you control,
+          except the token has flying and it isn't legendary."
+        - Cackling Counterpart: "Create a token that's a copy of target creature you control."
+        - Rite of Replication: "Create five tokens that are copies of target creature."
+
+        Args:
+            source_creature: The Card object to copy
+            modifications: Dict of modifications to apply to the copy:
+                {
+                    'keywords': ['flying', 'haste'],  # Additional keywords
+                    'not_legendary': True,             # Remove legendary status
+                    'count': 1                         # Number of copies (default 1)
+                }
+            verbose: Print debug output
+
+        Returns:
+            The created token copy (or list of copies if count > 1)
+        """
+        from simulate_game import Card
+        import copy as python_copy
+
+        if not source_creature:
+            return None
+
+        if modifications is None:
+            modifications = {}
+
+        count = modifications.get('count', 1)
+        created_copies = []
+
+        for _ in range(count):
+            # Create a deep copy of the source creature
+            token_copy = python_copy.deepcopy(source_creature)
+
+            # Modify the type line to include "Token" and optionally remove "Legendary"
+            type_line = getattr(token_copy, 'type', '') or getattr(token_copy, 'type_line', '')
+
+            if modifications.get('not_legendary', False):
+                # Remove "Legendary" from type line
+                type_line = type_line.replace('Legendary ', '').replace('legendary ', '')
+
+            # Add "Token" if not already present
+            if 'Token' not in type_line:
+                type_line += ' Token'
+
+            token_copy.type = type_line
+
+            # Apply keyword modifications
+            if 'keywords' in modifications:
+                for keyword in modifications['keywords']:
+                    kw_lower = keyword.lower()
+                    if kw_lower == 'flying':
+                        token_copy.has_flying = True
+                    elif kw_lower == 'haste':
+                        token_copy.has_haste = True
+                    elif kw_lower == 'trample':
+                        token_copy.has_trample = True
+                    elif kw_lower == 'lifelink':
+                        token_copy.has_lifelink = True
+                    elif kw_lower == 'vigilance':
+                        token_copy.has_vigilance = True
+                    elif kw_lower == 'deathtouch':
+                        token_copy.has_deathtouch = True
+
+            # Apply any power/toughness modifications
+            if 'power_mod' in modifications:
+                current_power = getattr(token_copy, 'power', 0)
+                if current_power is not None:
+                    token_copy.power = current_power + modifications['power_mod']
+
+            if 'toughness_mod' in modifications:
+                current_toughness = getattr(token_copy, 'toughness', 0)
+                if current_toughness is not None:
+                    token_copy.toughness = current_toughness + modifications['toughness_mod']
+
+            # Add to battlefield
+            self.creatures.append(token_copy)
+            created_copies.append(token_copy)
+
+            # Trigger ETB effects
+            self._execute_triggers("etb", token_copy, verbose=verbose)
+
+            # Apply counter effects from Cathars' Crusade, etc.
+            self.apply_etb_counter_effects(token_copy, verbose=verbose)
+
+            # Apply drain from ETB triggers
+            drain_on_etb = self.calculate_etb_drain()
+            if drain_on_etb > 0:
+                self.drain_damage_this_turn += drain_on_etb
+
+        if verbose:
+            mod_text = []
+            if modifications.get('keywords'):
+                mod_text.append(f"with {', '.join(modifications['keywords'])}")
+            if modifications.get('not_legendary'):
+                mod_text.append("not legendary")
+
+            mod_str = f" ({', '.join(mod_text)})" if mod_text else ""
+            if count > 1:
+                print(f"Created {count} token copies of {source_creature.name}{mod_str}")
+            else:
+                print(f"Created token copy of {source_creature.name}{mod_str}")
+
+        return created_copies if count > 1 else created_copies[0]
+
     def apply_etb_counter_effects(self, entering_creature, verbose: bool = False):
         """
         PRIORITY 2: Apply +1/+1 counters from ETB triggers like Cathars' Crusade.
