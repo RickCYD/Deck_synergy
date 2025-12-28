@@ -1721,3 +1721,323 @@ def get_extended_metrics(board: 'BoardState') -> Dict[str, int]:
         'suspended_cards_count': len(getattr(board, 'suspended_cards', [])),
         'pending_flicker_count': len(getattr(board, 'pending_flicker_returns', [])),
     }
+
+
+# =============================================================================
+# CLASS ENCHANTMENT MECHANICS
+# =============================================================================
+
+def detect_class_enchantment(oracle_text: str, type_line: str) -> Dict[str, Any]:
+    """
+    Detect if a card is a Class enchantment and parse its levels.
+
+    Class enchantments:
+    - Have "Enchantment — Class" type line
+    - Have multiple levels with different abilities
+    - Level 1 is active immediately
+    - Levels 2+ require activation costs
+
+    Returns dict with:
+        - is_class: bool
+        - levels: List[Dict] with level number and abilities
+        - max_level: int
+    """
+    result = {
+        'is_class': False,
+        'levels': [],
+        'max_level': 1
+    }
+
+    # Check type line
+    if 'class' not in type_line.lower() or 'enchantment' not in type_line.lower():
+        return result
+
+    result['is_class'] = True
+
+    # Parse levels from oracle text
+    # Class format: Level 1 (implicit), then ": Level 2\n<abilities>", then ": Level 3\n<abilities>"
+    level_pattern = r':\s*Level\s*(\d+)'
+    level_marks = list(re.finditer(level_pattern, oracle_text))
+
+    if not level_marks:
+        # No explicit levels, just base ability
+        result['levels'] = [{'level': 1, 'oracle_text': oracle_text}]
+        result['max_level'] = 1
+        return result
+
+    # Split text into level sections
+    sections = []
+
+    # Level 1: from start to first ": Level X"
+    level1_text = oracle_text[:level_marks[0].start()].strip()
+    sections.append({'level': 1, 'oracle_text': level1_text})
+
+    # Subsequent levels
+    for i, match in enumerate(level_marks):
+        level_num = int(match.group(1))
+        start_pos = match.end()
+
+        # Text for this level goes until next level marker (or end)
+        if i + 1 < len(level_marks):
+            end_pos = level_marks[i + 1].start()
+        else:
+            end_pos = len(oracle_text)
+
+        level_text = oracle_text[start_pos:end_pos].strip()
+        sections.append({'level': level_num, 'oracle_text': level_text})
+
+    result['levels'] = sections
+    result['max_level'] = max(s['level'] for s in sections)
+
+    return result
+
+
+def apply_class_effects(board: 'BoardState', class_card: 'Card', verbose: bool = False) -> None:
+    """
+    Apply the effects of a Class enchantment based on its current level.
+
+    Handles:
+    - Cost reduction (Level 2 of Artist's Talent: noncreature spells cost {1} less)
+    - Damage amplification (Level 3 of Artist's Talent: noncombat damage +2)
+    - Static abilities
+    - Triggered abilities (registered when card enters)
+
+    Args:
+        board: Current board state
+        class_card: The Class enchantment card
+        verbose: Print debug output
+    """
+    card_name = getattr(class_card, 'name', '')
+    oracle_text = getattr(class_card, 'oracle_text', '').lower()
+    type_line = getattr(class_card, 'type_line', '')
+
+    # Get current level for this Class
+    current_level = board.class_levels.get(card_name, 1)
+
+    # Detect Class structure
+    class_info = detect_class_enchantment(oracle_text, type_line)
+    if not class_info['is_class']:
+        return
+
+    # Apply effects for all levels up to and including current level
+    for level_data in class_info['levels']:
+        if level_data['level'] > current_level:
+            continue  # This level not active yet
+
+        level_text = level_data['oracle_text'].lower()
+
+        # Check for cost reduction
+        if 'spells you cast cost' in level_text and 'less' in level_text:
+            # Generic pattern: "Spells you cast cost {X} less"
+            cost_match = re.search(r'cost\s+{(\d+)}.*less', level_text)
+            if cost_match:
+                reduction_amount = int(cost_match.group(1))
+
+                # Determine which spell types get the reduction
+                if 'noncreature' in level_text:
+                    board.noncreature_cost_reduction += reduction_amount
+                    if verbose:
+                        print(f"  → {card_name} Level {current_level}: Noncreature spells cost {{{reduction_amount}}} less")
+                elif 'instant and sorcery' in level_text or 'instant or sorcery' in level_text:
+                    board.spell_cost_reduction += reduction_amount
+                    if verbose:
+                        print(f"  → {card_name} Level {current_level}: Instant/sorcery spells cost {{{reduction_amount}}} less")
+                else:
+                    # Generic cost reduction
+                    board.cost_reduction += reduction_amount
+                    if verbose:
+                        print(f"  → {card_name} Level {current_level}: Spells cost {{{reduction_amount}}} less")
+
+        # Check for damage amplification
+        if 'deals that much damage plus' in level_text or 'deals damage plus' in level_text:
+            # Pattern: "deals that much damage plus X"
+            damage_match = re.search(r'damage plus (\d+)', level_text)
+            if damage_match:
+                bonus_damage = int(damage_match.group(1))
+
+                # Check if it's specifically noncombat damage
+                if 'noncombat damage' in level_text:
+                    board.noncombat_damage_bonus += bonus_damage
+                    if verbose:
+                        print(f"  → {card_name} Level {current_level}: Noncombat damage +{bonus_damage}")
+
+
+def level_up_class(board: 'BoardState', class_card: 'Card', verbose: bool = False) -> bool:
+    """
+    Level up a Class enchantment to its next level.
+
+    This is an activated ability that can be done at sorcery speed.
+    For simulation, we'll level up when it's beneficial.
+
+    Args:
+        board: Current board state
+        class_card: The Class enchantment to level up
+        verbose: Print debug output
+
+    Returns:
+        True if leveled up successfully
+    """
+    card_name = getattr(class_card, 'name', '')
+    oracle_text = getattr(class_card, 'oracle_text', '')
+    type_line = getattr(class_card, 'type_line', '')
+
+    # Initialize if not tracked yet
+    if card_name not in board.class_levels:
+        board.class_levels[card_name] = 1
+
+    current_level = board.class_levels[card_name]
+
+    # Detect max level
+    class_info = detect_class_enchantment(oracle_text, type_line)
+    if not class_info['is_class']:
+        return False
+
+    max_level = class_info['max_level']
+
+    if current_level >= max_level:
+        if verbose:
+            print(f"  → {card_name} already at max level ({max_level})")
+        return False
+
+    # In simulation, assume we can level up (cost is usually paid from mana)
+    # For now, just level up without mana check (AI will decide when to do this)
+    board.class_levels[card_name] = current_level + 1
+
+    if verbose:
+        print(f"  → Leveled up {card_name} to Level {current_level + 1}")
+
+    # Reapply Class effects with new level
+    apply_class_effects(board, class_card, verbose=verbose)
+
+    return True
+
+
+def trigger_class_modal_ability(board: 'BoardState', class_card: 'Card',
+                                 trigger_event: str, verbose: bool = False) -> None:
+    """
+    Trigger modal abilities from Class enchantments.
+
+    Examples:
+    - Artist's Talent Level 1: "Whenever you cast a noncreature spell, you may discard a card. If you do, draw a card."
+
+    Args:
+        board: Current board state
+        class_card: The Class enchantment
+        trigger_event: The event that triggered (e.g., 'cast_noncreature')
+        verbose: Print debug output
+    """
+    card_name = getattr(class_card, 'name', '')
+    oracle_text = getattr(class_card, 'oracle_text', '')
+    type_line = getattr(class_card, 'type_line', '')
+
+    # Get current level
+    current_level = board.class_levels.get(card_name, 1)
+
+    # Detect Class structure
+    class_info = detect_class_enchantment(oracle_text, type_line)
+    if not class_info['is_class']:
+        return
+
+    # Check each level's abilities
+    for level_data in class_info['levels']:
+        if level_data['level'] > current_level:
+            continue  # Not active yet
+
+        level_text = level_data['oracle_text'].lower()
+
+        # Artist's Talent Level 1: "Whenever you cast a noncreature spell, you may discard a card. If you do, draw a card."
+        if trigger_event == 'cast_noncreature':
+            if 'whenever you cast a noncreature spell' in level_text:
+                # Check for looting effect (discard to draw)
+                if 'you may discard' in level_text and 'draw a card' in level_text:
+                    # AI decision: Do we want to loot?
+                    # Generally yes if we have cards in hand
+                    if len(board.hand) > 1:  # Keep at least one card
+                        # Discard worst card (for simplicity, discard first card)
+                        if board.hand:
+                            discarded = board.hand.pop(0)
+                            board.graveyard.append(discarded)
+                            if verbose:
+                                print(f"  → {card_name}: Discarded {discarded.name}")
+
+                            # Draw a card
+                            if board.library:
+                                drawn = board.library.pop(0)
+                                board.hand.append(drawn)
+                                if verbose:
+                                    print(f"  → {card_name}: Drew {drawn.name}")
+
+
+def should_level_up_class(board: 'BoardState', class_card: 'Card') -> bool:
+    """
+    AI decision: Should we level up this Class enchantment?
+
+    Considers:
+    - Do we have mana available?
+    - Is this our main phase?
+    - Would the next level be beneficial?
+
+    Args:
+        board: Current board state
+        class_card: The Class enchantment to consider leveling
+
+    Returns:
+        True if we should level up
+    """
+    card_name = getattr(class_card, 'name', '')
+    oracle_text = getattr(class_card, 'oracle_text', '').lower()
+    type_line = getattr(class_card, 'type_line', '')
+
+    # Get current level
+    current_level = board.class_levels.get(card_name, 1)
+
+    # Detect Class structure
+    class_info = detect_class_enchantment(oracle_text, type_line)
+    if not class_info['is_class']:
+        return False
+
+    # Already at max level?
+    if current_level >= class_info['max_level']:
+        return False
+
+    # Simple AI: Level up if we have at least 3 mana available
+    # (Most Class level-up costs are 2-3 mana)
+    # This is a simplified check - in reality we'd parse the activation cost
+    mana_available = len(board.mana_pool)
+    if mana_available < 2:
+        return False
+
+    # Check what the next level offers
+    next_level = current_level + 1
+    next_level_data = next((level for level in class_info['levels'] if level['level'] == next_level), None)
+
+    if not next_level_data:
+        return False
+
+    next_level_text = next_level_data['oracle_text'].lower()
+
+    # Always level up if next level provides:
+    # 1. Cost reduction (very valuable)
+    if 'cost' in next_level_text and 'less' in next_level_text:
+        return True
+
+    # 2. Damage amplification (valuable for aggressive decks)
+    if 'damage plus' in next_level_text or 'additional damage' in next_level_text:
+        # Check if we have damage dealers
+        has_damage_dealers = any(
+            'deals damage' in getattr(perm, 'oracle_text', '').lower()
+            for perm in board.creatures + board.enchantments
+        )
+        if has_damage_dealers:
+            return True
+
+    # 3. Draw effects (always good)
+    if 'draw' in next_level_text:
+        return True
+
+    # 4. Token generation (good if we have token synergies)
+    if 'create' in next_level_text and 'token' in next_level_text:
+        return True
+
+    # Default: level up if we have excess mana (5+)
+    return mana_available >= 5

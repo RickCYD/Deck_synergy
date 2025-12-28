@@ -20,6 +20,12 @@ from src.utils.tribal_extractors import (
     get_creature_types,
     extract_is_changeling
 )
+from src.utils.class_extractors import (
+    extract_class_levels,
+    extract_cost_reduction_from_class,
+    extract_damage_boost_from_class,
+    extract_modal_triggers_from_class
+)
 
 # Cache for damage classifications to avoid recomputing for same cards
 _damage_classification_cache = {}
@@ -6013,6 +6019,223 @@ def detect_reflexive_trigger_synergies(card1: Dict, card2: Dict, deck_info: Opti
     return synergies
 
 
+def detect_class_enchantment_synergies(card1: Dict, card2: Dict, deck_info: Optional[Dict] = None) -> List[Dict]:
+    """
+    Detect synergies involving Class enchantments.
+
+    Class enchantments have leveling mechanics and often provide:
+    - Triggered abilities
+    - Cost reduction
+    - Damage amplification
+    - Static buffs
+
+    Returns synergies with spellslinger decks, damage-based strategies, etc.
+    """
+    synergies = []
+
+    # Extract Class information
+    class1 = extract_class_levels(card1)
+    class2 = extract_class_levels(card2)
+
+    # Determine which card is the Class (if any)
+    class_card = None
+    other_card = None
+    class_info = None
+
+    if class1['is_class']:
+        class_card = card1
+        other_card = card2
+        class_info = class1
+    elif class2['is_class']:
+        class_card = card2
+        other_card = card1
+        class_info = class2
+    else:
+        return synergies
+
+    oracle_other = other_card.get('oracle_text', '').lower()
+    type_other = other_card.get('type_line', '').lower()
+
+    # Synergy 1: Class with cost reduction + noncreature spell deck
+    if class_info['has_cost_reduction']:
+        cost_info = extract_cost_reduction_from_class(class_card)
+
+        # Check if other card is a noncreature spell
+        if 'noncreature' in cost_info['spell_types']:
+            is_noncreature = 'instant' in type_other or 'sorcery' in type_other or 'enchantment' in type_other or 'artifact' in type_other
+            if is_noncreature and 'creature' not in type_other:
+                synergies.append({
+                    'name': 'Class Cost Reduction + Noncreature Spell',
+                    'description': f"{class_card['name']} reduces the cost of {other_card['name']}",
+                    'value': 4.0,
+                    'category': 'cost_reduction',
+                    'subcategory': 'spellslinger'
+                })
+
+        # Check if other card is instant/sorcery
+        if 'instant_sorcery' in cost_info['spell_types']:
+            is_instant_sorcery = 'instant' in type_other or 'sorcery' in type_other
+            if is_instant_sorcery:
+                synergies.append({
+                    'name': 'Class Cost Reduction + Instant/Sorcery',
+                    'description': f"{class_card['name']} reduces the cost of {other_card['name']}",
+                    'value': 4.5,
+                    'category': 'cost_reduction',
+                    'subcategory': 'spellslinger'
+                })
+
+    # Synergy 2: Class with damage boost + damage dealers
+    if class_info['has_damage_boost']:
+        damage_info = extract_damage_boost_from_class(class_card)
+
+        # Check if other card deals damage
+        deals_damage = 'deals damage' in oracle_other or 'deal damage' in oracle_other
+
+        # Extra synergy for noncombat damage if that's what the Class boosts
+        if 'noncombat' in damage_info['damage_types']:
+            # Check for noncombat damage specifically
+            is_noncombat_damage = deals_damage and ('combat damage' not in oracle_other)
+
+            # Spellslinger damage dealers (Guttersnipe, etc.)
+            is_spell_damage = 'whenever you cast' in oracle_other and deals_damage
+
+            if is_noncombat_damage or is_spell_damage:
+                synergies.append({
+                    'name': 'Class Damage Boost + Noncombat Damage',
+                    'description': f"{class_card['name']} amplifies damage from {other_card['name']}",
+                    'value': 6.0,
+                    'category': 'damage',
+                    'subcategory': 'spellslinger_burn'
+                })
+
+    # Synergy 3: Class with noncreature spell triggers + noncreature spells
+    if class_info['has_triggers']:
+        modal_info = extract_modal_triggers_from_class(class_card)
+
+        if modal_info['has_modal_trigger']:
+            # Synergy with noncreature spells
+            if modal_info['trigger_event'] == 'cast_noncreature':
+                is_noncreature = 'instant' in type_other or 'sorcery' in type_other or 'enchantment' in type_other or 'artifact' in type_other
+                if is_noncreature and 'creature' not in type_other:
+                    synergies.append({
+                        'name': 'Class Trigger + Noncreature Spell',
+                        'description': f"{other_card['name']} triggers {class_card['name']}'s ability",
+                        'value': 3.5,
+                        'category': 'triggers',
+                        'subcategory': 'spellslinger'
+                    })
+
+            # Synergy with instant/sorcery
+            elif modal_info['trigger_event'] == 'cast_instant_sorcery':
+                is_instant_sorcery = 'instant' in type_other or 'sorcery' in type_other
+                if is_instant_sorcery:
+                    synergies.append({
+                        'name': 'Class Trigger + Instant/Sorcery',
+                        'description': f"{other_card['name']} triggers {class_card['name']}'s ability",
+                        'value': 4.0,
+                        'category': 'triggers',
+                        'subcategory': 'spellslinger'
+                    })
+
+            # Synergy with discard outlets (for looting triggers)
+            if 'discard_to_draw' in modal_info['effects']:
+                # Check if other card cares about discarding
+                cares_about_discard = 'whenever you discard' in oracle_other or 'when you discard' in oracle_other
+                has_madness = 'madness' in oracle_other
+                has_flashback = 'flashback' in oracle_other
+
+                if cares_about_discard or has_madness or has_flashback:
+                    synergies.append({
+                        'name': 'Class Looting + Discard Payoff',
+                        'description': f"{class_card['name']} enables {other_card['name']}'s discard synergies",
+                        'value': 5.0,
+                        'category': 'card_advantage',
+                        'subcategory': 'discard_synergy'
+                    })
+
+    # Synergy 4: Multiple Class enchantments (enchantress/enchantment matters)
+    if class1['is_class'] and class2['is_class']:
+        synergies.append({
+            'name': 'Multiple Class Enchantments',
+            'description': f"{card1['name']} and {card2['name']} both provide leveling value",
+            'value': 2.0,
+            'category': 'enchantments',
+            'subcategory': 'class_matters'
+        })
+
+    # Synergy 5: Class + Proliferate (can level up Classes faster)
+    if class_info['is_class']:
+        has_proliferate = 'proliferate' in oracle_other
+        if has_proliferate:
+            synergies.append({
+                'name': 'Class + Proliferate',
+                'description': f"{other_card['name']} can potentially interact with {class_card['name']}'s levels",
+                'value': 2.5,
+                'category': 'enchantments',
+                'subcategory': 'class_synergy'
+            })
+
+    return synergies
+
+
+def detect_spellslinger_damage_amplification(card1: Dict, card2: Dict, deck_info: Optional[Dict] = None) -> List[Dict]:
+    """
+    Detect damage amplification synergies for spellslinger decks.
+
+    Examples:
+    - Artist's Talent (damage boost) + Guttersnipe (spell damage)
+    - Fiery Emancipation + spell-based damage dealers
+
+    This is distinct from general damage synergies and focuses on amplifying
+    noncombat/spell-based damage.
+    """
+    synergies = []
+
+    oracle1 = card1.get('oracle_text', '').lower()
+    oracle2 = card2.get('oracle_text', '').lower()
+
+    # Identify damage amplifiers (generic)
+    amplifier_patterns = [
+        r'deals? that much damage plus \d+',
+        r'deals? \d+ additional damage',
+        r'deals? double that damage',
+        r'if.*would deal damage.*deals? that much.*instead'
+    ]
+
+    # Identify spell-based damage dealers
+    spell_damage_patterns = [
+        r'whenever you cast.*instant or sorcery.*deals? \d+ damage',
+        r'whenever you cast.*noncreature spell.*deals? \d+ damage',
+        r'magecraft.*deals? \d+ damage'
+    ]
+
+    card1_amplifies = any(re.search(pattern, oracle1) for pattern in amplifier_patterns)
+    card2_amplifies = any(re.search(pattern, oracle2) for pattern in amplifier_patterns)
+
+    card1_spell_damage = any(re.search(pattern, oracle1) for pattern in spell_damage_patterns)
+    card2_spell_damage = any(re.search(pattern, oracle2) for pattern in spell_damage_patterns)
+
+    if card1_amplifies and card2_spell_damage:
+        synergies.append({
+            'name': 'Damage Amplification + Spell Damage',
+            'description': f"{card1['name']} amplifies damage from {card2['name']}",
+            'value': 7.0,
+            'category': 'damage',
+            'subcategory': 'spellslinger_burn'
+        })
+
+    if card2_amplifies and card1_spell_damage:
+        synergies.append({
+            'name': 'Damage Amplification + Spell Damage',
+            'description': f"{card2['name']} amplifies damage from {card1['name']}",
+            'value': 7.0,
+            'category': 'damage',
+            'subcategory': 'spellslinger_burn'
+        })
+
+    return synergies
+
+
 # List of all detection functions
 ALL_RULES = [
     detect_etb_triggers,
@@ -6115,5 +6338,8 @@ ALL_RULES = [
     detect_affinity_synergy,
     detect_kicker_synergy,
     detect_overload_synergy,
-    detect_miracle_synergy
+    detect_miracle_synergy,
+    # Class enchantment synergies
+    detect_class_enchantment_synergies,
+    detect_spellslinger_damage_amplification
 ] + CARD_ADVANTAGE_SYNERGY_RULES + ALLY_PROWESS_SYNERGY_RULES + SPELLSLINGER_ENGINE_SYNERGY_RULES  # Add card advantage + Ally/Prowess + Spellslinger engine synergies
