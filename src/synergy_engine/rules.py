@@ -3377,12 +3377,21 @@ def detect_counter_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
 def detect_copy_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     """
     Detect copy/clone effects synergy - clones + high-value ETBs or abilities
+
+    Enhanced to use extract_token_copy_effects for better detection of token copy spells.
     """
+    # Import extractor
+    try:
+        from src.utils.token_extractors import extract_token_copy_effects
+    except ImportError:
+        extract_token_copy_effects = None
+
     # Copy/clone patterns
     copy_patterns = [
         r'\bcopy\b',
         r'\bclone\b',
         r'create a token.*copy',
+        r'create.*token.*that.*cop(?:y|ies)',
         r'copy target',
         r'as a copy of',
         r'enters.*as a copy',
@@ -3403,9 +3412,21 @@ def detect_copy_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_type = card1.get('type_line', '').lower()
     card2_type = card2.get('type_line', '').lower()
 
-    # Check for creature clones
+    # Check for creature clones (permanent creatures that copy)
     card1_is_clone = any(search_cached(pattern, card1_text) for pattern in copy_patterns) and 'creature' in card1_type
     card2_is_clone = any(search_cached(pattern, card2_text) for pattern in copy_patterns) and 'creature' in card2_type
+
+    # Check for token copy spells (using extractor if available)
+    card1_token_copy = None
+    card2_token_copy = None
+    if extract_token_copy_effects:
+        card1_token_copy = extract_token_copy_effects(card1)
+        card2_token_copy = extract_token_copy_effects(card2)
+
+    card1_creates_token_copy = (card1_token_copy and card1_token_copy.get('creates_token_copies', False)) or \
+                                search_cached(r'create.*token.*cop(?:y|ies)', card1_text)
+    card2_creates_token_copy = (card2_token_copy and card2_token_copy.get('creates_token_copies', False)) or \
+                                search_cached(r'create.*token.*cop(?:y|ies)', card2_text)
 
     # Check for spell copiers
     card1_copies_spells = any(search_cached(pattern, card1_text) for pattern in spell_copy_patterns)
@@ -3425,6 +3446,10 @@ def detect_copy_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
     card1_has_etb = any(search_cached(pattern, card1_text) for pattern in high_value_etb_patterns)
     card2_has_etb = any(search_cached(pattern, card2_text) for pattern in high_value_etb_patterns)
 
+    # Check for legendary creatures (higher value for token copy effects that remove legendary)
+    card1_is_legendary = 'legendary' in card1_type and 'creature' in card1_type
+    card2_is_legendary = 'legendary' in card2_type and 'creature' in card2_type
+
     # Clone + high-value ETB
     if card1_is_clone and card2_has_etb:
         return {
@@ -3442,6 +3467,64 @@ def detect_copy_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
             'value': 3.5,
             'category': 'combo',
             'subcategory': 'copy_effects'
+        }
+
+    # Token copy spell + high-value ETB (even stronger synergy since it creates an extra creature)
+    if card1_creates_token_copy and card2_has_etb:
+        # Check if the copy removes legendary (bonus value)
+        removes_legendary = card1_token_copy and 'not_legendary' in card1_token_copy.get('modifications', []) if card1_token_copy else False
+        value = 5.0 if (card2_is_legendary and removes_legendary) else 4.0
+
+        return {
+            'name': 'Token Copy + ETB Value',
+            'description': f"{card1['name']} creates token copies that trigger {card2['name']}'s ETB again" +
+                          (" (works with legendary!)" if removes_legendary and card2_is_legendary else ""),
+            'value': value,
+            'category': 'tokens',
+            'subcategory': 'token_copy'
+        }
+
+    if card2_creates_token_copy and card1_has_etb:
+        # Check if the copy removes legendary (bonus value)
+        removes_legendary = card2_token_copy and 'not_legendary' in card2_token_copy.get('modifications', []) if card2_token_copy else False
+        value = 5.0 if (card1_is_legendary and removes_legendary) else 4.0
+
+        return {
+            'name': 'Token Copy + ETB Value',
+            'description': f"{card2['name']} creates token copies that trigger {card1['name']}'s ETB again" +
+                          (" (works with legendary!)" if removes_legendary and card1_is_legendary else ""),
+            'value': value,
+            'category': 'tokens',
+            'subcategory': 'token_copy'
+        }
+
+    # Token copy + powerful static abilities
+    powerful_ability_patterns = [
+        r'creatures you control (?:get|have)',
+        r'whenever.*creature.*attacks',
+        r'whenever.*creature.*dies',
+        r'sacrifice.*creature',
+    ]
+
+    card1_has_powerful_ability = any(search_cached(pattern, card1_text) for pattern in powerful_ability_patterns)
+    card2_has_powerful_ability = any(search_cached(pattern, card2_text) for pattern in powerful_ability_patterns)
+
+    if card1_creates_token_copy and card2_has_powerful_ability and 'creature' in card2_type:
+        return {
+            'name': 'Token Copy + Powerful Ability',
+            'description': f"{card1['name']} can duplicate {card2['name']}'s powerful abilities",
+            'value': 3.5,
+            'category': 'tokens',
+            'subcategory': 'token_copy'
+        }
+
+    if card2_creates_token_copy and card1_has_powerful_ability and 'creature' in card1_type:
+        return {
+            'name': 'Token Copy + Powerful Ability',
+            'description': f"{card2['name']} can duplicate {card1['name']}'s powerful abilities",
+            'value': 3.5,
+            'category': 'tokens',
+            'subcategory': 'token_copy'
         }
 
     # Spell copier + instant/sorcery

@@ -21,7 +21,8 @@ from src.utils.spellslinger_extractors import (
     extract_draw_on_spell_cast,
     extract_spell_copy_ability,
     extract_creates_treasures_on_spell,
-    extract_creates_tokens_on_spell
+    extract_creates_tokens_on_spell,
+    extract_deals_damage_on_spell
 )
 from src.utils.token_extractors import extract_token_creation
 
@@ -705,6 +706,131 @@ def detect_token_generation_spell_synergy(card1: Dict, card2: Dict) -> Optional[
     return None
 
 
+def detect_damage_on_spell_synergy(card1: Dict, card2: Dict) -> Optional[Dict]:
+    """
+    Detect damage-on-spell-cast synergies (Guttersnipe + cheap spells).
+
+    Cards like Guttersnipe deal damage whenever you cast instant/sorcery spells.
+    This creates powerful synergy with:
+    - Cheap spells (can cast multiple per turn)
+    - Cantrips (replace themselves while dealing damage)
+    - Storm spells (count all spells cast)
+
+    Examples:
+    - Guttersnipe + Brainstorm = Deal 2 damage for 1 mana
+    - Guttersnipe + Opt = Deal 2 damage, scry, draw
+    - Firebrand Archer + Lightning Bolt = Deal 4 damage total
+
+    Args:
+        card1: First card
+        card2: Second card
+
+    Returns:
+        Synergy dict or None
+    """
+    damage1 = extract_deals_damage_on_spell(card1)
+    damage2 = extract_deals_damage_on_spell(card2)
+
+    card1_type = card1.get('type_line', '').lower()
+    card2_type = card2.get('type_line', '').lower()
+    card1_cmc = card1.get('cmc', 0)
+    card2_cmc = card2.get('cmc', 0)
+    card1_text = card1.get('oracle_text', '').lower()
+    card2_text = card2.get('oracle_text', '').lower()
+
+    # Card1 deals damage on spell, Card2 is a spell that triggers it
+    if damage1['deals_damage_on_spell']:
+        spell_type = damage1['spell_type']
+        damage_amount = damage1['damage_amount']
+        target = damage1['damage_target']
+
+        # Check if card2 is the right type of spell
+        is_trigger_spell = False
+        if spell_type == 'noncreature':
+            is_trigger_spell = 'instant' in card2_type or 'sorcery' in card2_type
+        elif spell_type == 'instant_sorcery':
+            is_trigger_spell = 'instant' in card2_type or 'sorcery' in card2_type
+        elif spell_type == 'any':
+            is_trigger_spell = True
+
+        if is_trigger_spell:
+            # Cheap spells are MORE valuable (can cast multiple per turn)
+            base_value = 5.0
+            if card2_cmc == 0:
+                value = base_value + 3.0  # 8.0 for free spells!
+            elif card2_cmc <= 1:
+                value = base_value + 2.0  # 7.0 for 1 CMC
+            elif card2_cmc <= 2:
+                value = base_value + 1.0  # 6.0 for 2 CMC
+            else:
+                value = base_value  # 5.0 for expensive spells
+
+            # Cantrips/draw spells are even better (replace themselves)
+            if 'draw a card' in card2_text or 'draw' in card2_text:
+                value += 1.0
+
+            # Each opponent damage is better in multiplayer
+            if target == 'each_opponent':
+                value += 0.5
+
+            spell_desc = "free " if card2_cmc == 0 else ("cheap " if card2_cmc <= 2 else "")
+            cantrip_desc = " (cantrip)" if 'draw' in card2_text else ""
+            multi_desc = " hitting each opponent" if target == 'each_opponent' else ""
+
+            return {
+                'name': 'Spellslinger Damage + Spell',
+                'description': f"{card1['name']} deals {damage_amount} damage{multi_desc} when you cast {card2['name']} ({spell_desc}{card2_cmc} CMC{cantrip_desc})",
+                'value': value,
+                'category': 'spellslinger',
+                'subcategory': 'damage_on_spell'
+            }
+
+    # Card2 deals damage on spell, Card1 is a spell that triggers it
+    if damage2['deals_damage_on_spell']:
+        spell_type = damage2['spell_type']
+        damage_amount = damage2['damage_amount']
+        target = damage2['damage_target']
+
+        is_trigger_spell = False
+        if spell_type == 'noncreature':
+            is_trigger_spell = 'instant' in card1_type or 'sorcery' in card1_type
+        elif spell_type == 'instant_sorcery':
+            is_trigger_spell = 'instant' in card1_type or 'sorcery' in card1_type
+        elif spell_type == 'any':
+            is_trigger_spell = True
+
+        if is_trigger_spell:
+            base_value = 5.0
+            if card1_cmc == 0:
+                value = base_value + 3.0
+            elif card1_cmc <= 1:
+                value = base_value + 2.0
+            elif card1_cmc <= 2:
+                value = base_value + 1.0
+            else:
+                value = base_value
+
+            if 'draw a card' in card1_text or 'draw' in card1_text:
+                value += 1.0
+
+            if target == 'each_opponent':
+                value += 0.5
+
+            spell_desc = "free " if card1_cmc == 0 else ("cheap " if card1_cmc <= 2 else "")
+            cantrip_desc = " (cantrip)" if 'draw' in card1_text else ""
+            multi_desc = " hitting each opponent" if target == 'each_opponent' else ""
+
+            return {
+                'name': 'Spellslinger Damage + Spell',
+                'description': f"{card2['name']} deals {damage_amount} damage{multi_desc} when you cast {card1['name']} ({spell_desc}{card1_cmc} CMC{cantrip_desc})",
+                'value': value,
+                'category': 'spellslinger',
+                'subcategory': 'damage_on_spell'
+            }
+
+    return None
+
+
 # List of all spellslinger engine synergy rules to export
 SPELLSLINGER_ENGINE_SYNERGY_RULES = [
     detect_jeskai_ascendancy_untap_synergy,
@@ -715,4 +841,5 @@ SPELLSLINGER_ENGINE_SYNERGY_RULES = [
     detect_spell_copy_extra_turn_combo,
     detect_treasure_generation_spell_synergy,
     detect_token_generation_spell_synergy,
+    detect_damage_on_spell_synergy,
 ]

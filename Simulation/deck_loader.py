@@ -18,6 +18,7 @@ from oracle_text_parser import (
     parse_activated_abilities,
     parse_etb_tapped_conditions,
     parse_death_triggers_from_oracle,
+    parse_spell_cast_triggers_from_oracle,
     parse_sacrifice_outlet_from_oracle,
     parse_direct_damage_from_oracle,
 )
@@ -219,6 +220,7 @@ def _df_to_cards(df: pd.DataFrame):
                 + parse_attack_triggers_from_oracle(text)
                 + parse_damage_triggers_from_oracle(text)
                 + parse_death_triggers_from_oracle(text)
+                + parse_spell_cast_triggers_from_oracle(text)
             )
         )
     else:
