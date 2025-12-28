@@ -378,3 +378,119 @@ def extract_creates_tokens_on_spell(card: Dict) -> Dict:
             break
 
     return result
+
+
+def extract_deals_damage_on_spell(card: Dict) -> Dict:
+    """
+    Extract damage effects triggered by casting spells.
+
+    Examples:
+    - Guttersnipe: "Whenever you cast an instant or sorcery spell, Guttersnipe deals 2 damage to each opponent."
+    - Firebrand Archer: "Whenever you cast a noncreature spell, Firebrand Archer deals 1 damage to each opponent."
+    - Thermo-Alchemist: Activated ability, not spell trigger
+
+    Returns:
+        {
+            'deals_damage_on_spell': bool,
+            'spell_type': str,  # 'noncreature', 'instant_sorcery', 'any'
+            'damage_amount': int,
+            'damage_target': str,  # 'each_opponent', 'any_target', 'player', 'creature'
+            'magecraft': bool  # Whether it uses magecraft keyword
+        }
+    """
+    oracle_text = card.get('oracle_text', '').lower()
+
+    result = {
+        'deals_damage_on_spell': False,
+        'spell_type': None,
+        'damage_amount': 0,
+        'damage_target': None,
+        'magecraft': False
+    }
+
+    # Check for magecraft keyword
+    if 'magecraft' in oracle_text:
+        result['magecraft'] = True
+
+    # Pattern 1: "Whenever you cast an instant or sorcery spell, ... deals X damage to ..."
+    instant_sorcery_patterns = [
+        r'whenever you cast an instant or sorcery spell.*deals?\s+(\d+)\s+damage\s+to\s+(.*?)(?:\.|,)',
+        r'whenever you cast an instant or sorcery.*(\d+)\s+damage.*to\s+(.*?)(?:\.|,)',
+    ]
+
+    for pattern in instant_sorcery_patterns:
+        match = re.search(pattern, oracle_text)
+        if match:
+            result['deals_damage_on_spell'] = True
+            result['spell_type'] = 'instant_sorcery'
+            result['damage_amount'] = int(match.group(1))
+
+            # Parse target
+            target_text = match.group(2) if len(match.groups()) >= 2 else ''
+            if 'each opponent' in target_text:
+                result['damage_target'] = 'each_opponent'
+            elif 'any target' in target_text:
+                result['damage_target'] = 'any_target'
+            elif 'target player' in target_text or 'target opponent' in target_text:
+                result['damage_target'] = 'player'
+            elif 'target creature' in target_text:
+                result['damage_target'] = 'creature'
+            else:
+                result['damage_target'] = 'any_target'
+
+            return result
+
+    # Pattern 2: "Whenever you cast a noncreature spell, ... deals X damage to ..."
+    noncreature_patterns = [
+        r'whenever you cast a noncreature spell.*deals?\s+(\d+)\s+damage\s+to\s+(.*?)(?:\.|,)',
+        r'whenever you cast a noncreature.*(\d+)\s+damage.*to\s+(.*?)(?:\.|,)',
+    ]
+
+    for pattern in noncreature_patterns:
+        match = re.search(pattern, oracle_text)
+        if match:
+            result['deals_damage_on_spell'] = True
+            result['spell_type'] = 'noncreature'
+            result['damage_amount'] = int(match.group(1))
+
+            # Parse target
+            target_text = match.group(2) if len(match.groups()) >= 2 else ''
+            if 'each opponent' in target_text:
+                result['damage_target'] = 'each_opponent'
+            elif 'any target' in target_text:
+                result['damage_target'] = 'any_target'
+            elif 'target player' in target_text or 'target opponent' in target_text:
+                result['damage_target'] = 'player'
+            elif 'target creature' in target_text:
+                result['damage_target'] = 'creature'
+            else:
+                result['damage_target'] = 'any_target'
+
+            return result
+
+    # Pattern 3: Magecraft damage (generic pattern)
+    if result['magecraft']:
+        # "Magecraft — Whenever you cast or copy an instant or sorcery spell, ..."
+        magecraft_pattern = r'magecraft.*deals?\s+(\d+)\s+damage\s+to\s+(.*?)(?:\.|,)'
+        match = re.search(magecraft_pattern, oracle_text)
+        if match:
+            result['deals_damage_on_spell'] = True
+            result['spell_type'] = 'instant_sorcery'  # Magecraft triggers on instant/sorcery
+            result['damage_amount'] = int(match.group(1))
+
+            # Parse target
+            target_text = match.group(2)
+            if 'each opponent' in target_text:
+                result['damage_target'] = 'each_opponent'
+            elif 'any target' in target_text:
+                result['damage_target'] = 'any_target'
+            elif 'target player' in target_text or 'target opponent' in target_text:
+                result['damage_target'] = 'player'
+            elif 'target creature' in target_text:
+                result['damage_target'] = 'creature'
+            else:
+                result['damage_target'] = 'any_target'
+
+            return result
+
+    return result

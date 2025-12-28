@@ -438,6 +438,150 @@ def parse_damage_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
     return triggers
 
 
+def parse_spell_cast_triggers_from_oracle(text: str, card_name: str = "") -> list[TriggeredAbility]:
+    """
+    Extract spell cast triggers from oracle text.
+
+    Handles cards like:
+    - Guttersnipe: "Whenever you cast an instant or sorcery spell, Guttersnipe deals 2 damage to each opponent."
+    - Firebrand Archer: "Whenever you cast a noncreature spell, Firebrand Archer deals 1 damage to each opponent."
+    - Young Pyromancer: "Whenever you cast an instant or sorcery spell, create a 1/1 red Elemental creature token."
+    """
+    if not text:
+        return []
+    lower = text.lower()
+    triggers: list[TriggeredAbility] = []
+
+    # Pattern 1: Damage on instant/sorcery cast
+    # "Whenever you cast an instant or sorcery spell, [card] deals X damage to each opponent"
+    m_damage_instant_sorcery = re.search(
+        r"whenever you cast an instant or sorcery spell,.*?deals? (?P<num>a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) damage to each opponent",
+        lower
+    )
+    if m_damage_instant_sorcery:
+        num_map = {
+            "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+            "four": 4, "five": 5, "six": 6, "seven": 7,
+            "eight": 8, "nine": 9, "ten": 10,
+        }
+        val = m_damage_instant_sorcery.group("num")
+        damage = num_map.get(val, int(val) if val.isdigit() else 1)
+
+        def make_spell_damage_effect(dmg):
+            def effect(board_state):
+                # In goldfish mode with 3 opponents (Commander typically)
+                total_damage = dmg * 3
+                if hasattr(board_state, 'combat_damage_this_turn'):
+                    board_state.combat_damage_this_turn += total_damage
+            return effect
+
+        triggers.append(
+            TriggeredAbility(
+                event="spell_cast_instant_sorcery",
+                effect=make_spell_damage_effect(damage),
+                description=f"deal {damage} damage to each opponent on spell cast"
+            )
+        )
+
+    # Pattern 2: Damage on noncreature spell cast
+    # "Whenever you cast a noncreature spell, [card] deals X damage to each opponent"
+    if not m_damage_instant_sorcery:  # Only check if previous pattern didn't match
+        m_damage_noncreature = re.search(
+            r"whenever you cast a noncreature spell,.*?deals? (?P<num>a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) damage to each opponent",
+            lower
+        )
+        if m_damage_noncreature:
+            num_map = {
+                "a": 1, "an": 1, "one": 1, "two": 2, "three": 3,
+                "four": 4, "five": 5, "six": 6, "seven": 7,
+                "eight": 8, "nine": 9, "ten": 10,
+            }
+            val = m_damage_noncreature.group("num")
+            damage = num_map.get(val, int(val) if val.isdigit() else 1)
+
+            def make_spell_damage_effect(dmg):
+                def effect(board_state):
+                    total_damage = dmg * 3  # 3 opponents in Commander
+                    if hasattr(board_state, 'combat_damage_this_turn'):
+                        board_state.combat_damage_this_turn += total_damage
+                return effect
+
+            triggers.append(
+                TriggeredAbility(
+                    event="spell_cast_noncreature",
+                    effect=make_spell_damage_effect(damage),
+                    description=f"deal {damage} damage to each opponent on noncreature spell cast"
+                )
+            )
+
+    # Pattern 3: Token creation on instant/sorcery cast
+    # "Whenever you cast an instant or sorcery spell, create a X/X [type] token"
+    m_token_instant_sorcery = re.search(
+        r"whenever you cast an instant or sorcery spell, create (?:a |an )?(?P<num>one|two|three|four|five|six|seven|eight|nine|ten|\d+)? ?(?P<stats>\d+/\d+) [^.]*tokens?",
+        lower
+    )
+    if m_token_instant_sorcery:
+        num_map = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        }
+        val = m_token_instant_sorcery.group("num")
+        count = num_map.get(val, int(val) if val and val.isdigit() else 1)
+        stats = m_token_instant_sorcery.group("stats")
+
+        def make_token_effect(num_tokens, token_stats):
+            def effect(board_state):
+                if hasattr(board_state, 'create_tokens'):
+                    board_state.create_tokens(num_tokens, token_stats)
+                elif hasattr(board_state, 'create_token'):
+                    for _ in range(num_tokens):
+                        power, toughness = map(int, token_stats.split('/'))
+                        board_state.create_token(f"{token_stats} Token", power, toughness)
+            return effect
+
+        triggers.append(
+            TriggeredAbility(
+                event="spell_cast_instant_sorcery",
+                effect=make_token_effect(count, stats),
+                description=f"create {count} {stats} token(s) on spell cast"
+            )
+        )
+
+    # Pattern 4: Token creation on noncreature spell cast
+    m_token_noncreature = re.search(
+        r"whenever you cast a noncreature spell, create (?:a |an )?(?P<num>one|two|three|four|five|six|seven|eight|nine|ten|\d+)? ?(?P<stats>\d+/\d+) [^.]*tokens?",
+        lower
+    )
+    if m_token_noncreature and not m_token_instant_sorcery:
+        num_map = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        }
+        val = m_token_noncreature.group("num")
+        count = num_map.get(val, int(val) if val and val.isdigit() else 1)
+        stats = m_token_noncreature.group("stats")
+
+        def make_token_effect(num_tokens, token_stats):
+            def effect(board_state):
+                if hasattr(board_state, 'create_tokens'):
+                    board_state.create_tokens(num_tokens, token_stats)
+                elif hasattr(board_state, 'create_token'):
+                    for _ in range(num_tokens):
+                        power, toughness = map(int, token_stats.split('/'))
+                        board_state.create_token(f"{token_stats} Token", power, toughness)
+            return effect
+
+        triggers.append(
+            TriggeredAbility(
+                event="spell_cast_noncreature",
+                effect=make_token_effect(count, stats),
+                description=f"create {count} {stats} token(s) on noncreature spell cast"
+            )
+        )
+
+    return triggers
+
+
 def parse_death_triggers_from_oracle(text: str) -> list[TriggeredAbility]:
     """Extract death triggers from oracle text (aristocrats drain effects, etc.)."""
     if not text:
